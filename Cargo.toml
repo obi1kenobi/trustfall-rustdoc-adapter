@@ -1,6 +1,6 @@
 [package]
-name = "trustfall-rustdoc"
-version = "0.1.0"
+name = "trustfall-rustdoc-adapter"
+version = "21.0.0"
 edition = "2021"
 authors = ["Predrag Gruevski <obi1kenobi82@gmail.com>"]
 license = "Apache-2.0 OR MIT"
@@ -13,6 +13,7 @@ readme = "./README.md"
 [dependencies]
 trustfall_core = "0.0.4"
 rustdoc-types = "0.17.0"
-serde_json = "1.0.82"
-anyhow = "1.0.58"
-serde = { version = "1.0.139", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1.0.85"
+serde = { version = "1.0.145", features = ["derive"] }
