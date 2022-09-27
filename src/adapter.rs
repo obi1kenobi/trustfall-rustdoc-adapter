@@ -1191,14 +1191,18 @@ mod tests {
 
     #[test]
     fn rustdoc_json_format_version() {
-        let current_crate = load_rustdoc_from_file(Path::new("./test_data/rustdoc_v21.json"));
+        let version = rustdoc_types::FORMAT_VERSION;
+        let current_crate =
+            load_rustdoc_from_file(Path::new(&format!("./test_data/rustdoc_v{version}.json")));
 
         assert_eq!(current_crate.format_version, rustdoc_types::FORMAT_VERSION);
     }
 
     #[test]
     fn pub_use_handling() {
-        let current_crate = load_rustdoc_from_file(Path::new("./test_data/rustdoc_v21.json"));
+        let version = rustdoc_types::FORMAT_VERSION;
+        let current_crate =
+            load_rustdoc_from_file(Path::new(&format!("./test_data/rustdoc_v{version}.json")));
 
         let current = IndexedCrate::new(&current_crate);
 
