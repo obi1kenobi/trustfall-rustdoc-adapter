@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use rustdoc_types::{
-    Crate, Enum, Function, Id, Impl, Item, ItemEnum, Method, Path, Span, Struct, Trait, Type,
+    Crate, Enum, Function, Id, Impl, Item, ItemEnum, Method, Span, Struct, Trait, Type,
     Variant,
 };
 use trustfall_core::{
@@ -86,7 +86,7 @@ impl Origin {
 
     fn make_implemented_trait_token<'a>(
         &self,
-        path: &'a rustdoc_types::Path,
+        path: &'a str,
         trait_def: &'a Item,
     ) -> Token<'a> {
         Token {
@@ -114,7 +114,7 @@ pub enum TokenKind<'a> {
     ImportablePath(Vec<&'a str>),
     RawType(&'a Type),
     Attribute(&'a str),
-    ImplementedTrait(&'a Path, &'a Item),
+    ImplementedTrait(&'a str, &'a Item),
 }
 
 #[allow(dead_code)]
@@ -136,7 +136,7 @@ impl<'a> Token<'a> {
                 rustdoc_types::ItemEnum::Enum(..) => "Enum",
                 rustdoc_types::ItemEnum::Function(..) => "Function",
                 rustdoc_types::ItemEnum::Method(..) => "Method",
-                rustdoc_types::ItemEnum::Variant(Variant::Plain(..)) => "PlainVariant",
+                rustdoc_types::ItemEnum::Variant(Variant::Plain) => "PlainVariant",
                 rustdoc_types::ItemEnum::Variant(Variant::Tuple(..)) => "TupleVariant",
                 rustdoc_types::ItemEnum::Variant(Variant::Struct { .. }) => "StructVariant",
                 rustdoc_types::ItemEnum::StructField(..) => "StructField",
@@ -275,7 +275,7 @@ impl<'a> Token<'a> {
         }
     }
 
-    fn as_implemented_trait(&self) -> Option<(&'a rustdoc_types::Path, &'a Item)> {
+    fn as_implemented_trait(&self) -> Option<(&'a str, &'a Item)> {
         match &self.kind {
             TokenKind::ImplementedTrait(path, trait_item) => Some((*path, *trait_item)),
             _ => None,
@@ -335,18 +335,13 @@ fn get_item_property(item_token: &Token, field_name: &str) -> FieldValue {
 fn get_struct_property(item_token: &Token, field_name: &str) -> FieldValue {
     let (_, struct_item) = item_token.as_struct_item().expect("token was not a Struct");
     match field_name {
-        "struct_type" => match struct_item.kind {
-            rustdoc_types::StructKind::Plain { .. } => "plain",
-            rustdoc_types::StructKind::Tuple(..) => "tuple",
-            rustdoc_types::StructKind::Unit => "unit",
+        "struct_type" => match struct_item.struct_type {
+            rustdoc_types::StructType::Plain => "plain",
+            rustdoc_types::StructType::Tuple => "tuple",
+            rustdoc_types::StructType::Unit => "unit",
         }
         .into(),
-        "fields_stripped" => match struct_item.kind {
-            rustdoc_types::StructKind::Plain {
-                fields_stripped, ..
-            } => fields_stripped.into(),
-            _ => FieldValue::Null,
-        },
+        "fields_stripped" => struct_item.fields_stripped.into(),
         _ => unreachable!("Struct property {field_name}"),
     }
 }
@@ -441,7 +436,7 @@ fn get_raw_type_property(token: &Token, field_name: &str) -> FieldValue {
     let type_token = token.as_raw_type().expect("token was not a RawType");
     match field_name {
         "name" => match type_token {
-            rustdoc_types::Type::ResolvedPath(path) => (&path.name).into(),
+            rustdoc_types::Type::ResolvedPath { name, .. } => name.into(),
             rustdoc_types::Type::Primitive(name) => name.into(),
             _ => unreachable!("unexpected RawType token content: {type_token:?}"),
         },
@@ -454,7 +449,7 @@ fn get_implemented_trait_property(token: &Token, field_name: &str) -> FieldValue
         .as_implemented_trait()
         .expect("token was not a ImplementedTrait");
     match field_name {
-        "name" => (&path.name).into(),
+        "name" => path.into(),
         _ => unreachable!("ImplementedTrait property {field_name}"),
     }
 }
@@ -880,15 +875,12 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                 };
 
                                 let field_ids_iter: Box<dyn Iterator<Item = &Id>> =
-                                    match &struct_item.kind {
-                                        rustdoc_types::StructKind::Unit => {
+                                    match &struct_item.struct_type {
+                                        rustdoc_types::StructType::Unit => {
                                             Box::new(std::iter::empty())
                                         }
-                                        rustdoc_types::StructKind::Tuple(field_ids) => {
-                                            Box::new(field_ids.iter().filter_map(|x| x.as_ref()))
-                                        }
-                                        rustdoc_types::StructKind::Plain { fields, .. } => {
-                                            Box::new(fields.iter())
+                                        rustdoc_types::StructType::Tuple | rustdoc_types::StructType::Plain => {
+                                            Box::new(struct_item.fields.iter())
                                         }
                                     };
 
@@ -988,21 +980,25 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                 } else {
                                     let method_names: BTreeSet<&str> = impl_token.provided_trait_methods.iter().map(|x| x.as_str()).collect();
 
-                                    let trait_path = impl_token.trait_.as_ref().expect("no trait but provided_trait_methods was non-empty");
-                                    let trait_item = item_index.get(&trait_path.id);
+                                    let trait_ = impl_token.trait_.as_ref().expect("no trait but provided_trait_methods was non-empty");
 
-                                    if let Some(trait_item) = trait_item {
-                                        if let ItemEnum::Trait(trait_item) = &trait_item.inner {
-                                            Box::new(trait_item.items.iter().filter(move |item_id| {
-                                                let next_item = &item_index.get(item_id);
-                                                if let Some(name) = next_item.and_then(|x| x.name.as_deref()) {
-                                                    method_names.contains(name)
-                                                } else {
-                                                    false
-                                                }
-                                            }))
+                                    if let Type::ResolvedPath { id, ..} = &trait_ {
+                                        let trait_item = item_index.get(id);
+                                        if let Some(trait_item) = trait_item {
+                                            if let ItemEnum::Trait(trait_item) = &trait_item.inner {
+                                                Box::new(trait_item.items.iter().filter(move |item_id| {
+                                                    let next_item = &item_index.get(item_id);
+                                                    if let Some(name) = next_item.and_then(|x| x.name.as_deref()) {
+                                                        method_names.contains(name)
+                                                    } else {
+                                                        false
+                                                    }
+                                                }))
+                                            } else {
+                                                unreachable!("found a non-trait type {trait_item:?}");
+                                            }
                                         } else {
-                                            unreachable!("found a non-trait type {trait_item:?}");
+                                            Box::new(std::iter::empty())
                                         }
                                     } else {
                                         Box::new(std::iter::empty())
@@ -1049,10 +1045,10 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                         let impl_token =
                                             token.as_impl().expect("not an Impl token");
 
-                                        if let Some(path) = &impl_token.trait_ {
-                                            if let Some(item) = item_index.get(&path.id) {
+                                        if let Some(Type::ResolvedPath { name, id, .. }) = &impl_token.trait_ {
+                                            if let Some(item) = item_index.get(id) {
                                                 Box::new(std::iter::once(
-                                                    origin.make_implemented_trait_token(path, item),
+                                                    origin.make_implemented_trait_token(name, item),
                                                 ))
                                             } else {
                                                 Box::new(std::iter::empty())
@@ -1191,14 +1187,16 @@ mod tests {
 
     #[test]
     fn rustdoc_json_format_version() {
-        let current_crate = load_rustdoc_from_file(Path::new("./test_data/rustdoc_v21.json"));
+        let version = rustdoc_types::FORMAT_VERSION;
+        let current_crate = load_rustdoc_from_file(Path::new(&format!("./test_data/rustdoc_v{version}.json")));
 
         assert_eq!(current_crate.format_version, rustdoc_types::FORMAT_VERSION);
     }
 
     #[test]
     fn pub_use_handling() {
-        let current_crate = load_rustdoc_from_file(Path::new("./test_data/rustdoc_v21.json"));
+        let version = rustdoc_types::FORMAT_VERSION;
+        let current_crate = load_rustdoc_from_file(Path::new(&format!("./test_data/rustdoc_v{version}.json")));
 
         let current = IndexedCrate::new(&current_crate);
 
