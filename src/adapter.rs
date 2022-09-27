@@ -1,8 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use rustdoc_types::{
-    Crate, Enum, Function, Id, Impl, Item, ItemEnum, Method, Span, Struct, Trait, Type,
-    Variant,
+    Crate, Enum, Function, Id, Impl, Item, ItemEnum, Method, Span, Struct, Trait, Type, Variant,
 };
 use trustfall_core::{
     interpreter::{Adapter, DataContext, InterpretedQuery},
@@ -84,11 +83,7 @@ impl Origin {
         }
     }
 
-    fn make_implemented_trait_token<'a>(
-        &self,
-        path: &'a str,
-        trait_def: &'a Item,
-    ) -> Token<'a> {
+    fn make_implemented_trait_token<'a>(&self, path: &'a str, trait_def: &'a Item) -> Token<'a> {
         Token {
             origin: *self,
             kind: TokenKind::ImplementedTrait(path, trait_def),
@@ -855,42 +850,42 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     let current_crate = self.current_crate;
                     let previous_crate = self.previous_crate;
                     Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
-                            .current_token
-                        {
-                            None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
-                                let (_, struct_item) =
-                                    token.as_struct_item().expect("token was not a Struct");
+                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
+                            match &ctx.current_token {
+                                None => Box::new(std::iter::empty()),
+                                Some(token) => {
+                                    let origin = token.origin;
+                                    let (_, struct_item) =
+                                        token.as_struct_item().expect("token was not a Struct");
 
-                                let item_index = match origin {
-                                    Origin::CurrentCrate => &current_crate.inner.index,
-                                    Origin::PreviousCrate => {
-                                        &previous_crate
-                                            .expect("no previous crate provided")
-                                            .inner
-                                            .index
-                                    }
-                                };
-
-                                let field_ids_iter: Box<dyn Iterator<Item = &Id>> =
-                                    match &struct_item.struct_type {
-                                        rustdoc_types::StructType::Unit => {
-                                            Box::new(std::iter::empty())
-                                        }
-                                        rustdoc_types::StructType::Tuple | rustdoc_types::StructType::Plain => {
-                                            Box::new(struct_item.fields.iter())
+                                    let item_index = match origin {
+                                        Origin::CurrentCrate => &current_crate.inner.index,
+                                        Origin::PreviousCrate => {
+                                            &previous_crate
+                                                .expect("no previous crate provided")
+                                                .inner
+                                                .index
                                         }
                                     };
 
-                                Box::new(field_ids_iter.map(move |field_id| {
-                                    origin.make_item_token(
-                                        item_index.get(field_id).expect("missing item"),
-                                    )
-                                }))
-                            }
-                        };
+                                    let field_ids_iter: Box<dyn Iterator<Item = &Id>> =
+                                        match &struct_item.struct_type {
+                                            rustdoc_types::StructType::Unit => {
+                                                Box::new(std::iter::empty())
+                                            }
+                                            rustdoc_types::StructType::Tuple
+                                            | rustdoc_types::StructType::Plain => {
+                                                Box::new(struct_item.fields.iter())
+                                            }
+                                        };
+
+                                    Box::new(field_ids_iter.map(move |field_id| {
+                                        origin.make_item_token(
+                                            item_index.get(field_id).expect("missing item"),
+                                        )
+                                    }))
+                                }
+                            };
 
                         (ctx, neighbors)
                     }))
@@ -1045,7 +1040,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                         let impl_token =
                                             token.as_impl().expect("not an Impl token");
 
-                                        if let Some(Type::ResolvedPath { name, id, .. }) = &impl_token.trait_ {
+                                        if let Some(Type::ResolvedPath { name, id, .. }) =
+                                            &impl_token.trait_
+                                        {
                                             if let Some(item) = item_index.get(id) {
                                                 Box::new(std::iter::once(
                                                     origin.make_implemented_trait_token(name, item),
@@ -1188,7 +1185,8 @@ mod tests {
     #[test]
     fn rustdoc_json_format_version() {
         let version = rustdoc_types::FORMAT_VERSION;
-        let current_crate = load_rustdoc_from_file(Path::new(&format!("./test_data/rustdoc_v{version}.json")));
+        let current_crate =
+            load_rustdoc_from_file(Path::new(&format!("./test_data/rustdoc_v{version}.json")));
 
         assert_eq!(current_crate.format_version, rustdoc_types::FORMAT_VERSION);
     }
@@ -1196,7 +1194,8 @@ mod tests {
     #[test]
     fn pub_use_handling() {
         let version = rustdoc_types::FORMAT_VERSION;
-        let current_crate = load_rustdoc_from_file(Path::new(&format!("./test_data/rustdoc_v{version}.json")));
+        let current_crate =
+            load_rustdoc_from_file(Path::new(&format!("./test_data/rustdoc_v{version}.json")));
 
         let current = IndexedCrate::new(&current_crate);
 
