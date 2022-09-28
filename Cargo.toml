@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Predrag Gruevski <obi1kenobi82@gmail.com>"]
 license = "Apache-2.0 OR MIT"
 description = "Trustfall query adapter for rustdoc JSON data."
-repository = "https://github.com/obi1kenobi/trustfall-rustdoc"
+repository = "https://github.com/obi1kenobi/trustfall-rustdoc-adapter"
 readme = "./README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
