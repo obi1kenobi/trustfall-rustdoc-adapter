@@ -130,7 +130,7 @@ jobs:
       - id: check
         run: |
           set +e
-          ./scripts/is_version_already_uploaded.sh trustfall-rustdoc-acapter
+          ./scripts/is_version_already_uploaded.sh trustfall-rustdoc-adapter
           export EXIT_CODE="$?"
           set -e
           if [[ "$EXIT_CODE" == "7" ]]; then
