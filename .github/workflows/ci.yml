@@ -90,75 +90,70 @@ jobs:
       - name: test
         run: cargo test
 
-  # publish:
-  #   name: Publish to crates.io
-  #   runs-on: ubuntu-latest
-  #   needs:
-  #     - should-publish
-  #     - ci-everything
-  #     - pre-publish-checks
-  #   if: needs.should-publish.outputs.is_new_version == 'yes' && github.ref == 'refs/heads/main'
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v3
-  #       with:
-  #         persist-credentials: true
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    needs:
+      - should-publish
+      - ci-everything
+      - pre-publish-checks
+    if: needs.should-publish.outputs.is_new_version == 'yes' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: true
 
-  #     - name: Tag the version
-  #       run: |
-  #         set -euxo pipefail
-  #         export CURRENT_VERSION="$(./scripts/get_current_version.sh cargo-semver-checks)"
-  #         git tag "v$CURRENT_VERSION"
-  #         git push origin "v$CURRENT_VERSION"
+      - name: Tag the version
+        run: |
+          set -euxo pipefail
+          export CURRENT_VERSION="$(./scripts/get_current_version.sh trustfall-rustdoc-adapter)"
+          git tag "v$CURRENT_VERSION"
+          git push origin "v$CURRENT_VERSION"
 
-  #     - name: Publish
-  #       env:
-  #         CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-  #       run: cargo publish
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish
 
-  # should-publish:
-  #   name: Check if version changed
-  #   runs-on: ubuntu-latest
-  #   outputs:
-  #     is_new_version: ${{ steps.check.outputs.is_new_version }}
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v3
-  #       with:
-  #         persist-credentials: false
+  should-publish:
+    name: Check if version changed
+    runs-on: ubuntu-latest
+    outputs:
+      is_new_version: ${{ steps.check.outputs.is_new_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false
 
-  #     - id: check
-  #       run: |
-  #         set +e
-  #         ./scripts/is_version_already_uploaded.sh cargo-semver-checks
-  #         export EXIT_CODE="$?"
-  #         set -e
-  #         if [[ "$EXIT_CODE" == "7" ]]; then
-  #           echo '::set-output name=is_new_version::no'
-  #         elif [[ "$EXIT_CODE" == "0" ]]; then
-  #           echo '::set-output name=is_new_version::yes'
-  #         else
-  #           # Unexpected outcome, indicates a bug.
-  #           exit "$EXIT_CODE"
-  #         fi
+      - id: check
+        run: |
+          set +e
+          ./scripts/is_version_already_uploaded.sh trustfall-rustdoc-acapter
+          export EXIT_CODE="$?"
+          set -e
+          if [[ "$EXIT_CODE" == "7" ]]; then
+            echo '::set-output name=is_new_version::no'
+          elif [[ "$EXIT_CODE" == "0" ]]; then
+            echo '::set-output name=is_new_version::yes'
+          else
+            # Unexpected outcome, indicates a bug.
+            exit "$EXIT_CODE"
+          fi
 
-  # pre-publish-checks:
-  #   name: Check for semver compliance
-  #   runs-on: ubuntu-latest
-  #   needs:
-  #     - ci-everything
-  #     - should-publish
-  #   if: needs.should-publish.outputs.is_new_version == 'yes'
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v3
-  #       with:
-  #         persist-credentials: false
+  pre-publish-checks:
+    name: Check for semver compliance
+    runs-on: ubuntu-latest
+    needs:
+      - ci-everything
+      - should-publish
+    if: needs.should-publish.outputs.is_new_version == 'yes'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false
 
-  #     - name: Check semver
-  #       uses: obi1kenobi/cargo-semver-checks-action@v1
-  #       with:
-  #         # cargo-semver-checks currently doesn't have a --lib target,
-  #         # so we explicitly ask for the binary target to be checked instead.
-  #         # For library crates, you almost always want the default `--lib` value here.
-  #         crate-target: --bin cargo-semver-checks
+      - name: Check semver
+        uses: obi1kenobi/cargo-semver-checks-action@v1
