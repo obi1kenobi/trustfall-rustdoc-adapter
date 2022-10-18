@@ -129,6 +129,7 @@ type StructField implements Item {
 
   # own edges
   raw_type: RawType
+  field: [StructField!]
 }
 
 """
