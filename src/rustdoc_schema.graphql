@@ -129,7 +129,6 @@ type StructField implements Item {
 
   # own edges
   raw_type: RawType
-  field: [StructField!]
 }
 
 """
@@ -259,6 +258,9 @@ type StructVariant implements Item & Variant {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+  
+  # own edges
+  field: [StructField!]
 }
 
 """
