@@ -939,7 +939,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                                 )
                                             }))
                                         }
-                                        _ => Box::new(std::iter::empty()),
+                                        _ => unreachable!("the StructVariant token unexpectedly was not a struct variant: {token:?}")
                                     }
                                 }
                             };
