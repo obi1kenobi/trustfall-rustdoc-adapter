@@ -899,34 +899,37 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     let current_crate = self.current_crate;
                     let previous_crate = self.previous_crate;
                     Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
-                            .current_token
-                        {
-                            None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
-                                let item = token.as_variant().expect("token was not an Item");
-                                match item {
-                                    Variant::Struct { fields, fields_stripped: _ } => {
-                                        let item_index = match origin {
-                                            Origin::CurrentCrate => &current_crate.inner.index,
-                                            Origin::PreviousCrate => {
-                                                &previous_crate
-                                                    .expect("no previous crate provided")
-                                                    .inner
-                                                    .index
-                                            }
-                                        };
+                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
+                            match &ctx.current_token {
+                                None => Box::new(std::iter::empty()),
+                                Some(token) => {
+                                    let origin = token.origin;
+                                    let item = token.as_variant().expect("token was not a Variant");
+                                    match item {
+                                        Variant::Struct {
+                                            fields,
+                                            fields_stripped: _,
+                                        } => {
+                                            let item_index = match origin {
+                                                Origin::CurrentCrate => &current_crate.inner.index,
+                                                Origin::PreviousCrate => {
+                                                    &previous_crate
+                                                        .expect("no previous crate provided")
+                                                        .inner
+                                                        .index
+                                                }
+                                            };
 
-                                        Box::new(fields.iter()
-                                                 .map(move |field_id| 
-                                                      origin.make_item_token(
-                                                          item_index.get(field_id).expect("missing item"))))
+                                            Box::new(fields.iter().map(move |field_id| {
+                                                origin.make_item_token(
+                                                    item_index.get(field_id).expect("missing item"),
+                                                )
+                                            }))
+                                        }
+                                        _ => Box::new(std::iter::empty()),
                                     }
-                                    _ => Box::new(std::iter::empty())
                                 }
-                            }
-                        };
+                            };
 
                         (ctx, neighbors)
                     }))
