@@ -894,6 +894,47 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
                 }
             },
+            "StructVariant" => match edge_name.as_ref() {
+                "field" => {
+                    let current_crate = self.current_crate;
+                    let previous_crate = self.previous_crate;
+                    Box::new(data_contexts.map(move |ctx| {
+                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
+                            .current_token
+                        {
+                            None => Box::new(std::iter::empty()),
+                            Some(token) => {
+                                let origin = token.origin;
+                                let item = token.as_variant().expect("token was not an Item");
+                                match item {
+                                    Variant::Struct { fields, fields_stripped: _ } => {
+                                        let item_index = match origin {
+                                            Origin::CurrentCrate => &current_crate.inner.index,
+                                            Origin::PreviousCrate => {
+                                                &previous_crate
+                                                    .expect("no previous crate provided")
+                                                    .inner
+                                                    .index
+                                            }
+                                        };
+
+                                        Box::new(fields.iter()
+                                                 .map(move |field_id| 
+                                                      origin.make_item_token(
+                                                          item_index.get(field_id).expect("missing item"))))
+                                    }
+                                    _ => Box::new(std::iter::empty())
+                                }
+                            }
+                        };
+
+                        (ctx, neighbors)
+                    }))
+                }
+                _ => {
+                    unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
+                }
+            },
             "Enum" => match edge_name.as_ref() {
                 "variant" => {
                     let current_crate = self.current_crate;
