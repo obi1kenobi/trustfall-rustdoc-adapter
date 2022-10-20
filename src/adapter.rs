@@ -906,10 +906,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                     let origin = token.origin;
                                     let item = token.as_variant().expect("token was not a Variant");
                                     match item {
-                                        Variant::Struct {
-                                            fields,
-                                            fields_stripped: _,
-                                        } => {
+                                        Variant::Struct(fields) => {
                                             let item_index = match origin {
                                                 Origin::CurrentCrate => &current_crate.inner.index,
                                                 Origin::PreviousCrate => {
