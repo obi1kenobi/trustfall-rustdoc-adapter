@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - rustdoc-v*
 
 env:
   RUST_BACKTRACE: 1
@@ -97,7 +98,7 @@ jobs:
       - should-publish
       - ci-everything
       - pre-publish-checks
-    if: needs.should-publish.outputs.is_new_version == 'yes' && github.ref == 'refs/heads/main'
+    if: needs.should-publish.outputs.is_new_version == 'yes' && startsWith(github.ref, 'refs/heads/rustdoc-v')
     steps:
       - name: Checkout
         uses: actions/checkout@v3
