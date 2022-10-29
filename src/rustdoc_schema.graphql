@@ -499,12 +499,17 @@ type Method implements Item & FunctionLike {
 A specific attribute applied to an Item.
 """
 type Attribute {
-  """
-  The textual representation of the attribute.
+  is_inner: Boolean!
+  content: AttributeValue!
+}
 
-  For example: "#[repr(C)]"
-  """
-  value: String!
+type AttributeValue {
+  base: String!  # the path, e.g. "cfg_attr" or "must_use"
+  as_string: String!  # the entire value represented as a string
+  assigned_expression: String  # the string form of the assigned expression, or null if there wasn't one
+
+  # edges
+  argument: [AttributeValue!]  # arguments to the simple path, if any
 }
 
 """
