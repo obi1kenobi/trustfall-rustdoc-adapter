@@ -129,7 +129,7 @@ pub enum TokenKind<'a> {
     ImplementedTrait(&'a Path, &'a Item),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Attribute {
     is_inner: bool,
     content: AttributeValue,
@@ -159,7 +159,7 @@ impl<'a> TryFrom<&'a String> for Attribute {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AttributeValue {
     as_string: String,
     base: String,
@@ -194,7 +194,6 @@ impl<'a> TryFrom<&'a String> for AttributeValue {
             let mut i = 0;
             let mut depth = 0;
             let ref arg_str = captures["arguments"];
-            println!("{}", arg_str);
             let mut arguments: Vec<AttributeValue> = Vec::new();
             let mut only_white = true;
             for (j, c) in arg_str.chars().enumerate() {
@@ -1372,6 +1371,8 @@ mod tests {
     use trustfall_core::{frontend::parse, interpreter::execution::interpret_ir, ir::FieldValue};
 
     use crate::indexed_crate::IndexedCrate;
+    use crate::adapter::Attribute;
+    use crate::adapter::AttributeValue;
 
     use super::RustdocAdapter;
 
@@ -1416,55 +1417,82 @@ mod tests {
     }
 
     #[test]
-    fn playground_test() {
-        let current_crate = load_rustdoc_from_file(Path::new("../cargo-semver-check/localdata/test_data/struct_repr_c_removed.json"));
+    fn attribute_from_string_simple_inner() {
+        let attribute = Attribute::try_from(&"#![no_std]".to_string()).unwrap();
+        assert_eq!(attribute, Attribute {
+            is_inner: true,
+            content: AttributeValue {
+                as_string: "no_std".to_string(),
+                base: "no_std".to_string(),
+                assigned_expression: None,
+                arguments: None
+            }
+        });
+    }
 
-        let current = IndexedCrate::new(&current_crate);
-        let query = r#"
-        {
-            Crate {
-                item {
-                    ... on Enum {
-                        visibility_limit @filter(op: "=", value: ["$public"])
-                        name @output
-                        attribute {
-                            is_inner @output
-                            content {
-                                base @output
-                                assigned_expression @output
-                                argument {
-                                    as_string @output
-                                }
+    #[test]
+    fn attribute_from_string_complex_outer() {
+        let attribute = Attribute::try_from(&"#[cfg_attr(feature = \"serde\", derive(Serialize, Deserialize))]".to_string()).unwrap();
+        assert_eq!(attribute, Attribute {
+            is_inner: false,
+            content: AttributeValue {
+                as_string: "cfg_attr(feature = \"serde\", derive(Serialize, Deserialize))".to_string(),
+                base: "cfg_attr".to_string(),
+                assigned_expression: None,
+                arguments: Some(vec![
+                    AttributeValue {
+                        as_string: "feature = \"serde\"".to_string(),
+                        base: "feature".to_string(),
+                        assigned_expression: Some("\"serde\"".to_string()),
+                        arguments: None
+                    },
+                    AttributeValue {
+                        as_string: " derive(Serialize, Deserialize)".to_string(),
+                        base: "derive".to_string(),
+                        assigned_expression: None,
+                        arguments: Some(vec![
+                            AttributeValue {
+                                as_string: "Serialize".to_string(),
+                                base: "Serialize".to_string(),
+                                assigned_expression: None,
+                                arguments: None
+                            },
+                            AttributeValue {
+                                as_string: " Deserialize".to_string(),
+                                base: "Deserialize".to_string(),
+                                assigned_expression: None,
+                                arguments: None
                             }
-                        }
+                        ]) 
                     }
-                }
+                ])
             }
-        }"#;
-        let mut arguments = BTreeMap::new();
-        arguments.insert("public", "public");
+        });
+    }
 
-        let schema = RustdocAdapter::schema();
-        let adapter = Rc::new(RefCell::new(RustdocAdapter::new(&current, None)));
-
-        let parsed_query = parse(&schema, query).unwrap();
-        let args = Arc::new(
-            arguments
-                .iter()
-                .map(|(k, v)| (Arc::from(k.to_string()), (*v).into()))
-                .collect(),
-        );
-        let results_iter = interpret_ir(adapter.clone(), parsed_query, args).unwrap();
-
-        let actual_results: Vec<BTreeMap<_, _>> = results_iter
-            .map(|res| res.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
-            .collect();
-
-        for row in actual_results.iter() {
-            for (k, v) in row {
-                println!("{} {:?}", k, v);
-            }
-            println!("");
+    #[test]
+    fn attribute_value_from_string_custom_brackets() {
+        for as_string in ["macro{arg1,arg2}", "macro[arg1,arg2]"] {
+            let attr_val = AttributeValue::try_from(&as_string.to_string()).unwrap();
+            assert_eq!(attr_val, AttributeValue {
+                as_string: as_string.to_string(),
+                base: "macro".to_string(),
+                assigned_expression: None,
+                arguments: Some(vec![
+                    AttributeValue {
+                        as_string: "arg1".to_string(),
+                        base: "arg1".to_string(),
+                        assigned_expression: None,
+                        arguments: None
+                    },
+                    AttributeValue {
+                        as_string: "arg2".to_string(),
+                        base: "arg2".to_string(),
+                        assigned_expression: None,
+                        arguments: None                     
+                    }
+                ])
+            });
         }
     }
 
