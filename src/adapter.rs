@@ -12,6 +12,10 @@ use trustfall_core::{
 
 use crate::indexed_crate::IndexedCrate;
 
+use anyhow::bail;
+use regex::Regex;
+use lazy_static::lazy_static;
+
 #[non_exhaustive]
 pub struct RustdocAdapter<'a> {
     current_crate: &'a IndexedCrate<'a>,
@@ -77,10 +81,17 @@ impl Origin {
         }
     }
 
-    fn make_attribute_token<'a>(&self, attr: &'a str) -> Token<'a> {
+    fn make_attribute_token<'a>(&self, attr: Attribute) -> Token<'a> {
         Token {
             origin: *self,
             kind: TokenKind::Attribute(attr),
+        }
+    }
+
+    fn make_attribute_value_token<'a>(&self, attr_value: AttributeValue) -> Token<'a> {
+        Token {
+            origin: *self,
+            kind: TokenKind::AttributeValue(attr_value),
         }
     }
 
@@ -113,8 +124,106 @@ pub enum TokenKind<'a> {
     Path(&'a [String]),
     ImportablePath(Vec<&'a str>),
     RawType(&'a Type),
-    Attribute(&'a str),
+    Attribute(Attribute),
+    AttributeValue(AttributeValue),
     ImplementedTrait(&'a Path, &'a Item),
+}
+
+#[derive(Debug, Clone)]
+pub struct Attribute {
+    is_inner: bool,
+    content: AttributeValue,
+}
+
+impl<'a> TryFrom<&'a String> for Attribute {    
+    type Error = anyhow::Error;
+
+    fn try_from(as_string: &'a String) -> anyhow::Result<Self> {
+        lazy_static! {
+            static ref INNER_RE: Regex = Regex::new(r"#!\[(.*)\]").unwrap();
+            static ref OUTER_RE: Regex = Regex::new(r"#\[(.*)\]").unwrap();
+        }
+        match INNER_RE.captures(as_string) {
+            Some(captures) => Ok(Attribute {
+                is_inner: true,
+                content: AttributeValue::try_from(&captures[1].to_string())?,
+            }),
+            None => match OUTER_RE.captures(as_string) {
+                Some(captures) => Ok(Attribute {
+                    is_inner: false,
+                    content: AttributeValue::try_from(&captures[1].to_string())?,
+                }),
+                None => bail!("Attribute has to be in one of the following forms: `#[...]` or `#![...]`, but found: `{}`", as_string)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AttributeValue {
+    as_string: String,
+    base: String,
+    assigned_expression: Option<String>,
+    arguments: Option<Vec<AttributeValue>>,
+}
+
+impl<'a> TryFrom<&'a String> for AttributeValue {
+    type Error = anyhow::Error;
+
+    // TODO: Are we sure it recognises all possible attributes? Maybe it's better
+    // to ignore errors instead of panicing?
+    fn try_from(as_string: &'a String) -> anyhow::Result<Self> {
+        const PATH_RE_STR: &str = r"[[:blank:]]*(?P<simple_path>[[:word:]:]+)[[:blank:]]*";
+        lazy_static! {
+            static ref PATH_RE: Regex = Regex::new(format!(r"^{}$", PATH_RE_STR).as_str()).unwrap();
+            static ref ASSIGNMENT_RE: Regex = Regex::new(format!(r"^{}=[[:blank:]]*(?P<expression>.*)$", PATH_RE_STR).as_str()).unwrap();
+            static ref ARGUMENTS_RE: Regex = Regex::new(format!(r"^{}[\(\[\{{](?P<arguments>.*)[\)\]\}}][[:blank:]]*$", PATH_RE_STR).as_str()).unwrap();
+        }
+
+        PATH_RE.captures(as_string).map(|captures| AttributeValue {
+            as_string: as_string.clone(),
+            base: captures["simple_path"].to_string(),
+            assigned_expression: None,
+            arguments: None,
+        }).or_else(|| ASSIGNMENT_RE.captures(as_string).map(|captures| AttributeValue {
+            as_string: as_string.clone(),
+            base: captures["simple_path"].to_string(),
+            assigned_expression: Some(captures["expression"].to_string()),
+            arguments: None,
+        })).or_else(|| ARGUMENTS_RE.captures(as_string).map(|captures| {
+            let mut i = 0;
+            let mut depth = 0;
+            let ref arg_str = captures["arguments"];
+            println!("{}", arg_str);
+            let mut arguments: Vec<AttributeValue> = Vec::new();
+            let mut only_white = true;
+            for (j, c) in arg_str.chars().enumerate() {
+                if c != ' ' && c != '\t' {
+                    only_white = false;
+                }
+
+                if c == '(' || c == '[' || c == '{' {
+                    depth += 1;
+                } else if c == ')' || c == ']' || c == '}' {
+                    depth -= 1;
+                } else if c == ',' && depth == 0 {
+                    arguments.push(AttributeValue::try_from(&arg_str[i..j].to_string()).unwrap());
+                    i = j + 1;
+                    only_white = true;
+                }
+            }
+            if i < arg_str.len() && !only_white {
+                arguments.push(AttributeValue::try_from(&arg_str[i..].to_string()).unwrap());
+            }
+
+            AttributeValue {
+                as_string: as_string.clone(),
+                base: captures["simple_path"].to_string(),
+                assigned_expression: None,
+                arguments: Some(arguments),
+            }
+        })).ok_or(anyhow::anyhow!("Unrecognized expression inside the attribute: `{}`", as_string))
+    }
 }
 
 #[allow(dead_code)]
@@ -150,6 +259,7 @@ impl<'a> Token<'a> {
             TokenKind::Crate(..) => "Crate",
             TokenKind::CrateDiff(..) => "CrateDiff",
             TokenKind::Attribute(..) => "Attribute",
+            TokenKind::AttributeValue(..) => "AttributeValue",
             TokenKind::ImplementedTrait(..) => "ImplementedTrait",
             TokenKind::RawType(ty) => match ty {
                 rustdoc_types::Type::ResolvedPath { .. } => "ResolvedPathType",
@@ -261,9 +371,16 @@ impl<'a> Token<'a> {
         })
     }
 
-    fn as_attribute(&self) -> Option<&'a str> {
+    fn as_attribute(&self) -> Option<&'_ Attribute> {
         match &self.kind {
-            TokenKind::Attribute(attr) => Some(*attr),
+            TokenKind::Attribute(attr) => Some(attr),
+            _ => None,
+        }
+    }
+
+    fn as_attribute_value(&self) -> Option<&'_ AttributeValue> {
+        match &self.kind {
+            TokenKind::AttributeValue(attr_value) => Some(attr_value),
             _ => None,
         }
     }
@@ -430,9 +547,19 @@ fn get_impl_property(token: &Token, field_name: &str) -> FieldValue {
 }
 
 fn get_attribute_property(token: &Token, field_name: &str) -> FieldValue {
-    let attribute_token = token.as_attribute().expect("token was not an Attribute");
+    let attribute = token.as_attribute().expect("token was not an Attribute");
     match field_name {
-        "value" => attribute_token.into(),
+        "is_inner" => attribute.is_inner.clone().into(),
+        _ => unreachable!("Attribute property {field_name}"),
+    }
+}
+
+fn get_attribute_value_property(token: &Token, field_name: &str) -> FieldValue {
+    let attr_value = token.as_attribute_value().expect("token was not an AttributeValue");
+    match field_name {
+        "as_string" => attr_value.as_string.clone().into(),
+        "base" => attr_value.base.clone().into(),
+        "assigned_expression" => attr_value.assigned_expression.clone().into(),
         _ => unreachable!("Attribute property {field_name}"),
     }
 }
@@ -572,6 +699,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 }
                 "Attribute" => Box::new(data_contexts.map(move |ctx| {
                     property_mapper(ctx, field_name.as_ref(), get_attribute_property)
+                })),
+                "AttributeValue" => Box::new(data_contexts.map(move |ctx| {
+                    property_mapper(ctx, field_name.as_ref(), get_attribute_value_property)
                 })),
                 "ImplementedTrait" => Box::new(data_contexts.map(move |ctx| {
                     property_mapper(ctx, field_name.as_ref(), get_implemented_trait_property)
@@ -793,7 +923,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                     Box::new(
                                         item.attrs
                                             .iter()
-                                            .map(move |attr| origin.make_attribute_token(attr)),
+                                            .map(move |attr| origin.make_attribute_token(Attribute::try_from(attr).unwrap())),
                                     )
                                 }
                             };
@@ -1138,6 +1268,49 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
                 }
             },
+            "Attribute" => match edge_name.as_ref() {
+                "content" => Box::new(data_contexts.map(move |ctx| {
+                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
+                        match &ctx.current_token {
+                            None => Box::new(std::iter::empty()),
+                            Some(token) => {
+                                let origin = token.origin;
+
+                                let attribute = token.as_attribute().expect("token was not an Attribute");
+                                Box::new(std::iter::once(origin.make_attribute_value_token(attribute.content.clone())))
+                            }
+                        };
+
+                    (ctx, neighbors)
+                })),
+                _ => {
+                    unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
+                }
+            },
+            "AttributeValue" => match edge_name.as_ref() {
+                "argument" => Box::new(data_contexts.map(move |ctx| {
+                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
+                        match &ctx.current_token {
+                            None => Box::new(std::iter::empty()),
+                            Some(token) => {
+                                let origin = token.origin;
+
+                                let attr_value = token.as_attribute_value().expect("token was not an AttributeValue");
+                                if let Some(arguments) = attr_value.arguments.clone() {
+                                    Box::new(arguments.into_iter().map(move |argument| {
+                                        origin.make_attribute_value_token(argument)
+                                    }))
+                                } else {
+                                    Box::new(std::iter::empty())
+                                }
+                        }};
+
+                    (ctx, neighbors)
+                })),
+                _ => {
+                    unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
+                }
+            },
             _ => unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}"),
         }
     }
@@ -1235,9 +1408,64 @@ mod tests {
 
     #[test]
     fn rustdoc_json_format_version() {
-        let current_crate = load_rustdoc_from_file(Path::new("./test_data/rustdoc_v21.json"));
+        let version = rustdoc_types::FORMAT_VERSION;
+        let current_crate =
+            load_rustdoc_from_file(Path::new(&format!("./test_data/rustdoc_v{version}.json")));
 
         assert_eq!(current_crate.format_version, rustdoc_types::FORMAT_VERSION);
+    }
+
+    #[test]
+    fn playground_test() {
+        let current_crate = load_rustdoc_from_file(Path::new("../cargo-semver-check/localdata/test_data/struct_repr_c_removed.json"));
+
+        let current = IndexedCrate::new(&current_crate);
+        let query = r#"
+        {
+            Crate {
+                item {
+                    ... on Enum {
+                        visibility_limit @filter(op: "=", value: ["$public"])
+                        name @output
+                        attribute {
+                            is_inner @output
+                            content {
+                                base @output
+                                assigned_expression @output
+                                argument {
+                                    as_string @output
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }"#;
+        let mut arguments = BTreeMap::new();
+        arguments.insert("public", "public");
+
+        let schema = RustdocAdapter::schema();
+        let adapter = Rc::new(RefCell::new(RustdocAdapter::new(&current, None)));
+
+        let parsed_query = parse(&schema, query).unwrap();
+        let args = Arc::new(
+            arguments
+                .iter()
+                .map(|(k, v)| (Arc::from(k.to_string()), (*v).into()))
+                .collect(),
+        );
+        let results_iter = interpret_ir(adapter.clone(), parsed_query, args).unwrap();
+
+        let actual_results: Vec<BTreeMap<_, _>> = results_iter
+            .map(|res| res.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+            .collect();
+
+        for row in actual_results.iter() {
+            for (k, v) in row {
+                println!("{} {:?}", k, v);
+            }
+            println!("");
+        }
     }
 
     #[test]
