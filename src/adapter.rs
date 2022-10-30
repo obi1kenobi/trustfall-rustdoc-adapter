@@ -13,8 +13,8 @@ use trustfall_core::{
 use crate::indexed_crate::IndexedCrate;
 
 use anyhow::bail;
-use regex::Regex;
 use lazy_static::lazy_static;
+use regex::Regex;
 
 #[non_exhaustive]
 pub struct RustdocAdapter<'a> {
@@ -135,7 +135,7 @@ pub struct Attribute {
     content: AttributeValue,
 }
 
-impl<'a> TryFrom<&'a str> for Attribute {    
+impl<'a> TryFrom<&'a str> for Attribute {
     type Error = anyhow::Error;
 
     fn try_from(as_string: &'a str) -> anyhow::Result<Self> {
@@ -176,52 +176,75 @@ impl<'a> TryFrom<&'a str> for AttributeValue {
         const PATH_RE_STR: &str = r"[[:blank:]]*(?P<simple_path>[[:word:]:]+)[[:blank:]]*";
         lazy_static! {
             static ref PATH_RE: Regex = Regex::new(format!(r"^{}$", PATH_RE_STR).as_str()).unwrap();
-            static ref ASSIGNMENT_RE: Regex = Regex::new(format!(r"^{}=[[:blank:]]*(?P<expression>.*)$", PATH_RE_STR).as_str()).unwrap();
-            static ref ARGUMENTS_RE: Regex = Regex::new(format!(r"^{}[\(\[\{{](?P<arguments>.*)[\)\]\}}][[:blank:]]*$", PATH_RE_STR).as_str()).unwrap();
+            static ref ASSIGNMENT_RE: Regex =
+                Regex::new(format!(r"^{}=[[:blank:]]*(?P<expression>.*)$", PATH_RE_STR).as_str())
+                    .unwrap();
+            static ref ARGUMENTS_RE: Regex = Regex::new(
+                format!(
+                    r"^{}[\(\[\{{](?P<arguments>.*)[\)\]\}}][[:blank:]]*$",
+                    PATH_RE_STR
+                )
+                .as_str()
+            )
+            .unwrap();
         }
 
-        PATH_RE.captures(as_string).map(|captures| AttributeValue {
-            as_string: as_string.to_string(),
-            base: captures["simple_path"].to_string(),
-            assigned_expression: None,
-            arguments: None,
-        }).or_else(|| ASSIGNMENT_RE.captures(as_string).map(|captures| AttributeValue {
-            as_string: as_string.to_string(),
-            base: captures["simple_path"].to_string(),
-            assigned_expression: Some(captures["expression"].to_string()),
-            arguments: None,
-        })).or_else(|| ARGUMENTS_RE.captures(as_string).map(|captures| {
-            let mut i = 0;
-            let mut depth = 0;
-            let ref arg_str = captures["arguments"];
-            let mut arguments: Vec<AttributeValue> = Vec::new();
-            let mut only_white = true;
-            for (j, c) in arg_str.chars().enumerate() {
-                if c != ' ' && c != '\t' {
-                    only_white = false;
-                }
-
-                if c == '(' || c == '[' || c == '{' {
-                    depth += 1;
-                } else if c == ')' || c == ']' || c == '}' {
-                    depth -= 1;
-                } else if c == ',' && depth == 0 {
-                    arguments.push(AttributeValue::try_from(&arg_str[i..j]).unwrap());
-                    i = j + 1;
-                    only_white = true;
-                }
-            }
-            if i < arg_str.len() && !only_white {
-                arguments.push(AttributeValue::try_from(&arg_str[i..]).unwrap());
-            }
-
-            AttributeValue {
+        PATH_RE
+            .captures(as_string)
+            .map(|captures| AttributeValue {
                 as_string: as_string.to_string(),
                 base: captures["simple_path"].to_string(),
                 assigned_expression: None,
-                arguments: Some(arguments),
-            }
-        })).ok_or(anyhow::anyhow!("Unrecognized expression inside the attribute: `{}`", as_string))
+                arguments: None,
+            })
+            .or_else(|| {
+                ASSIGNMENT_RE
+                    .captures(as_string)
+                    .map(|captures| AttributeValue {
+                        as_string: as_string.to_string(),
+                        base: captures["simple_path"].to_string(),
+                        assigned_expression: Some(captures["expression"].to_string()),
+                        arguments: None,
+                    })
+            })
+            .or_else(|| {
+                ARGUMENTS_RE.captures(as_string).map(|captures| {
+                    let mut i = 0;
+                    let mut depth = 0;
+                    let ref arg_str = captures["arguments"];
+                    let mut arguments: Vec<AttributeValue> = Vec::new();
+                    let mut only_white = true;
+                    for (j, c) in arg_str.chars().enumerate() {
+                        if c != ' ' && c != '\t' {
+                            only_white = false;
+                        }
+
+                        if c == '(' || c == '[' || c == '{' {
+                            depth += 1;
+                        } else if c == ')' || c == ']' || c == '}' {
+                            depth -= 1;
+                        } else if c == ',' && depth == 0 {
+                            arguments.push(AttributeValue::try_from(&arg_str[i..j]).unwrap());
+                            i = j + 1;
+                            only_white = true;
+                        }
+                    }
+                    if i < arg_str.len() && !only_white {
+                        arguments.push(AttributeValue::try_from(&arg_str[i..]).unwrap());
+                    }
+
+                    AttributeValue {
+                        as_string: as_string.to_string(),
+                        base: captures["simple_path"].to_string(),
+                        assigned_expression: None,
+                        arguments: Some(arguments),
+                    }
+                })
+            })
+            .ok_or(anyhow::anyhow!(
+                "Unrecognized expression inside the attribute: `{}`",
+                as_string
+            ))
     }
 }
 
@@ -554,7 +577,9 @@ fn get_attribute_property(token: &Token, field_name: &str) -> FieldValue {
 }
 
 fn get_attribute_value_property(token: &Token, field_name: &str) -> FieldValue {
-    let attr_value = token.as_attribute_value().expect("token was not an AttributeValue");
+    let attr_value = token
+        .as_attribute_value()
+        .expect("token was not an AttributeValue");
     match field_name {
         "as_string" => attr_value.as_string.clone().into(),
         "base" => attr_value.base.clone().into(),
@@ -919,11 +944,11 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                 Some(token) => {
                                     let origin = token.origin;
                                     let item = token.as_item().expect("token was not an Item");
-                                    Box::new(
-                                        item.attrs
-                                            .iter()
-                                            .map(move |attr| origin.make_attribute_token(Attribute::try_from(attr.as_str()).unwrap())),
-                                    )
+                                    Box::new(item.attrs.iter().map(move |attr| {
+                                        origin.make_attribute_token(
+                                            Attribute::try_from(attr.as_str()).unwrap(),
+                                        )
+                                    }))
                                 }
                             };
 
@@ -1275,8 +1300,11 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                             Some(token) => {
                                 let origin = token.origin;
 
-                                let attribute = token.as_attribute().expect("token was not an Attribute");
-                                Box::new(std::iter::once(origin.make_attribute_value_token(attribute.content.clone())))
+                                let attribute =
+                                    token.as_attribute().expect("token was not an Attribute");
+                                Box::new(std::iter::once(
+                                    origin.make_attribute_value_token(attribute.content.clone()),
+                                ))
                             }
                         };
 
@@ -1294,7 +1322,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                             Some(token) => {
                                 let origin = token.origin;
 
-                                let attr_value = token.as_attribute_value().expect("token was not an AttributeValue");
+                                let attr_value = token
+                                    .as_attribute_value()
+                                    .expect("token was not an AttributeValue");
                                 if let Some(arguments) = attr_value.arguments.clone() {
                                     Box::new(arguments.into_iter().map(move |argument| {
                                         origin.make_attribute_value_token(argument)
@@ -1302,7 +1332,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                 } else {
                                     Box::new(std::iter::empty())
                                 }
-                        }};
+                            }
+                        };
 
                     (ctx, neighbors)
                 })),
@@ -1370,9 +1401,9 @@ mod tests {
     use serde::Deserialize;
     use trustfall_core::{frontend::parse, interpreter::execution::interpret_ir, ir::FieldValue};
 
-    use crate::indexed_crate::IndexedCrate;
     use crate::adapter::Attribute;
     use crate::adapter::AttributeValue;
+    use crate::indexed_crate::IndexedCrate;
 
     use super::RustdocAdapter;
 
@@ -1419,80 +1450,92 @@ mod tests {
     #[test]
     fn attribute_from_string_simple_inner() {
         let attribute = Attribute::try_from("#![no_std]").unwrap();
-        assert_eq!(attribute, Attribute {
-            is_inner: true,
-            content: AttributeValue {
-                as_string: "no_std".to_string(),
-                base: "no_std".to_string(),
-                assigned_expression: None,
-                arguments: None
+        assert_eq!(
+            attribute,
+            Attribute {
+                is_inner: true,
+                content: AttributeValue {
+                    as_string: "no_std".to_string(),
+                    base: "no_std".to_string(),
+                    assigned_expression: None,
+                    arguments: None
+                }
             }
-        });
+        );
     }
 
     #[test]
     fn attribute_from_string_complex_outer() {
-        let attribute = Attribute::try_from("#[cfg_attr(feature = \"serde\", derive(Serialize, Deserialize))]").unwrap();
-        assert_eq!(attribute, Attribute {
-            is_inner: false,
-            content: AttributeValue {
-                as_string: "cfg_attr(feature = \"serde\", derive(Serialize, Deserialize))".to_string(),
-                base: "cfg_attr".to_string(),
-                assigned_expression: None,
-                arguments: Some(vec![
-                    AttributeValue {
-                        as_string: "feature = \"serde\"".to_string(),
-                        base: "feature".to_string(),
-                        assigned_expression: Some("\"serde\"".to_string()),
-                        arguments: None
-                    },
-                    AttributeValue {
-                        as_string: " derive(Serialize, Deserialize)".to_string(),
-                        base: "derive".to_string(),
-                        assigned_expression: None,
-                        arguments: Some(vec![
-                            AttributeValue {
-                                as_string: "Serialize".to_string(),
-                                base: "Serialize".to_string(),
-                                assigned_expression: None,
-                                arguments: None
-                            },
-                            AttributeValue {
-                                as_string: " Deserialize".to_string(),
-                                base: "Deserialize".to_string(),
-                                assigned_expression: None,
-                                arguments: None
-                            }
-                        ]) 
-                    }
-                ])
+        let attribute =
+            Attribute::try_from("#[cfg_attr(feature = \"serde\", derive(Serialize, Deserialize))]")
+                .unwrap();
+        assert_eq!(
+            attribute,
+            Attribute {
+                is_inner: false,
+                content: AttributeValue {
+                    as_string: "cfg_attr(feature = \"serde\", derive(Serialize, Deserialize))"
+                        .to_string(),
+                    base: "cfg_attr".to_string(),
+                    assigned_expression: None,
+                    arguments: Some(vec![
+                        AttributeValue {
+                            as_string: "feature = \"serde\"".to_string(),
+                            base: "feature".to_string(),
+                            assigned_expression: Some("\"serde\"".to_string()),
+                            arguments: None
+                        },
+                        AttributeValue {
+                            as_string: " derive(Serialize, Deserialize)".to_string(),
+                            base: "derive".to_string(),
+                            assigned_expression: None,
+                            arguments: Some(vec![
+                                AttributeValue {
+                                    as_string: "Serialize".to_string(),
+                                    base: "Serialize".to_string(),
+                                    assigned_expression: None,
+                                    arguments: None
+                                },
+                                AttributeValue {
+                                    as_string: " Deserialize".to_string(),
+                                    base: "Deserialize".to_string(),
+                                    assigned_expression: None,
+                                    arguments: None
+                                }
+                            ])
+                        }
+                    ])
+                }
             }
-        });
+        );
     }
 
     #[test]
     fn attribute_value_from_string_custom_brackets() {
         for as_string in ["macro{arg1,arg2}", "macro[arg1,arg2]"] {
             let attr_val = AttributeValue::try_from(as_string).unwrap();
-            assert_eq!(attr_val, AttributeValue {
-                as_string: as_string.to_string(),
-                base: "macro".to_string(),
-                assigned_expression: None,
-                arguments: Some(vec![
-                    AttributeValue {
-                        as_string: "arg1".to_string(),
-                        base: "arg1".to_string(),
-                        assigned_expression: None,
-                        arguments: None
-                    },
-                    AttributeValue {
-                        as_string: "arg2".to_string(),
-                        base: "arg2".to_string(),
-                        assigned_expression: None,
-                        arguments: None                     
-                    }
-                ])
-            });
+            assert_eq!(
+                attr_val,
+                AttributeValue {
+                    as_string: as_string.to_string(),
+                    base: "macro".to_string(),
+                    assigned_expression: None,
+                    arguments: Some(vec![
+                        AttributeValue {
+                            as_string: "arg1".to_string(),
+                            base: "arg1".to_string(),
+                            assigned_expression: None,
+                            arguments: None
+                        },
+                        AttributeValue {
+                            as_string: "arg2".to_string(),
+                            base: "arg2".to_string(),
+                            assigned_expression: None,
+                            arguments: None
+                        }
+                    ])
+                }
+            );
         }
     }
 
