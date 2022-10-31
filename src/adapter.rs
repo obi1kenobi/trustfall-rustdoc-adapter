@@ -94,6 +94,13 @@ impl Origin {
             kind: TokenKind::ImplementedTrait(path, trait_def),
         }
     }
+
+    fn make_function_parameter_token<'a>(&self, name: &'a str) -> Token<'a> {
+        Token {
+            origin: *self,
+            kind: TokenKind::FunctionParameter(name),
+        }
+    }
 }
 
 #[non_exhaustive]
@@ -115,6 +122,7 @@ pub enum TokenKind<'a> {
     RawType(&'a Type),
     Attribute(&'a str),
     ImplementedTrait(&'a Path, &'a Item),
+    FunctionParameter(&'a str)
 }
 
 #[allow(dead_code)]
@@ -156,6 +164,7 @@ impl<'a> Token<'a> {
                 rustdoc_types::Type::Primitive(..) => "PrimitiveType",
                 _ => "OtherType",
             },
+            TokenKind::FunctionParameter(..) => "FunctionParameter",
         }
     }
 
@@ -986,6 +995,27 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 _ => {
                     unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
                 }
+            },
+            "Function" | "Method" if matches!(edge_name.as_ref(), "parameters") => {
+                let _current_crate = self.current_crate;
+                let _previous_crate = self.previous_crate;
+                Box::new(data_contexts.map(move |ctx| {
+                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
+                        match &ctx.current_token {
+                            None => Box::new(std::iter::empty()),
+                            Some(token) => {
+                                let origin = token.origin;
+                                let decl = &token.as_function().expect("token was not a Function").decl; // TODO: do it also for Methods
+                                Box::new(decl.inputs.iter().map(move |(name, _type_)| {
+                                    origin.make_function_parameter_token(
+                                        name
+                                    )
+                                }))
+                            }
+                        };
+
+                    (ctx, neighbors)
+                }))
             },
             "StructField" => match edge_name.as_ref() {
                 "raw_type" => Box::new(data_contexts.map(move |ctx| {

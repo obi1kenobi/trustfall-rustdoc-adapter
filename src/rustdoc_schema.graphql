@@ -441,6 +441,7 @@ interface FunctionLike {
   const: Boolean!
   unsafe: Boolean!
   async: Boolean!
+  parameters: [FunctionParameter!]
 }
 
 """
@@ -469,6 +470,8 @@ type Function implements Item & FunctionLike & Importable {
   const: Boolean!
   unsafe: Boolean!
   async: Boolean!
+
+  # edges from FunctionLike
   parameters: [FunctionParameter!]
 
   # edges from Item
@@ -498,6 +501,8 @@ type Method implements Item & FunctionLike {
   const: Boolean!
   unsafe: Boolean!
   async: Boolean!
+
+  # edges from FunctionLike
   parameters: [FunctionParameter!]
 
   # edge from Item
