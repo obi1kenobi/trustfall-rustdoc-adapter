@@ -574,6 +574,11 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         property_mapper(ctx, field_name.as_ref(), get_function_like_property)
                     }))
                 }
+                "FunctionParameter" => {
+                    Box::new(data_contexts.map(move |ctx| {
+                        property_mapper(ctx, field_name.as_ref(), get_path_property)
+                    }))
+                }
                 "Impl" => {
                     Box::new(data_contexts.map(move |ctx| {
                         property_mapper(ctx, field_name.as_ref(), get_impl_property)
