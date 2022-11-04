@@ -135,6 +135,16 @@ pub struct Attribute {
     content: AttributeValue,
 }
 
+impl Attribute {
+    fn as_string(&self) -> String {
+        format!(
+            "#{}[{}]",
+            if self.is_inner { "!" } else { "" },
+            self.content.as_string
+        )
+    }
+}
+
 impl<'a> TryFrom<&'a str> for Attribute {
     type Error = anyhow::Error;
 
@@ -571,6 +581,7 @@ fn get_impl_property(token: &Token, field_name: &str) -> FieldValue {
 fn get_attribute_property(token: &Token, field_name: &str) -> FieldValue {
     let attribute = token.as_attribute().expect("token was not an Attribute");
     match field_name {
+        "as_string" => attribute.as_string().into(),
         "is_inner" => attribute.is_inner.clone().into(),
         _ => unreachable!("Attribute property {field_name}"),
     }
@@ -1462,6 +1473,7 @@ mod tests {
                 }
             }
         );
+        assert_eq!(attribute.as_string(), "#![no_std]");
     }
 
     #[test]

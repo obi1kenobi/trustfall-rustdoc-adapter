@@ -499,6 +499,7 @@ type Method implements Item & FunctionLike {
 A specific attribute applied to an Item.
 """
 type Attribute {
+  as_string: String!
   is_inner: Boolean!
   content: AttributeValue!
 }
