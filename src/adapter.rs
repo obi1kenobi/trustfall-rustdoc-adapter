@@ -256,6 +256,13 @@ impl<'a> Token<'a> {
         })
     }
 
+    fn as_function_parameter(&self) -> Option<&'a str> {
+        match &self.kind {
+            TokenKind::FunctionParameter(name) => Some(name),
+            _ => None,
+        }
+    }
+
     fn as_method(&self) -> Option<&'a Method> {
         self.as_item().and_then(|item| match &item.inner {
             rustdoc_types::ItemEnum::Method(func) => Some(func),
@@ -428,6 +435,17 @@ fn get_function_like_property(token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
+fn get_function_parameter_property(token: &Token, field_name: &str) -> FieldValue {
+    let function_parameter_token = token
+        .as_function_parameter()
+        .expect("token was not a FunctionParameter");
+
+    match field_name {
+        "name" => function_parameter_token.into(),
+        _ => unreachable!("FunctionParameter property {field_name}"),
+    }
+}
+
 fn get_impl_property(token: &Token, field_name: &str) -> FieldValue {
     let impl_token = token.as_impl().expect("token was not an Impl");
     match field_name {
@@ -576,7 +594,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 }
                 "FunctionParameter" => {
                     Box::new(data_contexts.map(move |ctx| {
-                        property_mapper(ctx, field_name.as_ref(), get_path_property)
+                        property_mapper(ctx, field_name.as_ref(), get_function_parameter_property)
                     }))
                 }
                 "Impl" => {
@@ -869,6 +887,32 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     (ctx, neighbors)
                 }))
             }
+            "Function" | "Method" if matches!(edge_name.as_ref(), "parameters") => {
+                let _current_crate = self.current_crate;
+                let _previous_crate = self.previous_crate;
+                Box::new(data_contexts.map(move |ctx| {
+                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
+                        match &ctx.current_token {
+                            None => Box::new(std::iter::empty()),
+                            Some(token) => {
+                                let origin = token.origin;
+                                let decl = if current_type_name.as_ref() == "Function" {
+                                    &token.as_function().expect("token was not a Function").decl
+                                } else {
+                                    &token.as_method().expect("token was not a Method").decl
+                                };
+
+                                Box::new(decl.inputs.iter().map(move |(name, _type_)| {
+                                    origin.make_function_parameter_token(
+                                        name
+                                    )
+                                }))
+                            }
+                        };
+
+                    (ctx, neighbors)
+                }))
+            },
             "Struct" => match edge_name.as_ref() {
                 "field" => {
                     let current_crate = self.current_crate;
@@ -975,7 +1019,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                 None => Box::new(std::iter::empty()),
                                 Some(token) => {
                                     let origin = token.origin;
-                                    let enum_item = token.as_enum().expect("token was not a Enum");
+                                    let enum_item = token.as_enum().expect("token was not an Enum");
 
                                     let item_index = match origin {
                                         Origin::CurrentCrate => &current_crate.inner.index,
@@ -1000,27 +1044,6 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 _ => {
                     unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
                 }
-            },
-            "Function" | "Method" if matches!(edge_name.as_ref(), "parameters") => {
-                let _current_crate = self.current_crate;
-                let _previous_crate = self.previous_crate;
-                Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                        match &ctx.current_token {
-                            None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
-                                let decl = &token.as_function().expect("token was not a Function").decl; // TODO: do it also for Methods
-                                Box::new(decl.inputs.iter().map(move |(name, _type_)| {
-                                    origin.make_function_parameter_token(
-                                        name
-                                    )
-                                }))
-                            }
-                        };
-
-                    (ctx, neighbors)
-                }))
             },
             "StructField" => match edge_name.as_ref() {
                 "raw_type" => Box::new(data_contexts.map(move |ctx| {
