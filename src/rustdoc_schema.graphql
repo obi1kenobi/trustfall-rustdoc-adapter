@@ -441,6 +441,8 @@ interface FunctionLike {
   const: Boolean!
   unsafe: Boolean!
   async: Boolean!
+
+  # own edges
   parameter: [FunctionParameter!]
 }
 
