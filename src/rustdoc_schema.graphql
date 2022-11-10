@@ -441,6 +441,17 @@ interface FunctionLike {
   const: Boolean!
   unsafe: Boolean!
   async: Boolean!
+
+  # own edges
+  parameter: [FunctionParameter!]
+}
+
+"""
+A function parameter.
+https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.FnDecl.html
+"""
+type FunctionParameter {
+  name: String!
 }
 
 """
@@ -465,6 +476,9 @@ type Function implements Item & FunctionLike & Importable {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  # edges from FunctionLike
+  parameter: [FunctionParameter!]
 
   # edges from Importable
   importable_path: [ImportablePath!]
@@ -493,6 +507,9 @@ type Method implements Item & FunctionLike {
   # edge from Item
   span: Span
   attribute: [Attribute!]
+
+  # edges from FunctionLike
+  parameter: [FunctionParameter!]
 }
 
 """
