@@ -887,23 +887,24 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             }
             "Function" | "Method" | "FunctionLike" if matches!(edge_name.as_ref(), "parameter") => {
                 Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                        match &ctx.current_token {
-                            None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
-                                let decl = token.as_function().map(|f| &f.decl).unwrap_or(
-                                    &token
-                                        .as_method()
-                                        .expect("token was neither a Function nor a Method")
-                                        .decl,
-                                );
+                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
+                        .current_token
+                    {
+                        None => Box::new(std::iter::empty()),
+                        Some(token) => {
+                            let origin = token.origin;
+                            let decl = token.as_function().map(|f| &f.decl).unwrap_or_else(|| {
+                                &token
+                                    .as_method()
+                                    .expect("token was neither a Function nor a Method")
+                                    .decl
+                            });
 
-                                Box::new(decl.inputs.iter().map(move |(name, _type_)| {
-                                    origin.make_function_parameter_token(name)
-                                }))
-                            }
-                        };
+                            Box::new(decl.inputs.iter().map(move |(name, _type_)| {
+                                origin.make_function_parameter_token(name)
+                            }))
+                        }
+                    };
 
                     (ctx, neighbors)
                 }))
