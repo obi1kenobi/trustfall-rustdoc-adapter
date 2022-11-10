@@ -471,12 +471,12 @@ type Function implements Item & FunctionLike & Importable {
   unsafe: Boolean!
   async: Boolean!
 
-  # edges from FunctionLike
-  parameters: [FunctionParameter!]
-
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  # edges from FunctionLike
+  parameter: [FunctionParameter!]
 
   # edges from Importable
   importable_path: [ImportablePath!]

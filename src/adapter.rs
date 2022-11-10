@@ -122,7 +122,7 @@ pub enum TokenKind<'a> {
     RawType(&'a Type),
     Attribute(&'a str),
     ImplementedTrait(&'a Path, &'a Item),
-    FunctionParameter(&'a str)
+    FunctionParameter(&'a str),
 }
 
 #[allow(dead_code)]
@@ -592,11 +592,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         property_mapper(ctx, field_name.as_ref(), get_function_like_property)
                     }))
                 }
-                "FunctionParameter" => {
-                    Box::new(data_contexts.map(move |ctx| {
-                        property_mapper(ctx, field_name.as_ref(), get_function_parameter_property)
-                    }))
-                }
+                "FunctionParameter" => Box::new(data_contexts.map(move |ctx| {
+                    property_mapper(ctx, field_name.as_ref(), get_function_parameter_property)
+                })),
                 "Impl" => {
                     Box::new(data_contexts.map(move |ctx| {
                         property_mapper(ctx, field_name.as_ref(), get_impl_property)
@@ -887,32 +885,29 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     (ctx, neighbors)
                 }))
             }
-            "Function" | "Method" if matches!(edge_name.as_ref(), "parameters") => {
-                let _current_crate = self.current_crate;
-                let _previous_crate = self.previous_crate;
+            "Function" | "Method" | "FunctionLike" if matches!(edge_name.as_ref(), "parameter") => {
                 Box::new(data_contexts.map(move |ctx| {
                     let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
                         match &ctx.current_token {
                             None => Box::new(std::iter::empty()),
                             Some(token) => {
                                 let origin = token.origin;
-                                let decl = if current_type_name.as_ref() == "Function" {
-                                    &token.as_function().expect("token was not a Function").decl
-                                } else {
-                                    &token.as_method().expect("token was not a Method").decl
-                                };
+                                let decl = token.as_function().map(|f| &f.decl).unwrap_or(
+                                    &token
+                                        .as_method()
+                                        .expect("token was neither a Function nor a Method")
+                                        .decl,
+                                );
 
                                 Box::new(decl.inputs.iter().map(move |(name, _type_)| {
-                                    origin.make_function_parameter_token(
-                                        name
-                                    )
+                                    origin.make_function_parameter_token(name)
                                 }))
                             }
                         };
 
                     (ctx, neighbors)
                 }))
-            },
+            }
             "Struct" => match edge_name.as_ref() {
                 "field" => {
                     let current_crate = self.current_crate;
