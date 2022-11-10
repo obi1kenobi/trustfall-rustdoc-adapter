@@ -441,7 +441,7 @@ interface FunctionLike {
   const: Boolean!
   unsafe: Boolean!
   async: Boolean!
-  parameters: [FunctionParameter!]
+  parameter: [FunctionParameter!]
 }
 
 """
@@ -502,12 +502,12 @@ type Method implements Item & FunctionLike {
   unsafe: Boolean!
   async: Boolean!
 
-  # edges from FunctionLike
-  parameters: [FunctionParameter!]
-
   # edge from Item
   span: Span
   attribute: [Attribute!]
+
+  # edges from FunctionLike
+  parameter: [FunctionParameter!]
 }
 
 """
