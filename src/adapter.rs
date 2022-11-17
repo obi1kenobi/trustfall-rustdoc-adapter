@@ -102,6 +102,13 @@ impl Origin {
             kind: TokenKind::ImplementedTrait(path, trait_def),
         }
     }
+
+    fn make_function_parameter_token<'a>(&self, name: &'a str) -> Token<'a> {
+        Token {
+            origin: *self,
+            kind: TokenKind::FunctionParameter(name),
+        }
+    }
 }
 
 #[non_exhaustive]
@@ -124,6 +131,7 @@ pub enum TokenKind<'a> {
     Attribute(Attribute),
     AttributeValue(AttributeValue),
     ImplementedTrait(&'a Path, &'a Item),
+    FunctionParameter(&'a str),
 }
 
 #[allow(dead_code)]
@@ -166,6 +174,7 @@ impl<'a> Token<'a> {
                 rustdoc_types::Type::Primitive(..) => "PrimitiveType",
                 _ => "OtherType",
             },
+            TokenKind::FunctionParameter(..) => "FunctionParameter",
         }
     }
 
@@ -255,6 +264,13 @@ impl<'a> Token<'a> {
             rustdoc_types::ItemEnum::Function(func) => Some(func),
             _ => None,
         })
+    }
+
+    fn as_function_parameter(&self) -> Option<&'a str> {
+        match &self.kind {
+            TokenKind::FunctionParameter(name) => Some(name),
+            _ => None,
+        }
     }
 
     fn as_method(&self) -> Option<&'a Method> {
@@ -436,6 +452,17 @@ fn get_function_like_property(token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
+fn get_function_parameter_property(token: &Token, field_name: &str) -> FieldValue {
+    let function_parameter_token = token
+        .as_function_parameter()
+        .expect("token was not a FunctionParameter");
+
+    match field_name {
+        "name" => function_parameter_token.into(),
+        _ => unreachable!("FunctionParameter property {field_name}"),
+    }
+}
+
 fn get_impl_property(token: &Token, field_name: &str) -> FieldValue {
     let impl_token = token.as_impl().expect("token was not an Impl");
     match field_name {
@@ -595,6 +622,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         property_mapper(ctx, field_name.as_ref(), get_function_like_property)
                     }))
                 }
+                "FunctionParameter" => Box::new(data_contexts.map(move |ctx| {
+                    property_mapper(ctx, field_name.as_ref(), get_function_parameter_property)
+                })),
                 "Impl" => {
                     Box::new(data_contexts.map(move |ctx| {
                         property_mapper(ctx, field_name.as_ref(), get_impl_property)
@@ -888,6 +918,30 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     (ctx, neighbors)
                 }))
             }
+            "Function" | "Method" | "FunctionLike" if matches!(edge_name.as_ref(), "parameter") => {
+                Box::new(data_contexts.map(move |ctx| {
+                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
+                        .current_token
+                    {
+                        None => Box::new(std::iter::empty()),
+                        Some(token) => {
+                            let origin = token.origin;
+                            let decl = token.as_function().map(|f| &f.decl).unwrap_or_else(|| {
+                                &token
+                                    .as_method()
+                                    .expect("token was neither a Function nor a Method")
+                                    .decl
+                            });
+
+                            Box::new(decl.inputs.iter().map(move |(name, _type_)| {
+                                origin.make_function_parameter_token(name)
+                            }))
+                        }
+                    };
+
+                    (ctx, neighbors)
+                }))
+            }
             "Struct" => match edge_name.as_ref() {
                 "field" => {
                     let current_crate = self.current_crate;
@@ -994,7 +1048,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                 None => Box::new(std::iter::empty()),
                                 Some(token) => {
                                     let origin = token.origin;
-                                    let enum_item = token.as_enum().expect("token was not a Enum");
+                                    let enum_item = token.as_enum().expect("token was not an Enum");
 
                                     let item_index = match origin {
                                         Origin::CurrentCrate => &current_crate.inner.index,
