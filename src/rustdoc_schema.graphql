@@ -499,18 +499,63 @@ type Method implements Item & FunctionLike {
 A specific attribute applied to an Item.
 """
 type Attribute {
+  """
+  String representation of the attribute as it is found in the code.
+
+  For example: `#[non_exhaustive]`
+  """
   as_string: String!
+
+  """
+  True for an inner attribute (starting with `#![`), and false for an
+  outer one (starting with `#[`).
+
+  For example: false for `#[non_exhaustive]`
+  """
   is_inner: Boolean!
+
+  # edges
+
+  # Edge to parsed content of the attribute
   content: AttributeValue!
 }
 
+"""
+A type representing single MetaItem
+(see https://doc.rust-lang.org/reference/attributes.html#meta-item-attribute-syntax).
+"""
 type AttributeValue {
-  base: String!  # the path, e.g. "cfg_attr" or "must_use"
-  as_string: String!  # the entire value represented as a string
-  assigned_expression: String  # the string form of the assigned expression, or null if there wasn't one
+  """
+  The entire value represented as a string as it is found in the code.
+
+  For example: `"derive(Debug, Clone)"`
+  """
+  raw_value: String!
+
+  """
+  SimplePath of the meta item.
+
+  For example: `"derive"` for `derive(Debug, Clone)`,
+               `"must_use"` for `must_use = "example_message"`
+  """
+  base: String!
+
+  """
+  Value if the meta item is in the form `SimplePath = Value`.
+
+  For example: `"\"example_message\""` for `must_use = "example_message"`
+  """
+  assigned_value: String
 
   # edges
-  argument: [AttributeValue!]  # arguments to the simple path, if any
+
+  """
+  Inner meta items if the meta item is in the form `SimplePath(MetaSeq)`.
+
+  For example: `[AttributeValue::new("Debug"), AttributeValue::new("Clone")]`
+  for `derive(Debug, Clone)`
+  """
+  argument: [AttributeValue!]
 }
 
 """
