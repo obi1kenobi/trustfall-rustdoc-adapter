@@ -487,9 +487,9 @@ fn get_attribute_value_property(token: &Token, field_name: &str) -> FieldValue {
         .as_attribute_value()
         .expect("token was not an AttributeValue");
     match field_name {
-        "as_string" => attr_value.as_string.clone().into(),
+        "raw_value" => attr_value.raw_value.clone().into(),
         "base" => attr_value.base.clone().into(),
-        "assigned_expression" => attr_value.assigned_expression.clone().into(),
+        "assigned_value" => attr_value.assigned_value.clone().into(),
         _ => unreachable!("Attribute property {field_name}"),
     }
 }

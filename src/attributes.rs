@@ -13,7 +13,7 @@ impl Attribute {
         format!(
             "#{}[{}]",
             if self.is_inner { "!" } else { "" },
-            self.content.as_string
+            self.content.raw_value
         )
     }
 }
@@ -44,9 +44,9 @@ impl<'a> TryFrom<&'a str> for Attribute {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AttributeValue {
-    pub as_string: String,
+    pub raw_value: String,
     pub base: String,
-    pub assigned_expression: Option<String>,
+    pub assigned_value: Option<String>,
     pub arguments: Option<Vec<AttributeValue>>,
 }
 
@@ -75,18 +75,18 @@ impl<'a> TryFrom<&'a str> for AttributeValue {
         PATH_RE
             .captures(as_string)
             .map(|captures| AttributeValue {
-                as_string: as_string.to_string(),
+                raw_value: as_string.to_string(),
                 base: captures["simple_path"].to_string(),
-                assigned_expression: None,
+                assigned_value: None,
                 arguments: None,
             })
             .or_else(|| {
                 ASSIGNMENT_RE
                     .captures(as_string)
                     .map(|captures| AttributeValue {
-                        as_string: as_string.to_string(),
+                        raw_value: as_string.to_string(),
                         base: captures["simple_path"].to_string(),
-                        assigned_expression: Some(captures["expression"].to_string()),
+                        assigned_value: Some(captures["expression"].to_string()),
                         arguments: None,
                     })
             })
@@ -117,9 +117,9 @@ impl<'a> TryFrom<&'a str> for AttributeValue {
                     }
 
                     AttributeValue {
-                        as_string: as_string.to_string(),
+                        raw_value: as_string.to_string(),
                         base: captures["simple_path"].to_string(),
-                        assigned_expression: None,
+                        assigned_value: None,
                         arguments: Some(arguments),
                     }
                 })
@@ -143,9 +143,9 @@ mod tests {
             Attribute {
                 is_inner: true,
                 content: AttributeValue {
-                    as_string: "no_std".to_string(),
+                    raw_value: "no_std".to_string(),
                     base: "no_std".to_string(),
-                    assigned_expression: None,
+                    assigned_value: None,
                     arguments: None
                 }
             }
@@ -163,32 +163,32 @@ mod tests {
             Attribute {
                 is_inner: false,
                 content: AttributeValue {
-                    as_string: "cfg_attr(feature = \"serde\", derive(Serialize, Deserialize))"
+                    raw_value: "cfg_attr(feature = \"serde\", derive(Serialize, Deserialize))"
                         .to_string(),
                     base: "cfg_attr".to_string(),
-                    assigned_expression: None,
+                    assigned_value: None,
                     arguments: Some(vec![
                         AttributeValue {
-                            as_string: "feature = \"serde\"".to_string(),
+                            raw_value: "feature = \"serde\"".to_string(),
                             base: "feature".to_string(),
-                            assigned_expression: Some("\"serde\"".to_string()),
+                            assigned_value: Some("\"serde\"".to_string()),
                             arguments: None
                         },
                         AttributeValue {
-                            as_string: " derive(Serialize, Deserialize)".to_string(),
+                            raw_value: " derive(Serialize, Deserialize)".to_string(),
                             base: "derive".to_string(),
-                            assigned_expression: None,
+                            assigned_value: None,
                             arguments: Some(vec![
                                 AttributeValue {
-                                    as_string: "Serialize".to_string(),
+                                    raw_value: "Serialize".to_string(),
                                     base: "Serialize".to_string(),
-                                    assigned_expression: None,
+                                    assigned_value: None,
                                     arguments: None
                                 },
                                 AttributeValue {
-                                    as_string: " Deserialize".to_string(),
+                                    raw_value: " Deserialize".to_string(),
                                     base: "Deserialize".to_string(),
-                                    assigned_expression: None,
+                                    assigned_value: None,
                                     arguments: None
                                 }
                             ])
@@ -206,20 +206,20 @@ mod tests {
             assert_eq!(
                 attr_val,
                 AttributeValue {
-                    as_string: as_string.to_string(),
+                    raw_value: as_string.to_string(),
                     base: "macro".to_string(),
-                    assigned_expression: None,
+                    assigned_value: None,
                     arguments: Some(vec![
                         AttributeValue {
-                            as_string: "arg1".to_string(),
+                            raw_value: "arg1".to_string(),
                             base: "arg1".to_string(),
-                            assigned_expression: None,
+                            assigned_value: None,
                             arguments: None
                         },
                         AttributeValue {
-                            as_string: "arg2".to_string(),
+                            raw_value: "arg2".to_string(),
                             base: "arg2".to_string(),
-                            assigned_expression: None,
+                            assigned_value: None,
                             arguments: None
                         }
                     ])
