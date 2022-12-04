@@ -78,14 +78,14 @@ impl Origin {
         }
     }
 
-    fn make_attribute_token<'a>(&self, attr: Attribute) -> Token<'a> {
+    fn make_attribute_token<'a>(&self, attr: Attribute<'a>) -> Token<'a> {
         Token {
             origin: *self,
             kind: TokenKind::Attribute(attr),
         }
     }
 
-    fn make_attribute_value_token<'a>(&self, attr_value: AttributeValue) -> Token<'a> {
+    fn make_attribute_value_token<'a>(&self, attr_value: AttributeValue<'a>) -> Token<'a> {
         Token {
             origin: *self,
             kind: TokenKind::AttributeValue(attr_value),
@@ -128,8 +128,8 @@ pub enum TokenKind<'a> {
     Path(&'a [String]),
     ImportablePath(Vec<&'a str>),
     RawType(&'a Type),
-    Attribute(Attribute),
-    AttributeValue(AttributeValue),
+    Attribute(Attribute<'a>),
+    AttributeValue(AttributeValue<'a>),
     ImplementedTrait(&'a Path, &'a Item),
     FunctionParameter(&'a str),
 }
@@ -855,7 +855,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                     let item = token.as_item().expect("token was not an Item");
                                     Box::new(item.attrs.iter().map(move |attr| {
                                         origin.make_attribute_token(
-                                            Attribute::try_from(attr.as_str()).unwrap(),
+                                            Attribute::new(attr.as_str()),
                                         )
                                     }))
                                 }
