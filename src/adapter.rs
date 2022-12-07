@@ -1,8 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use rustdoc_types::{
-    Crate, Enum, Function, Id, Impl, Item, ItemEnum, Method, Path, Span, Struct, Trait, Type,
-    Variant,
+    Crate, Enum, Function, Id, Impl, Item, ItemEnum, Path, Span, Struct, Trait, Type, Variant,
 };
 use trustfall_core::{
     interpreter::{Adapter, DataContext, InterpretedQuery},
@@ -143,7 +142,6 @@ impl<'a> Token<'a> {
                 rustdoc_types::ItemEnum::Struct(..) => "Struct",
                 rustdoc_types::ItemEnum::Enum(..) => "Enum",
                 rustdoc_types::ItemEnum::Function(..) => "Function",
-                rustdoc_types::ItemEnum::Method(..) => "Method",
                 rustdoc_types::ItemEnum::Variant(Variant::Plain(..)) => "PlainVariant",
                 rustdoc_types::ItemEnum::Variant(Variant::Tuple(..)) => "TupleVariant",
                 rustdoc_types::ItemEnum::Variant(Variant::Struct { .. }) => "StructVariant",
@@ -261,13 +259,6 @@ impl<'a> Token<'a> {
             TokenKind::FunctionParameter(name) => Some(name),
             _ => None,
         }
-    }
-
-    fn as_method(&self) -> Option<&'a Method> {
-        self.as_item().and_then(|item| match &item.inner {
-            rustdoc_types::ItemEnum::Method(func) => Some(func),
-            _ => None,
-        })
     }
 
     fn as_impl(&self) -> Option<&'a Impl> {
@@ -415,22 +406,12 @@ fn get_importable_path_property(token: &Token, field_name: &str) -> FieldValue {
 }
 
 fn get_function_like_property(token: &Token, field_name: &str) -> FieldValue {
-    let maybe_function = token.as_function();
-    let maybe_method = token.as_method();
-
-    let (header, _decl) = maybe_function
-        .map(|func| (&func.header, &func.decl))
-        .unwrap_or_else(|| {
-            let method = maybe_method.unwrap_or_else(|| {
-                unreachable!("token was neither a function nor a method: {token:?}")
-            });
-            (&method.header, &method.decl)
-        });
+    let function = token.as_function().expect("not a function");
 
     match field_name {
-        "const" => header.const_.into(),
-        "async" => header.async_.into(),
-        "unsafe" => header.unsafe_.into(),
+        "const" => function.header.const_.into(),
+        "async" => function.header.async_.into(),
+        "unsafe" => function.header.unsafe_.into(),
         _ => unreachable!("FunctionLike property {field_name}"),
     }
 }
@@ -696,7 +677,6 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                                     | rustdoc_types::ItemEnum::Enum(..)
                                                     | rustdoc_types::ItemEnum::Variant(..)
                                                     | rustdoc_types::ItemEnum::Function(..)
-                                                    | rustdoc_types::ItemEnum::Method(..)
                                                     | rustdoc_types::ItemEnum::Impl(..)
                                                     | rustdoc_types::ItemEnum::Trait(..)
                                             )
@@ -887,24 +867,25 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             }
             "Function" | "Method" | "FunctionLike" if matches!(edge_name.as_ref(), "parameter") => {
                 Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
-                        .current_token
-                    {
-                        None => Box::new(std::iter::empty()),
-                        Some(token) => {
-                            let origin = token.origin;
-                            let decl = token.as_function().map(|f| &f.decl).unwrap_or_else(|| {
-                                &token
-                                    .as_method()
-                                    .expect("token was neither a Function nor a Method")
-                                    .decl
-                            });
+                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
+                        match &ctx.current_token {
+                            None => Box::new(std::iter::empty()),
+                            Some(token) => {
+                                let origin = token.origin;
 
-                            Box::new(decl.inputs.iter().map(move |(name, _type_)| {
-                                origin.make_function_parameter_token(name)
-                            }))
-                        }
-                    };
+                                Box::new(
+                                    token
+                                        .as_function()
+                                        .expect("token was not a Function")
+                                        .decl
+                                        .inputs
+                                        .iter()
+                                        .map(move |(name, _type_)| {
+                                            origin.make_function_parameter_token(name)
+                                        }),
+                                )
+                            }
+                        };
 
                     (ctx, neighbors)
                 }))
@@ -1110,7 +1091,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                     let next_item = &item_index.get(item_id);
                                     if let Some(next_item) = next_item {
                                         match &next_item.inner {
-                                            rustdoc_types::ItemEnum::Method(..) => {
+                                            rustdoc_types::ItemEnum::Function(..) => {
                                                 Some(origin.make_item_token(next_item))
                                             }
                                             _ => None,
