@@ -1,6 +1,6 @@
 [package]
 name = "trustfall-rustdoc-adapter"
-version = "22.2.0"
+version = "22.3.0"
 edition = "2021"
 authors = ["Predrag Gruevski <obi1kenobi82@gmail.com>"]
 license = "Apache-2.0 OR MIT"
@@ -11,7 +11,7 @@ readme = "./README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-trustfall_core = "0.0.7"
+trustfall_core = "0.1.1"
 rustdoc-types = "0.18.0"
 
 [dev-dependencies]
