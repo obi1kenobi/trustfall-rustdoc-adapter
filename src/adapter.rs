@@ -1323,7 +1323,7 @@ mod tests {
             .collect();
 
         let expected_result: FieldValue = vec![
-            "semver_tests",
+            "test_crates",
             "import_handling",
             "inner",
             "CheckPubUseHandling",
@@ -1341,10 +1341,10 @@ mod tests {
         actual_paths.sort_unstable();
 
         let expected_paths = vec![
-            vec!["semver_tests", "CheckPubUseHandling"],
-            vec!["semver_tests", "import_handling", "CheckPubUseHandling"],
+            vec!["test_crates", "CheckPubUseHandling"],
+            vec!["test_crates", "import_handling", "CheckPubUseHandling"],
             vec![
-                "semver_tests",
+                "test_crates",
                 "import_handling",
                 "inner",
                 "CheckPubUseHandling",
