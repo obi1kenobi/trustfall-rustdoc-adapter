@@ -477,7 +477,7 @@ fn get_attribute_property(token: &Token, field_name: &str) -> FieldValue {
     let attribute = token.as_attribute().expect("token was not an Attribute");
     match field_name {
         "as_string" => attribute.as_string().into(),
-        "is_inner" => attribute.is_inner.clone().into(),
+        "is_inner" => attribute.is_inner.into(),
         _ => unreachable!("Attribute property {field_name}"),
     }
 }
@@ -487,9 +487,9 @@ fn get_attribute_value_property(token: &Token, field_name: &str) -> FieldValue {
         .as_attribute_value()
         .expect("token was not an AttributeValue");
     match field_name {
-        "raw_value" => attr_value.raw_value.clone().into(),
-        "base" => attr_value.base.clone().into(),
-        "assigned_value" => attr_value.assigned_value.clone().into(),
+        "raw_value" => attr_value.raw_value.into(),
+        "base" => attr_value.base.into(),
+        "assigned_value" => attr_value.assigned_value.into(),
         _ => unreachable!("Attribute property {field_name}"),
     }
 }

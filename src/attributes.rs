@@ -16,7 +16,7 @@ impl<'a> Attribute<'a> {
     pub fn new(raw: &'a str) -> Self {
         let raw_without_closing = raw
             .trim()
-            .strip_suffix("]")
+            .strip_suffix(']')
             .expect("Attribute has to be closed by a square bracket.");
 
         if let Some(raw_content) = raw_without_closing.strip_prefix("#[") {
@@ -107,7 +107,7 @@ impl<'a> AttributeValue<'a> {
             let simple_path = &raw_trimmed[0..path_end];
             let attr_input = &raw_trimmed[path_end..];
             if !simple_path.is_empty() {
-                if let Some(assigned) = attr_input.trim().strip_prefix("=") {
+                if let Some(assigned) = attr_input.trim().strip_prefix('=') {
                     return AttributeValue {
                         raw_value: raw_trimmed,
                         base: simple_path,
