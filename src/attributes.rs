@@ -1,7 +1,9 @@
+use std::rc::Rc;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Attribute<'a> {
     pub is_inner: bool,
-    pub content: AttributeValue<'a>,
+    pub content: Rc<AttributeValue<'a>>,
 }
 
 impl<'a> Attribute<'a> {
@@ -22,12 +24,12 @@ impl<'a> Attribute<'a> {
         if let Some(raw_content) = raw_without_closing.strip_prefix("#[") {
             Attribute {
                 is_inner: false,
-                content: AttributeValue::new(raw_content),
+                content: Rc::new(AttributeValue::new(raw_content)),
             }
         } else if let Some(raw_content) = raw_without_closing.strip_prefix("#![") {
             Attribute {
                 is_inner: true,
-                content: AttributeValue::new(raw_content),
+                content: Rc::new(AttributeValue::new(raw_content)),
             }
         } else {
             panic!("Attribute has to start either with `#[` or `#![`.");
@@ -40,11 +42,11 @@ pub struct AttributeValue<'a> {
     pub raw_value: &'a str,
     pub base: &'a str,
     pub assigned_value: Option<&'a str>,
-    pub arguments: Option<Vec<AttributeValue<'a>>>,
+    pub arguments: Option<Vec<Rc<AttributeValue<'a>>>>,
 }
 
 impl<'a> AttributeValue<'a> {
-    fn slice_arguments(raw: &'a str) -> Option<Vec<AttributeValue<'a>>> {
+    fn slice_arguments(raw: &'a str) -> Option<Vec<Rc<AttributeValue<'a>>>> {
         let is_left = |c| c == '(' || c == '[' || c == '{';
         let is_right = |c| c == ')' || c == ']' || c == '}';
         let matching_right = |c| match c {
@@ -56,7 +58,7 @@ impl<'a> AttributeValue<'a> {
 
         let mut i = 0;
         let mut brackets: Vec<char> = Vec::new();
-        let mut arguments: Vec<AttributeValue> = Vec::new();
+        let mut arguments: Vec<Rc<AttributeValue>> = Vec::new();
         let mut only_white = true;
 
         for (j, c) in raw.chars().enumerate() {
@@ -70,7 +72,7 @@ impl<'a> AttributeValue<'a> {
                     return None;
                 }
                 if brackets.is_empty() && !only_white {
-                    arguments.push(AttributeValue::new(&raw[i..j]));
+                    arguments.push(Rc::new(AttributeValue::new(&raw[i..j])));
                 }
                 if brackets.is_empty() && j + 1 != raw.chars().count() {
                     return None;
@@ -79,7 +81,7 @@ impl<'a> AttributeValue<'a> {
                 if brackets.is_empty() {
                     return None;
                 } else if brackets.len() == 1 {
-                    arguments.push(AttributeValue::new(&raw[i..j]));
+                    arguments.push(Rc::new(AttributeValue::new(&raw[i..j])));
                     i = j + 1;
                     only_white = true;
                 }
@@ -136,6 +138,8 @@ impl<'a> AttributeValue<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use super::{Attribute, AttributeValue};
 
     #[test]
@@ -145,12 +149,12 @@ mod tests {
             attribute,
             Attribute {
                 is_inner: true,
-                content: AttributeValue {
+                content: Rc::new(AttributeValue {
                     raw_value: "no_std",
                     base: "no_std",
                     assigned_value: None,
                     arguments: None
-                }
+                })
             }
         );
         assert_eq!(attribute.as_string(), "#![no_std]");
@@ -164,38 +168,38 @@ mod tests {
             attribute,
             Attribute {
                 is_inner: false,
-                content: AttributeValue {
+                content: Rc::new(AttributeValue {
                     raw_value: "cfg_attr(feature = \"serde\", derive(Serialize, Deserialize))",
                     base: "cfg_attr",
                     assigned_value: None,
                     arguments: Some(vec![
-                        AttributeValue {
+                        Rc::new(AttributeValue {
                             raw_value: "feature = \"serde\"",
                             base: "feature",
                             assigned_value: Some("\"serde\""),
                             arguments: None
-                        },
-                        AttributeValue {
+                        }),
+                        Rc::new(AttributeValue {
                             raw_value: "derive(Serialize, Deserialize)",
                             base: "derive",
                             assigned_value: None,
                             arguments: Some(vec![
-                                AttributeValue {
+                                Rc::new(AttributeValue {
                                     raw_value: "Serialize",
                                     base: "Serialize",
                                     assigned_value: None,
                                     arguments: None
-                                },
-                                AttributeValue {
+                                }),
+                                Rc::new(AttributeValue {
                                     raw_value: "Deserialize",
                                     base: "Deserialize",
                                     assigned_value: None,
                                     arguments: None
-                                }
+                                })
                             ])
-                        }
+                        })
                     ])
-                }
+                })
             }
         );
     }
@@ -211,18 +215,18 @@ mod tests {
                     base: "macro",
                     assigned_value: None,
                     arguments: Some(vec![
-                        AttributeValue {
+                        Rc::new(AttributeValue {
                             raw_value: "arg1",
                             base: "arg1",
                             assigned_value: None,
                             arguments: None
-                        },
-                        AttributeValue {
+                        }),
+                        Rc::new(AttributeValue {
                             raw_value: "arg2",
                             base: "arg2",
                             assigned_value: None,
                             arguments: None
-                        }
+                        })
                     ])
                 }
             );

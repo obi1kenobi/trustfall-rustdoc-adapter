@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, sync::Arc};
+use std::{collections::BTreeSet, rc::Rc, sync::Arc};
 
 use rustdoc_types::{
     Crate, Enum, Function, Id, Impl, Item, ItemEnum, Method, Path, Span, Struct, Trait, Type,
@@ -85,7 +85,7 @@ impl Origin {
         }
     }
 
-    fn make_attribute_value_token<'a>(&self, attr_value: AttributeValue<'a>) -> Token<'a> {
+    fn make_attribute_value_token<'a>(&self, attr_value: Rc<AttributeValue<'a>>) -> Token<'a> {
         Token {
             origin: *self,
             kind: TokenKind::AttributeValue(attr_value),
@@ -129,7 +129,7 @@ pub enum TokenKind<'a> {
     ImportablePath(Vec<&'a str>),
     RawType(&'a Type),
     Attribute(Attribute<'a>),
-    AttributeValue(AttributeValue<'a>),
+    AttributeValue(Rc<AttributeValue<'a>>),
     ImplementedTrait(&'a Path, &'a Item),
     FunctionParameter(&'a str),
 }
