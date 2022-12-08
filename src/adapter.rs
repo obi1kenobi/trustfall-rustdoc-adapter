@@ -287,14 +287,14 @@ impl<'a> Token<'a> {
         })
     }
 
-    fn as_attribute(&self) -> Option<&'_ Attribute> {
+    fn as_attribute(&self) -> Option<&'_ Attribute<'a>> {
         match &self.kind {
             TokenKind::Attribute(attr) => Some(attr),
             _ => None,
         }
     }
 
-    fn as_attribute_value(&self) -> Option<&'_ AttributeValue> {
+    fn as_attribute_value(&self) -> Option<&'_ AttributeValue<'a>> {
         match &self.kind {
             TokenKind::AttributeValue(attr_value) => Some(attr_value),
             _ => None,
@@ -854,9 +854,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                     let origin = token.origin;
                                     let item = token.as_item().expect("token was not an Item");
                                     Box::new(item.attrs.iter().map(move |attr| {
-                                        origin.make_attribute_token(
-                                            Attribute::new(attr.as_str()),
-                                        )
+                                        origin.make_attribute_token(Attribute::new(attr.as_str()))
                                     }))
                                 }
                             };

@@ -62,8 +62,17 @@ impl<'a> AttributeValue<'a> {
         for (j, c) in raw.chars().enumerate() {
             if is_left(c) {
                 brackets.push(c);
+                if brackets.len() == 1 {
+                    i = j + 1;
+                }
             } else if is_right(c) {
                 if c != matching_right(brackets.pop()?) {
+                    return None;
+                }
+                if brackets.is_empty() && !only_white {
+                    arguments.push(AttributeValue::new(&raw[i..j]));
+                }
+                if brackets.is_empty() && j + 1 != raw.chars().count() {
                     return None;
                 }
             } else if c == ',' {
@@ -82,9 +91,6 @@ impl<'a> AttributeValue<'a> {
                 }
             }
         }
-        if i < raw.len() && !only_white {
-            arguments.push(AttributeValue::new(&raw[i..]));
-        }
 
         if brackets.is_empty() {
             Some(arguments)
@@ -97,13 +103,15 @@ impl<'a> AttributeValue<'a> {
         let simple_path_char = |c: char| c.is_alphanumeric() || c == '_' || c == ':';
         let raw_trimmed = raw.trim();
 
-        if let Some((simple_path, attr_input)) = raw_trimmed.split_once(|c| !simple_path_char(c)) {
+        if let Some(path_end) = raw_trimmed.find(|c| !simple_path_char(c)) {
+            let simple_path = &raw_trimmed[0..path_end];
+            let attr_input = &raw_trimmed[path_end..];
             if !simple_path.is_empty() {
                 if let Some(assigned) = attr_input.trim().strip_prefix("=") {
                     return AttributeValue {
                         raw_value: raw_trimmed,
                         base: simple_path,
-                        assigned_value: Some(assigned),
+                        assigned_value: Some(assigned.trim_start()),
                         arguments: None,
                     };
                 } else if let Some(arguments) = Self::slice_arguments(attr_input) {
@@ -112,7 +120,7 @@ impl<'a> AttributeValue<'a> {
                         base: simple_path,
                         assigned_value: None,
                         arguments: Some(arguments),
-                    }
+                    };
                 }
             }
         }
@@ -168,7 +176,7 @@ mod tests {
                             arguments: None
                         },
                         AttributeValue {
-                            raw_value: " derive(Serialize, Deserialize)",
+                            raw_value: "derive(Serialize, Deserialize)",
                             base: "derive",
                             assigned_value: None,
                             arguments: Some(vec![
