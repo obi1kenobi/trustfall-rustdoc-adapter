@@ -490,9 +490,9 @@ fn get_attribute_meta_item_property(token: &Token, field_name: &str) -> FieldVal
         .as_attribute_meta_item()
         .expect("token was not an AttributeMetaItem");
     match field_name {
-        "raw_value" => meta_item.raw_value.into(),
+        "raw_item" => meta_item.raw_item.into(),
         "base" => meta_item.base.into(),
-        "assigned_value" => meta_item.assigned_value.into(),
+        "assigned_item" => meta_item.assigned_item.into(),
         _ => unreachable!("Attribute property {field_name}"),
     }
 }

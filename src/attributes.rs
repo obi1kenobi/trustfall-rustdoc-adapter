@@ -11,7 +11,7 @@ impl<'a> Attribute<'a> {
         format!(
             "#{}[{}]",
             if self.is_inner { "!" } else { "" },
-            self.content.raw_value
+            self.content.raw_item
         )
     }
 
@@ -51,9 +51,9 @@ impl<'a> Attribute<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttributeMetaItem<'a> {
-    pub raw_value: &'a str,
+    pub raw_item: &'a str,
     pub base: &'a str,
-    pub assigned_value: Option<&'a str>,
+    pub assigned_item: Option<&'a str>,
     pub arguments: Option<Vec<Rc<AttributeMetaItem<'a>>>>,
 }
 
@@ -113,16 +113,16 @@ impl<'a> AttributeMetaItem<'a> {
             if !simple_path.is_empty() {
                 if let Some(assigned) = attr_input.trim().strip_prefix('=') {
                     return AttributeMetaItem {
-                        raw_value: raw_trimmed,
+                        raw_item: raw_trimmed,
                         base: simple_path,
-                        assigned_value: Some(assigned.trim_start()),
+                        assigned_item: Some(assigned.trim_start()),
                         arguments: None,
                     };
                 } else if let Some(arguments) = Self::slice_arguments(attr_input) {
                     return AttributeMetaItem {
-                        raw_value: raw_trimmed,
+                        raw_item: raw_trimmed,
                         base: simple_path,
-                        assigned_value: None,
+                        assigned_item: None,
                         arguments: Some(arguments),
                     };
                 }
@@ -130,9 +130,9 @@ impl<'a> AttributeMetaItem<'a> {
         }
 
         AttributeMetaItem {
-            raw_value: raw_trimmed,
+            raw_item: raw_trimmed,
             base: raw_trimmed,
-            assigned_value: None,
+            assigned_item: None,
             arguments: None,
         }
     }
@@ -152,9 +152,9 @@ mod tests {
             Attribute {
                 is_inner: true,
                 content: Rc::new(AttributeMetaItem {
-                    raw_value: "no_std",
+                    raw_item: "no_std",
                     base: "no_std",
-                    assigned_value: None,
+                    assigned_item: None,
                     arguments: None
                 })
             }
@@ -171,31 +171,31 @@ mod tests {
             Attribute {
                 is_inner: false,
                 content: Rc::new(AttributeMetaItem {
-                    raw_value: "cfg_attr(feature = \"serde\", derive(Serialize, Deserialize))",
+                    raw_item: "cfg_attr(feature = \"serde\", derive(Serialize, Deserialize))",
                     base: "cfg_attr",
-                    assigned_value: None,
+                    assigned_item: None,
                     arguments: Some(vec![
                         Rc::new(AttributeMetaItem {
-                            raw_value: "feature = \"serde\"",
+                            raw_item: "feature = \"serde\"",
                             base: "feature",
-                            assigned_value: Some("\"serde\""),
+                            assigned_item: Some("\"serde\""),
                             arguments: None
                         }),
                         Rc::new(AttributeMetaItem {
-                            raw_value: "derive(Serialize, Deserialize)",
+                            raw_item: "derive(Serialize, Deserialize)",
                             base: "derive",
-                            assigned_value: None,
+                            assigned_item: None,
                             arguments: Some(vec![
                                 Rc::new(AttributeMetaItem {
-                                    raw_value: "Serialize",
+                                    raw_item: "Serialize",
                                     base: "Serialize",
-                                    assigned_value: None,
+                                    assigned_item: None,
                                     arguments: None
                                 }),
                                 Rc::new(AttributeMetaItem {
-                                    raw_value: "Deserialize",
+                                    raw_item: "Deserialize",
                                     base: "Deserialize",
-                                    assigned_value: None,
+                                    assigned_item: None,
                                     arguments: None
                                 })
                             ])
@@ -214,20 +214,20 @@ mod tests {
             Attribute {
                 is_inner: false,
                 content: Rc::new(AttributeMetaItem {
-                    raw_value: "derive ( Eq\t, PartialEq,   )",
+                    raw_item: "derive ( Eq\t, PartialEq,   )",
                     base: "derive",
-                    assigned_value: None,
+                    assigned_item: None,
                     arguments: Some(vec![
                         Rc::new(AttributeMetaItem {
-                            raw_value: "Eq",
+                            raw_item: "Eq",
                             base: "Eq",
-                            assigned_value: None,
+                            assigned_item: None,
                             arguments: None
                         }),
                         Rc::new(AttributeMetaItem {
-                            raw_value: "PartialEq",
+                            raw_item: "PartialEq",
                             base: "PartialEq",
-                            assigned_value: None,
+                            assigned_item: None,
                             arguments: None
                         })
                     ])
@@ -244,20 +244,20 @@ mod tests {
             assert_eq!(
                 meta_item,
                 AttributeMetaItem {
-                    raw_value: as_string,
+                    raw_item: as_string,
                     base: "macro",
-                    assigned_value: None,
+                    assigned_item: None,
                     arguments: Some(vec![
                         Rc::new(AttributeMetaItem {
-                            raw_value: "arg1",
+                            raw_item: "arg1",
                             base: "arg1",
-                            assigned_value: None,
+                            assigned_item: None,
                             arguments: None
                         }),
                         Rc::new(AttributeMetaItem {
-                            raw_value: "arg2",
+                            raw_item: "arg2",
                             base: "arg2",
-                            assigned_value: None,
+                            assigned_item: None,
                             arguments: None
                         })
                     ])
@@ -272,9 +272,9 @@ mod tests {
         assert_eq!(
             meta_item,
             AttributeMetaItem {
-                raw_value: "foo|bar|",
+                raw_item: "foo|bar|",
                 base: "foo|bar|",
-                assigned_value: None,
+                assigned_item: None,
                 arguments: None
             }
         );

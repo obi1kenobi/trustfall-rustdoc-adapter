@@ -547,7 +547,7 @@ type AttributeMetaItem {
 
   For example: `"derive(Debug, Clone)"`
   """
-  raw_value: String!
+  raw_item: String!
 
   """
   SimplePath of the meta item.
@@ -558,11 +558,11 @@ type AttributeMetaItem {
   base: String!
 
   """
-  Value if the meta item is in the form `SimplePath = Value`.
+  Assigned item if the meta item is in the form `SimplePath = AssignedItem`.
 
   For example: `"\"example_message\""` for `must_use = "example_message"`
   """
-  assigned_value: String
+  assigned_item: String
 
   # edges
 
