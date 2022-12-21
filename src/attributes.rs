@@ -145,7 +145,7 @@ mod tests {
     use super::{Attribute, AttributeMetaItem};
 
     #[test]
-    fn attribute_from_string_simple_inner() {
+    fn attribute_simple_inner() {
         let attribute = Attribute::new("#![no_std]");
         assert_eq!(
             attribute,
@@ -163,7 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn attribute_from_string_complex_outer() {
+    fn attribute_complex_outer() {
         let attribute =
             Attribute::new("#[cfg_attr(feature = \"serde\", derive(Serialize, Deserialize))]");
         assert_eq!(
@@ -207,7 +207,7 @@ mod tests {
     }
 
     #[test]
-    fn attribute_from_string_unformatted() {
+    fn attribute_unformatted() {
         let attribute = Attribute::new("\t#[ derive ( Eq\t, PartialEq,   ) ]  ");
         assert_eq!(
             attribute,
@@ -238,11 +238,11 @@ mod tests {
     }
 
     #[test]
-    fn attribute_meta_item_from_string_custom_brackets() {
+    fn attribute_meta_item_custom_brackets() {
         for as_string in ["macro{arg1,arg2}", "macro[arg1,arg2]"] {
-            let attr_val = AttributeMetaItem::new(as_string);
+            let meta_item = AttributeMetaItem::new(as_string);
             assert_eq!(
-                attr_val,
+                meta_item,
                 AttributeMetaItem {
                     raw_value: as_string,
                     base: "macro",
@@ -264,5 +264,19 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn attribute_meta_item_unrecognized_form() {
+        let meta_item = AttributeMetaItem::new("foo|bar|");
+        assert_eq!(
+            meta_item,
+            AttributeMetaItem {
+                raw_value: "foo|bar|",
+                base: "foo|bar|",
+                assigned_value: None,
+                arguments: None
+            }
+        );
     }
 }
