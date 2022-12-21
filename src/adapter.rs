@@ -10,7 +10,7 @@ use trustfall_core::{
     schema::Schema,
 };
 
-use crate::attributes::{Attribute, AttributeValue};
+use crate::attributes::{Attribute, AttributeMetaItem};
 use crate::indexed_crate::IndexedCrate;
 
 #[non_exhaustive]
@@ -85,10 +85,13 @@ impl Origin {
         }
     }
 
-    fn make_attribute_value_token<'a>(&self, attr_value: Rc<AttributeValue<'a>>) -> Token<'a> {
+    fn make_attribute_meta_item_token<'a>(
+        &self,
+        meta_item: Rc<AttributeMetaItem<'a>>,
+    ) -> Token<'a> {
         Token {
             origin: *self,
-            kind: TokenKind::AttributeValue(attr_value),
+            kind: TokenKind::AttributeMetaItem(meta_item),
         }
     }
 
@@ -129,7 +132,7 @@ pub enum TokenKind<'a> {
     ImportablePath(Vec<&'a str>),
     RawType(&'a Type),
     Attribute(Attribute<'a>),
-    AttributeValue(Rc<AttributeValue<'a>>),
+    AttributeMetaItem(Rc<AttributeMetaItem<'a>>),
     ImplementedTrait(&'a Path, &'a Item),
     FunctionParameter(&'a str),
 }
@@ -167,7 +170,7 @@ impl<'a> Token<'a> {
             TokenKind::Crate(..) => "Crate",
             TokenKind::CrateDiff(..) => "CrateDiff",
             TokenKind::Attribute(..) => "Attribute",
-            TokenKind::AttributeValue(..) => "AttributeValue",
+            TokenKind::AttributeMetaItem(..) => "AttributeMetaItem",
             TokenKind::ImplementedTrait(..) => "ImplementedTrait",
             TokenKind::RawType(ty) => match ty {
                 rustdoc_types::Type::ResolvedPath { .. } => "ResolvedPathType",
@@ -294,9 +297,9 @@ impl<'a> Token<'a> {
         }
     }
 
-    fn as_attribute_value(&self) -> Option<&'_ AttributeValue<'a>> {
+    fn as_attribute_meta_item(&self) -> Option<&'_ AttributeMetaItem<'a>> {
         match &self.kind {
-            TokenKind::AttributeValue(attr_value) => Some(attr_value),
+            TokenKind::AttributeMetaItem(meta_item) => Some(meta_item),
             _ => None,
         }
     }
@@ -482,14 +485,14 @@ fn get_attribute_property(token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
-fn get_attribute_value_property(token: &Token, field_name: &str) -> FieldValue {
-    let attr_value = token
-        .as_attribute_value()
-        .expect("token was not an AttributeValue");
+fn get_attribute_meta_item_property(token: &Token, field_name: &str) -> FieldValue {
+    let meta_item = token
+        .as_attribute_meta_item()
+        .expect("token was not an AttributeMetaItem");
     match field_name {
-        "raw_value" => attr_value.raw_value.into(),
-        "base" => attr_value.base.into(),
-        "assigned_value" => attr_value.assigned_value.into(),
+        "raw_value" => meta_item.raw_value.into(),
+        "base" => meta_item.base.into(),
+        "assigned_value" => meta_item.assigned_value.into(),
         _ => unreachable!("Attribute property {field_name}"),
     }
 }
@@ -633,8 +636,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "Attribute" => Box::new(data_contexts.map(move |ctx| {
                     property_mapper(ctx, field_name.as_ref(), get_attribute_property)
                 })),
-                "AttributeValue" => Box::new(data_contexts.map(move |ctx| {
-                    property_mapper(ctx, field_name.as_ref(), get_attribute_value_property)
+                "AttributeMetaItem" => Box::new(data_contexts.map(move |ctx| {
+                    property_mapper(ctx, field_name.as_ref(), get_attribute_meta_item_property)
                 })),
                 "ImplementedTrait" => Box::new(data_contexts.map(move |ctx| {
                     property_mapper(ctx, field_name.as_ref(), get_implemented_trait_property)
@@ -1225,19 +1228,20 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             },
             "Attribute" => match edge_name.as_ref() {
                 "content" => Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                        match &ctx.current_token {
-                            None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
+                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
+                        .current_token
+                    {
+                        None => Box::new(std::iter::empty()),
+                        Some(token) => {
+                            let origin = token.origin;
 
-                                let attribute =
-                                    token.as_attribute().expect("token was not an Attribute");
-                                Box::new(std::iter::once(
-                                    origin.make_attribute_value_token(attribute.content.clone()),
-                                ))
-                            }
-                        };
+                            let attribute =
+                                token.as_attribute().expect("token was not an Attribute");
+                            Box::new(std::iter::once(
+                                origin.make_attribute_meta_item_token(attribute.content.clone()),
+                            ))
+                        }
+                    };
 
                     (ctx, neighbors)
                 })),
@@ -1245,7 +1249,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
                 }
             },
-            "AttributeValue" => match edge_name.as_ref() {
+            "AttributeMetaItem" => match edge_name.as_ref() {
                 "argument" => Box::new(data_contexts.map(move |ctx| {
                     let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
                         match &ctx.current_token {
@@ -1253,12 +1257,12 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                             Some(token) => {
                                 let origin = token.origin;
 
-                                let attr_value = token
-                                    .as_attribute_value()
-                                    .expect("token was not an AttributeValue");
-                                if let Some(arguments) = attr_value.arguments.clone() {
+                                let meta_item = token
+                                    .as_attribute_meta_item()
+                                    .expect("token was not an AttributeMetaItem");
+                                if let Some(arguments) = meta_item.arguments.clone() {
                                     Box::new(arguments.into_iter().map(move |argument| {
-                                        origin.make_attribute_value_token(argument)
+                                        origin.make_attribute_meta_item_token(argument)
                                     }))
                                 } else {
                                     Box::new(std::iter::empty())

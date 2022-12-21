@@ -534,16 +534,16 @@ type Attribute {
   # edges
 
   # Edge to parsed content of the attribute
-  content: AttributeValue!
+  content: AttributeMetaItem!
 }
 
 """
-A type representing single MetaItem
+A single meta item used by a specific attribute
 (see https://doc.rust-lang.org/reference/attributes.html#meta-item-attribute-syntax).
 """
-type AttributeValue {
+type AttributeMetaItem {
   """
-  The entire value represented as a string as it is found in the code.
+  The entire meta item represented as a string as it is found in the code.
 
   For example: `"derive(Debug, Clone)"`
   """
@@ -569,10 +569,10 @@ type AttributeValue {
   """
   Inner meta items if the meta item is in the form `SimplePath(MetaSeq)`.
 
-  For example: `[AttributeValue::new("Debug"), AttributeValue::new("Clone")]`
+  For example: `[AttributeMetaItem::new("Debug"), AttributeMetaItem::new("Clone")]`
   for `derive(Debug, Clone)`
   """
-  argument: [AttributeValue!]
+  argument: [AttributeMetaItem!]
 }
 
 """
