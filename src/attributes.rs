@@ -54,23 +54,31 @@ pub struct AttributeMetaItem<'a> {
 }
 
 impl<'a> AttributeMetaItem<'a> {
-    /// Tries to parse `raw` as a comma-separated sequence of `AttributeMetaItem`'s
-    /// wrapped in parentheses, square brackets or curly brackets.
-    fn slice_arguments(raw: &'a str) -> Option<Vec<Rc<AttributeMetaItem<'a>>>> {
-        let is_left = |c| c == '(' || c == '[' || c == '{';
-        let is_right = |c| c == ')' || c == ']' || c == '}';
-        let matching_right = |c| match c {
+    fn is_left_bracket(c: char) -> bool {
+        c == '(' || c == '[' || c == '{'
+    }
+
+    fn is_right_bracket(c: char) -> bool {
+        c == ')' || c == ']' || c == '}'
+    }
+
+    fn matching_right_bracket(c: char) -> char {
+        match c {
             '(' => ')',
             '[' => ']',
             '{' => '}',
             _ => unreachable!("Tried to find matching right bracket for {c}."),
-        };
+        }
+    }
 
+    /// Tries to parse `raw` as a comma-separated sequence of `AttributeMetaItem`'s
+    /// wrapped in parentheses, square brackets or curly brackets.
+    fn slice_arguments(raw: &'a str) -> Option<Vec<Rc<AttributeMetaItem<'a>>>> {
         let raw_trimmed = raw.trim();
         let first_char = raw_trimmed.chars().next()?;
         let raw_meta_seq = raw_trimmed
-            .strip_prefix(is_left)?
-            .strip_suffix(|c| c == matching_right(first_char))?
+            .strip_prefix(Self::is_left_bracket)?
+            .strip_suffix(|c| c == Self::matching_right_bracket(first_char))?
             .trim();
 
         let mut index_after_last_comma = 0;
@@ -85,9 +93,9 @@ impl<'a> AttributeMetaItem<'a> {
             }
 
             if !inside_string_literal {
-                if is_left(c) {
+                if Self::is_left_bracket(c) {
                     bracket_depth += 1;
-                } else if is_right(c) {
+                } else if Self::is_right_bracket(c) {
                     bracket_depth -= 1;
                 } else if c == ',' {
                     // We only do a recursive call when the comma is on the outermost level.
@@ -114,10 +122,11 @@ impl<'a> AttributeMetaItem<'a> {
     }
 
     pub fn new(raw: &'a str) -> Self {
-        let simple_path_char = |c: char| c.is_alphanumeric() || c == '_' || c == ':';
         let raw_trimmed = raw.trim();
 
-        if let Some(path_end) = raw_trimmed.find(|c| !simple_path_char(c)) {
+        if let Some(path_end) =
+            raw_trimmed.find(|c: char| c.is_whitespace() || c == '=' || Self::is_left_bracket(c))
+        {
             let simple_path = &raw_trimmed[0..path_end];
             let attr_input = &raw_trimmed[path_end..];
             if !simple_path.is_empty() {
@@ -275,6 +284,28 @@ mod tests {
                             arguments: None
                         })
                     ])
+                })
+            }
+        )
+    }
+
+    #[test]
+    fn attribute_raw_identifier() {
+        let attribute = Attribute::new("#[r#derive(Debug)]");
+        assert_eq!(
+            attribute,
+            Attribute {
+                is_inner: false,
+                content: Rc::new(AttributeMetaItem {
+                    raw_item: "r#derive(Debug)",
+                    base: "r#derive",
+                    assigned_item: None,
+                    arguments: Some(vec![Rc::new(AttributeMetaItem {
+                        raw_item: "Debug",
+                        base: "Debug",
+                        assigned_item: None,
+                        arguments: None
+                    })])
                 })
             }
         )
