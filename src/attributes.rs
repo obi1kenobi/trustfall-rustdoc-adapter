@@ -58,6 +58,8 @@ pub struct AttributeMetaItem<'a> {
 }
 
 impl<'a> AttributeMetaItem<'a> {
+    /// Tries to parse `raw` as a comma-separated sequence of `AttributeMetaItem`'s
+    /// wrapped in parentheses, square brackets or curly brackets.
     fn slice_arguments(raw: &'a str) -> Option<Vec<Rc<AttributeMetaItem<'a>>>> {
         let is_left = |c| c == '(' || c == '[' || c == '{';
         let is_right = |c| c == ')' || c == ']' || c == '}';
@@ -68,49 +70,37 @@ impl<'a> AttributeMetaItem<'a> {
             _ => unreachable!("Tried to find matching right bracket for {}.", c),
         };
 
-        let mut i = 0;
-        let mut brackets: Vec<char> = Vec::new();
-        let mut arguments: Vec<Rc<AttributeMetaItem>> = Vec::new();
-        let mut only_white = true;
+        let raw_trimmed = raw.trim();
+        let first_char = raw_trimmed.chars().next()?;
+        let raw_meta_seq = raw_trimmed
+            .strip_prefix(is_left)?
+            .strip_suffix(|c| c == matching_right(first_char))?
+            .trim();
 
-        for (j, c) in raw.chars().enumerate() {
+        let mut i = 0; // index of the first character after the last comma
+        let mut bracket_depth = 0; // number of currently opened brackets
+        let mut arguments: Vec<Rc<AttributeMetaItem>> = Vec::new(); // meta items constructed so far
+
+        for (j, c) in raw_meta_seq.chars().enumerate() {
             if is_left(c) {
-                brackets.push(c);
-                if brackets.len() == 1 {
-                    i = j + 1;
-                }
+                bracket_depth += 1;
             } else if is_right(c) {
-                if c != matching_right(brackets.pop()?) {
-                    return None;
-                }
-                if brackets.is_empty() && !only_white {
-                    arguments.push(Rc::new(AttributeMetaItem::new(&raw[i..j])));
-                }
-                if brackets.is_empty() && j + 1 != raw.chars().count() {
-                    return None;
-                }
+                bracket_depth -= 1;
             } else if c == ',' {
-                if brackets.is_empty() {
-                    return None;
-                } else if brackets.len() == 1 {
-                    arguments.push(Rc::new(AttributeMetaItem::new(&raw[i..j])));
+                // We only do a recursive call when the comma is on the outermost level.
+                if bracket_depth == 0 {
+                    arguments.push(Rc::new(AttributeMetaItem::new(&raw_meta_seq[i..j])));
                     i = j + 1;
-                    only_white = true;
-                }
-            } else if c != ' ' && c != '\t' {
-                if brackets.is_empty() {
-                    return None;
-                } else {
-                    only_white = false;
                 }
             }
         }
 
-        if brackets.is_empty() {
-            Some(arguments)
-        } else {
-            None
+        // If the last comma was not a trailing one, there is still one meta item left.
+        if i < raw_meta_seq.len() {
+            arguments.push(Rc::new(AttributeMetaItem::new(&raw_meta_seq[i..])));
         }
+
+        Some(arguments)
     }
 
     pub fn new(raw: &'a str) -> Self {
