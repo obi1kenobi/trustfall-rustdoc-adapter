@@ -363,6 +363,7 @@ mod tests {
             "right parenthesis ) comma , left parenthesis (",
             "right square ) comma , left square (",
             "right curly } comma , left curly {",
+            "Mężny bądź, chroń pułk twój i sześć flag.",
         ];
 
         for literal in literals {
