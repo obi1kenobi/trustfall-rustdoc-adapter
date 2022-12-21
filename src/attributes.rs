@@ -217,6 +217,37 @@ mod tests {
     }
 
     #[test]
+    fn attribute_from_string_unformatted() {
+        let attribute = Attribute::new("\t#[ derive ( Eq\t, PartialEq,   ) ]  ");
+        assert_eq!(
+            attribute,
+            Attribute {
+                is_inner: false,
+                content: Rc::new(AttributeValue {
+                    raw_value: "derive ( Eq\t, PartialEq,   )",
+                    base: "derive",
+                    assigned_value: None,
+                    arguments: Some(vec![
+                        Rc::new(AttributeValue {
+                            raw_value: "Eq",
+                            base: "Eq",
+                            assigned_value: None,
+                            arguments: None
+                        }),
+                        Rc::new(AttributeValue {
+                            raw_value: "PartialEq",
+                            base: "PartialEq",
+                            assigned_value: None,
+                            arguments: None
+                        })
+                    ])
+                })
+            }
+        );
+        assert_eq!(attribute.as_string(), "#[derive ( Eq\t, PartialEq,   )]");
+    }
+
+    #[test]
     fn attribute_value_from_string_custom_brackets() {
         for as_string in ["macro{arg1,arg2}", "macro[arg1,arg2]"] {
             let attr_val = AttributeValue::new(as_string);
