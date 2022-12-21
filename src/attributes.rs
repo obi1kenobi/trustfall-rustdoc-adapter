@@ -73,27 +73,41 @@ impl<'a> AttributeMetaItem<'a> {
             .strip_suffix(|c| c == matching_right(first_char))?
             .trim();
 
-        let mut i = 0; // index of the first character after the last comma
+        let mut index_after_last_comma = 0;
+        let mut previous_is_escape = false;
+        let mut inside_string_literal = false;
         let mut bracket_depth = 0; // number of currently opened brackets
         let mut arguments: Vec<Rc<AttributeMetaItem>> = Vec::new(); // meta items constructed so far
 
-        for (j, c) in raw_meta_seq.chars().enumerate() {
-            if is_left(c) {
-                bracket_depth += 1;
-            } else if is_right(c) {
-                bracket_depth -= 1;
-            } else if c == ',' {
-                // We only do a recursive call when the comma is on the outermost level.
-                if bracket_depth == 0 {
-                    arguments.push(Rc::new(AttributeMetaItem::new(&raw_meta_seq[i..j])));
-                    i = j + 1;
+        for (j, c) in raw_meta_seq.char_indices() {
+            if c == '"' && !previous_is_escape {
+                inside_string_literal = !inside_string_literal;
+            }
+
+            if !inside_string_literal {
+                if is_left(c) {
+                    bracket_depth += 1;
+                } else if is_right(c) {
+                    bracket_depth -= 1;
+                } else if c == ',' {
+                    // We only do a recursive call when the comma is on the outermost level.
+                    if bracket_depth == 0 {
+                        arguments.push(Rc::new(AttributeMetaItem::new(
+                            &raw_meta_seq[index_after_last_comma..j],
+                        )));
+                        index_after_last_comma = j + 1;
+                    }
                 }
             }
+
+            previous_is_escape = c == '\\';
         }
 
         // If the last comma was not a trailing one, there is still one meta item left.
-        if i < raw_meta_seq.len() {
-            arguments.push(Rc::new(AttributeMetaItem::new(&raw_meta_seq[i..])));
+        if index_after_last_comma < raw_meta_seq.len() {
+            arguments.push(Rc::new(AttributeMetaItem::new(
+                &raw_meta_seq[index_after_last_comma..],
+            )));
         }
 
         Some(arguments)
@@ -237,6 +251,36 @@ mod tests {
     }
 
     #[test]
+    fn attribute_utf8() {
+        let attribute = Attribute::new("#[crate::gę42(bęc = \"🦀\", cśś = \"⭐\")]");
+        assert_eq!(
+            attribute,
+            Attribute {
+                is_inner: false,
+                content: Rc::new(AttributeMetaItem {
+                    raw_item: "crate::gę42(bęc = \"🦀\", cśś = \"⭐\")",
+                    base: "crate::gę42",
+                    assigned_item: None,
+                    arguments: Some(vec![
+                        Rc::new(AttributeMetaItem {
+                            raw_item: "bęc = \"🦀\"",
+                            base: "bęc",
+                            assigned_item: Some("\"🦀\""),
+                            arguments: None
+                        }),
+                        Rc::new(AttributeMetaItem {
+                            raw_item: "cśś = \"⭐\"",
+                            base: "cśś",
+                            assigned_item: Some("\"⭐\""),
+                            arguments: None
+                        })
+                    ])
+                })
+            }
+        )
+    }
+
+    #[test]
     fn attribute_meta_item_custom_brackets() {
         for raw_attribute in ["macro{arg1,arg2}", "macro[arg1,arg2]"] {
             let meta_item = AttributeMetaItem::new(raw_attribute);
@@ -277,5 +321,44 @@ mod tests {
                 arguments: None
             }
         );
+    }
+
+    #[test]
+    fn attribute_meta_item_string_literals() {
+        let literals = [
+            " ",
+            "comma ,",
+            "comma , escaped quote \\\" right parenthesis ) ",
+            "right parenthesis ) comma , left parenthesis (",
+            "right square ) comma , left square (",
+            "right curly } comma , left curly {",
+        ];
+
+        for literal in literals {
+            let raw_attribute = format!("foo(bar = \"{literal}\", baz = \"{literal}\")");
+            let meta_item = AttributeMetaItem::new(&raw_attribute);
+            assert_eq!(
+                meta_item,
+                AttributeMetaItem {
+                    raw_item: &raw_attribute,
+                    base: "foo",
+                    assigned_item: None,
+                    arguments: Some(vec![
+                        Rc::new(AttributeMetaItem {
+                            raw_item: format!("bar = \"{literal}\"").as_str(),
+                            base: "bar",
+                            assigned_item: Some(format!("\"{literal}\"").as_str()),
+                            arguments: None
+                        }),
+                        Rc::new(AttributeMetaItem {
+                            raw_item: format!("baz = \"{literal}\"").as_str(),
+                            base: "baz",
+                            assigned_item: Some(format!("\"{literal}\"").as_str()),
+                            arguments: None
+                        })
+                    ])
+                }
+            )
+        }
     }
 }
