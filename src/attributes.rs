@@ -19,11 +19,9 @@ impl<'a> Attribute<'a> {
         let raw_trimmed = raw.trim();
         let raw_without_closing = raw_trimmed.strip_suffix(']').unwrap_or_else(|| {
             panic!(
-                concat!(
-                    "String `{}` cannot be parsed as an attribute ",
-                    "because it is not closed with a square bracket."
-                ),
-                raw_trimmed
+                "\
+String `{raw_trimmed}` cannot be parsed as an attribute \
+because it is not closed with a square bracket."
             )
         });
 
@@ -39,11 +37,9 @@ impl<'a> Attribute<'a> {
             }
         } else {
             panic!(
-                concat!(
-                    "String `{}` cannot be parsed as an attribute ",
-                    "because it starts with neither `#[` nor `#![`."
-                ),
-                raw_trimmed
+                "\
+String `{raw_trimmed}` cannot be parsed as an attribute \
+because it starts with neither `#[` nor `#![`."
             )
         }
     }
@@ -67,7 +63,7 @@ impl<'a> AttributeMetaItem<'a> {
             '(' => ')',
             '[' => ']',
             '{' => '}',
-            _ => unreachable!("Tried to find matching right bracket for {}.", c),
+            _ => unreachable!("Tried to find matching right bracket for {c}."),
         };
 
         let raw_trimmed = raw.trim();
