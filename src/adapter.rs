@@ -479,7 +479,7 @@ fn get_impl_property(token: &Token, field_name: &str) -> FieldValue {
 fn get_attribute_property(token: &Token, field_name: &str) -> FieldValue {
     let attribute = token.as_attribute().expect("token was not an Attribute");
     match field_name {
-        "as_string" => attribute.as_string().into(),
+        "raw_attribute" => attribute.raw_attribute().into(),
         "is_inner" => attribute.is_inner.into(),
         _ => unreachable!("Attribute property {field_name}"),
     }

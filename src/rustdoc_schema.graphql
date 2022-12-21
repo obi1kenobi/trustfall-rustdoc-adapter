@@ -521,7 +521,7 @@ type Attribute {
 
   For example: `#[non_exhaustive]`
   """
-  as_string: String!
+  raw_attribute: String!
 
   """
   True for an inner attribute (starting with `#![`), and false for an

@@ -7,7 +7,7 @@ pub struct Attribute<'a> {
 }
 
 impl<'a> Attribute<'a> {
-    pub fn as_string(&self) -> String {
+    pub fn raw_attribute(&self) -> String {
         format!(
             "#{}[{}]",
             if self.is_inner { "!" } else { "" },
@@ -159,7 +159,7 @@ mod tests {
                 })
             }
         );
-        assert_eq!(attribute.as_string(), "#![no_std]");
+        assert_eq!(attribute.raw_attribute(), "#![no_std]");
     }
 
     #[test]
@@ -234,17 +234,20 @@ mod tests {
                 })
             }
         );
-        assert_eq!(attribute.as_string(), "#[derive ( Eq\t, PartialEq,   )]");
+        assert_eq!(
+            attribute.raw_attribute(),
+            "#[derive ( Eq\t, PartialEq,   )]"
+        );
     }
 
     #[test]
     fn attribute_meta_item_custom_brackets() {
-        for as_string in ["macro{arg1,arg2}", "macro[arg1,arg2]"] {
-            let meta_item = AttributeMetaItem::new(as_string);
+        for raw_attribute in ["macro{arg1,arg2}", "macro[arg1,arg2]"] {
+            let meta_item = AttributeMetaItem::new(raw_attribute);
             assert_eq!(
                 meta_item,
                 AttributeMetaItem {
-                    raw_item: as_string,
+                    raw_item: raw_attribute,
                     base: "macro",
                     assigned_item: None,
                     arguments: Some(vec![
