@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Attribute<'a> {
     pub is_inner: bool,
     pub content: Rc<AttributeValue<'a>>,
@@ -16,10 +16,16 @@ impl<'a> Attribute<'a> {
     }
 
     pub fn new(raw: &'a str) -> Self {
-        let raw_without_closing = raw
-            .trim()
-            .strip_suffix(']')
-            .expect("Attribute has to be closed by a square bracket.");
+        let raw_trimmed = raw.trim();
+        let raw_without_closing = raw_trimmed.strip_suffix(']').unwrap_or_else(|| {
+            panic!(
+                concat!(
+                    "String `{}` cannot be parsed as an attribute ",
+                    "because it is not closed with a square bracket."
+                ),
+                raw_trimmed
+            )
+        });
 
         if let Some(raw_content) = raw_without_closing.strip_prefix("#[") {
             Attribute {
@@ -32,12 +38,18 @@ impl<'a> Attribute<'a> {
                 content: Rc::new(AttributeValue::new(raw_content)),
             }
         } else {
-            panic!("Attribute has to start either with `#[` or `#![`.");
+            panic!(
+                concat!(
+                    "String `{}` cannot be parsed as an attribute ",
+                    "because it starts with neither `#[` nor `#![`."
+                ),
+                raw_trimmed
+            )
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttributeValue<'a> {
     pub raw_value: &'a str,
     pub base: &'a str,
@@ -53,7 +65,7 @@ impl<'a> AttributeValue<'a> {
             '(' => ')',
             '[' => ']',
             '{' => '}',
-            _ => unreachable!("Nonexisting bracket."),
+            _ => unreachable!("Tried to find matching right bracket for {}.", c),
         };
 
         let mut i = 0;
