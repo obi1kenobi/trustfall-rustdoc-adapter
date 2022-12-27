@@ -84,7 +84,7 @@ impl<'a> AttributeMetaItem<'a> {
         let mut index_after_last_comma = 0;
         let mut previous_is_escape = false;
         let mut inside_string_literal = false;
-        let mut bracket_depth = 0; // number of currently opened brackets
+        let mut brackets = Vec::new(); // currently opened brackets
         let mut arguments: Vec<Rc<AttributeMetaItem>> = Vec::new(); // meta items constructed so far
 
         for (j, c) in raw_meta_seq.char_indices() {
@@ -94,12 +94,18 @@ impl<'a> AttributeMetaItem<'a> {
 
             if !inside_string_literal {
                 if Self::is_left_bracket(c) {
-                    bracket_depth += 1;
+                    brackets.push(c);
                 } else if Self::is_right_bracket(c) {
-                    bracket_depth -= 1;
+                    if let Some(top_left) = brackets.pop() {
+                        if Self::matching_right_bracket(top_left) != c {
+                            return None;
+                        }
+                    } else {
+                        return None;
+                    }
                 } else if c == ',' {
                     // We only do a recursive call when the comma is on the outermost level.
-                    if bracket_depth == 0 {
+                    if brackets.is_empty() {
                         arguments.push(Rc::new(AttributeMetaItem::new(
                             &raw_meta_seq[index_after_last_comma..j],
                         )));
