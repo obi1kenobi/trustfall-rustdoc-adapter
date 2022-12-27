@@ -96,6 +96,8 @@ impl<'a> AttributeMetaItem<'a> {
                 if Self::is_left_bracket(c) {
                     brackets.push(c);
                 } else if Self::is_right_bracket(c) {
+                    // If the brackets don't match in any way, give up on parsing 
+                    // individual arguments since we don't understand the format.
                     if let Some(top_left) = brackets.pop() {
                         if Self::matching_right_bracket(top_left) != c {
                             return None;
