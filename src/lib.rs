@@ -1,4 +1,5 @@
 mod adapter;
+mod attributes;
 mod indexed_crate;
 
 // Re-export the Crate type so we can deserialize it.
