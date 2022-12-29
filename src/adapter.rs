@@ -509,6 +509,14 @@ fn get_raw_type_property(token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
+fn get_trait_property(token: &Token, field_name: &str) -> FieldValue {
+    let trait_token = token.as_trait().expect("token was not a Trait");
+    match field_name {
+        "unsafe" => trait_token.is_unsafe.into(),
+        _ => unreachable!("Trait property {field_name}"),
+    }
+}
+
 fn get_implemented_trait_property(token: &Token, field_name: &str) -> FieldValue {
     let (path, _) = token
         .as_implemented_trait()
@@ -639,6 +647,11 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "AttributeMetaItem" => Box::new(data_contexts.map(move |ctx| {
                     property_mapper(ctx, field_name.as_ref(), get_attribute_meta_item_property)
                 })),
+                "Trait" => {
+                    Box::new(data_contexts.map(move |ctx| {
+                        property_mapper(ctx, field_name.as_ref(), get_trait_property)
+                    }))
+                }
                 "ImplementedTrait" => Box::new(data_contexts.map(move |ctx| {
                     property_mapper(ctx, field_name.as_ref(), get_implemented_trait_property)
                 })),
