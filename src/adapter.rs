@@ -1168,7 +1168,32 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                                     origin.make_implemented_trait_token(path, item),
                                                 ))
                                             } else {
-                                                Box::new(std::iter::empty())
+                                                let item: Item = Item {
+                                                    id: path.id.clone(),
+                                                    crate_id: 0,
+                                                    name: Some(path.name.clone()),
+                                                    span: None,
+                                                    visibility: rustdoc_types::Visibility::Public,
+                                                    docs: None,
+                                                    links: std::collections::HashMap::new(),
+                                                    attrs: Vec::new(),
+                                                    deprecation: None,
+                                                    inner: rustdoc_types::ItemEnum::Trait(Trait {
+                                                        is_auto: true,
+                                                        is_unsafe: false,
+                                                        items: Vec::new(),
+                                                        generics: rustdoc_types::Generics {
+                                                            params: Vec::new(),
+                                                            where_predicates: Vec::new(),
+                                                        },
+                                                        bounds: Vec::new(),
+                                                        implementations: Vec::new(),
+                                                    }),
+                                                };
+                                                Box::new(std::iter::once(
+                                                    origin
+                                                        .make_implemented_trait_token(path, &item),
+                                                ))
                                             }
                                         } else {
                                             Box::new(std::iter::empty())
