@@ -167,6 +167,117 @@ fn collect_public_items<'a>(
     }
 }
 
+struct ManualTraitItem {
+    name: &'static str,
+    is_auto: bool,
+    is_unsafe: bool,
+}
+
+/// Limiting the creation of manually inlined traits to only those that are used by the lints.
+/// There are other foreign traits, but it is not obvious how the manually inlined traits
+/// should look like for them.
+const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 14] = [
+    ManualTraitItem {
+        name: "Debug",
+        is_auto: false,
+        is_unsafe: false,
+    },
+    ManualTraitItem {
+        name: "Clone",
+        is_auto: false,
+        is_unsafe: false,
+    },
+    ManualTraitItem {
+        name: "Copy",
+        is_auto: false,
+        is_unsafe: false,
+    },
+    ManualTraitItem {
+        name: "PartialOrd",
+        is_auto: false,
+        is_unsafe: false,
+    },
+    ManualTraitItem {
+        name: "Ord",
+        is_auto: false,
+        is_unsafe: false,
+    },
+    ManualTraitItem {
+        name: "PartialEq",
+        is_auto: false,
+        is_unsafe: false,
+    },
+    ManualTraitItem {
+        name: "Eq",
+        is_auto: false,
+        is_unsafe: false,
+    },
+    ManualTraitItem {
+        name: "Hash",
+        is_auto: false,
+        is_unsafe: false,
+    },
+    ManualTraitItem {
+        name: "Send",
+        is_auto: true,
+        is_unsafe: true,
+    },
+    ManualTraitItem {
+        name: "Sync",
+        is_auto: true,
+        is_unsafe: true,
+    },
+    ManualTraitItem {
+        name: "Unpin",
+        is_auto: true,
+        is_unsafe: false,
+    },
+    ManualTraitItem {
+        name: "RefUnwindSafe",
+        is_auto: true,
+        is_unsafe: false,
+    },
+    ManualTraitItem {
+        name: "UnwindSafe",
+        is_auto: true,
+        is_unsafe: false,
+    },
+    ManualTraitItem {
+        name: "Sized",
+        is_auto: false,
+        is_unsafe: false,
+    },
+];
+
+fn new_trait(manual_trait_item: &ManualTraitItem, id: Id, crate_id: u32) -> Item {
+    Item {
+        id,
+        crate_id,
+        name: Some(manual_trait_item.name.to_string()),
+        span: None,
+        visibility: rustdoc_types::Visibility::Public,
+        docs: None,
+        links: HashMap::new(),
+        attrs: Vec::new(),
+        deprecation: None,
+        inner: rustdoc_types::ItemEnum::Trait(rustdoc_types::Trait {
+            is_auto: manual_trait_item.is_auto,
+            is_unsafe: manual_trait_item.is_unsafe,
+            // The `item`, `generics`, `bounds` and `implementations`
+            // are not currently present in the schema,
+            // so it is safe to fill them with empty containers,
+            // even though some traits in reality have some values in them.
+            items: Vec::new(),
+            generics: rustdoc_types::Generics {
+                params: Vec::new(),
+                where_predicates: Vec::new(),
+            },
+            bounds: Vec::new(),
+            implementations: Vec::new(),
+        }),
+    }
+}
+
 fn create_manually_inlined_builtin_traits(crate_: &Crate) -> HashMap<Id, Item> {
     let paths = crate_
         .index
@@ -178,61 +289,12 @@ fn create_manually_inlined_builtin_traits(crate_: &Crate) -> HashMap<Id, Item> {
         })
         .filter_map(|impl_| impl_.trait_.as_ref());
 
-    // Limiting the creation of manually inlined traits to only those that are used by the lints.
-    // There are other foreign traits and it is not obvious how the manually inlined traits
-    // should look like for them.
-    let derivable_traits = [
-        "Debug",
-        "Clone",
-        "Copy",
-        "PartialOrd",
-        "Ord",
-        "PartialEq",
-        "Eq",
-        "Hash",
-        "Default",
-    ];
-    let auto_traits = ["Send", "Sync", "Unpin", "RefUnwindSafe", "UnwindSafe"];
-    let other_traits = ["Sized"];
-    let trait_names: Vec<&str> = vec![
-        derivable_traits.to_vec(),
-        auto_traits.to_vec(),
-        other_traits.to_vec(),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
-    let paths = paths.filter(|path| trait_names.contains(&path.name.as_str()));
-
     paths
-        .map(|path| {
-            let manual_item: Item = Item {
-                id: path.id.clone(),
-                crate_id: 0,
-                name: Some(path.name.clone()),
-                span: None,
-                visibility: rustdoc_types::Visibility::Public,
-                docs: None,
-                links: HashMap::new(),
-                attrs: Vec::new(),
-                deprecation: None,
-                inner: rustdoc_types::ItemEnum::Trait(rustdoc_types::Trait {
-                    is_auto: auto_traits.to_vec().contains(&path.name.as_str()),
-                    is_unsafe: false,
-                    // The `item`, `generics`, `bounds` and `implementations`
-                    // are not currently present in the schema,
-                    // so it is safe to fill them with empty containers,
-                    // even though some traits in reality have some values in them.
-                    items: Vec::new(),
-                    generics: rustdoc_types::Generics {
-                        params: Vec::new(),
-                        where_predicates: Vec::new(),
-                    },
-                    bounds: Vec::new(),
-                    implementations: Vec::new(),
-                }),
-            };
-            (path.id.clone(), manual_item)
+        .filter_map(|path| {
+            MANUAL_TRAIT_ITEMS
+                .iter()
+                .find(|manual| manual.name == path.name)
+                .map(|manual| (path.id.clone(), new_trait(manual, path.id.clone(), 0)))
         })
         .collect()
 }
