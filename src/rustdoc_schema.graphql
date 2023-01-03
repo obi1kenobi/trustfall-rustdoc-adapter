@@ -617,7 +617,7 @@ type ImplementedTrait {
   """
   In `impl Foo<u64> for Bar`, this refers to `trait Foo<T>`.
   """
-  trait: Trait!
+  trait: Trait
 }
 
 """
