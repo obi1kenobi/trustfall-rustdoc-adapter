@@ -1164,13 +1164,13 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
 
                                         if let Some(path) = &impl_token.trait_ {
                                             // When the implemented trait is from the same crate
-                                            // as its definition, the trait should be present
+                                            // as its definition, the trait is expected to be present
                                             // in `item_index`. Otherwise, the
-                                            // `rustdoc_types::Trait` is not in this rustdoc.
-                                            // The needed foreign traits for lints are hand-written
-                                            // in `manually_inlined_builtin_traits`.
-                                            // See the comments in `src/indexed_crate.rs`
-                                            // for details.
+                                            // `rustdoc_types::Trait` is not in this rustdoc,
+                                            // even if the trait is part of Rust `core` or `std`.
+                                            // As a temporary workaround, some common
+                                            // Rust built-in traits are manually "inlined"
+                                            // with items stored in `manually_inlined_builtin_traits`.
                                             let found_item = item_index
                                                 .get(&path.id)
                                                 .or_else(|| {
