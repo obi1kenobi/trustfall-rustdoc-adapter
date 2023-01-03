@@ -1174,12 +1174,15 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                             let found_item = item_index
                                                 .get(&path.id)
                                                 .or_else(|| {
-                                                    current_crate.manually_inlined_builtin_traits.get(&path.id)
-                                                })
-                                                .or_else(|| {
-                                                    previous_crate.and_then(|crate_| {
-                                                        crate_.manually_inlined_builtin_traits.get(&path.id)
-                                                    })
+                                                    let manually_inlined_builtin_traits = match origin {
+                                                        Origin::CurrentCrate => &current_crate.manually_inlined_builtin_traits,
+                                                        Origin::PreviousCrate => {
+                                                            &previous_crate
+                                                                .expect("no previous crate provided")
+                                                                .manually_inlined_builtin_traits
+                                                        }
+                                                    };
+                                                    manually_inlined_builtin_traits.get(&path.id)
                                                 });
                                             if let Some(item) = found_item {
                                                 Box::new(std::iter::once(
