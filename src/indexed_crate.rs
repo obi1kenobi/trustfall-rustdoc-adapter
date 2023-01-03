@@ -220,7 +220,7 @@ fn create_manually_inlined_builtin_traits(crate_: &Crate) -> HashMap<Id, Item> {
                     is_auto: auto_traits.to_vec().contains(&path.name.as_str()),
                     is_unsafe: false,
                     // The `item`, `generics`, `bounds` and `implementations`
-                    // are not present in the schema,
+                    // are not currently present in the schema,
                     // so it is safe to fill them with empty containers,
                     // even though some traits in reality have some values in them.
                     items: Vec::new(),
