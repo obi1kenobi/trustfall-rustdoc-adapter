@@ -294,7 +294,14 @@ fn create_manually_inlined_builtin_traits(crate_: &Crate) -> HashMap<Id, Item> {
             MANUAL_TRAIT_ITEMS
                 .iter()
                 .find(|manual| manual.name == path.name)
-                .map(|manual| (path.id.clone(), new_trait(manual, path.id.clone(), 0)))
+                .and_then(|manual| {
+                    crate_.paths.get(&path.id).map(|item_summary| {
+                        (
+                            path.id.clone(),
+                            new_trait(manual, path.id.clone(), item_summary.crate_id),
+                        )
+                    })
+                })
         })
         .collect()
 }
