@@ -8,15 +8,23 @@ pub struct IndexedCrate<'a> {
 
     // For an Id, give the list of item Ids under which it is publicly visible.
     pub(crate) visibility_forest: HashMap<&'a Id, Vec<&'a Id>>,
+
+    /// As of https://github.com/rust-lang/rust/pull/105182
+    /// the `rustdoc_types::Trait`s from foreign/outside crates
+    /// (in particular, traits like `Debug`, `Send` or `Eq`) are no longer present in `inner`.
+    /// Unfortunately, the current schema requires having `rustdoc_types::Trait` for each
+    /// trait implementation.
+    /// The `dummy_trait_items` tries to fix this problem by creating a hand-written `Trait`
+    /// for each of the std traits the user can use.
+    pub(crate) dummy_trait_items: HashMap<Id, Item>,
 }
 
 impl<'a> IndexedCrate<'a> {
     pub fn new(crate_: &'a Crate) -> Self {
-        let visibility_forest = calculate_visibility_forest(crate_);
-
         Self {
             inner: crate_,
-            visibility_forest,
+            visibility_forest: calculate_visibility_forest(crate_),
+            dummy_trait_items: create_dummy_trait_items(crate_),
         }
     }
 
@@ -147,4 +155,74 @@ fn collect_public_items<'a>(
         }
         Visibility::Crate | Visibility::Restricted { .. } => {}
     }
+}
+
+fn create_dummy_trait_items(crate_: &Crate) -> HashMap<Id, Item> {
+    let paths = crate_
+        .index
+        .values()
+        .map(|item| &item.inner)
+        .filter_map(|item_enum| match item_enum {
+            rustdoc_types::ItemEnum::Impl(impl_) => Some(impl_),
+            _ => None,
+        })
+        .filter_map(|impl_| impl_.trait_.as_ref());
+
+    // Limiting the creation of dummy traits to only those that are used by the lints.
+    // There are other foreign traits and it is not obvious how the dummy traits
+    // should look like for them.
+    let derivable_traits = [
+        "Debug",
+        "Clone",
+        "Copy",
+        "PartialOrd",
+        "Ord",
+        "PartialEq",
+        "Eq",
+        "Hash",
+        "Default",
+    ];
+    let auto_traits = ["Send", "Sync", "Unpin", "RefUnwindSafe", "UnwindSafe"];
+    let other_traits = ["Sized"];
+    let trait_names: Vec<&str> = vec![
+        derivable_traits.to_vec(),
+        auto_traits.to_vec(),
+        other_traits.to_vec(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let paths = paths.filter(|path| trait_names.contains(&path.name.as_str()));
+
+    paths
+        .map(|path| {
+            let dummy_item: Item = Item {
+                id: path.id.clone(),
+                crate_id: 0,
+                name: Some(path.name.clone()),
+                span: None,
+                visibility: rustdoc_types::Visibility::Public,
+                docs: None,
+                links: HashMap::new(),
+                attrs: Vec::new(),
+                deprecation: None,
+                inner: rustdoc_types::ItemEnum::Trait(rustdoc_types::Trait {
+                    is_auto: auto_traits.to_vec().contains(&path.name.as_str()),
+                    is_unsafe: false,
+                    // The `item`, `generics`, `bounds` and `implementations`
+                    // are not present in the schema,
+                    // so it is safe to fill them with empty containers,
+                    // even though some traits in reality have some values in them.
+                    items: Vec::new(),
+                    generics: rustdoc_types::Generics {
+                        params: Vec::new(),
+                        where_predicates: Vec::new(),
+                    },
+                    bounds: Vec::new(),
+                    implementations: Vec::new(),
+                }),
+            };
+            (path.id.clone(), dummy_item)
+        })
+        .collect()
 }

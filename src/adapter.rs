@@ -1163,37 +1163,26 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                             token.as_impl().expect("not an Impl token");
 
                                         if let Some(path) = &impl_token.trait_ {
-                                            if let Some(item) = item_index.get(&path.id) {
+                                            // When the implemented trait is from the same crate
+                                            // as its definition, the trait should be present
+                                            // in `item_index`. Otherwise, the
+                                            // `rustdoc_types::Trait` is not in this rustdoc. 
+                                            // The needed foreign traits for lints are hand-written 
+                                            // in `dummy_trait_items`.
+                                            // See the comments in `src/indexed_crate.rs`
+                                            // for details.
+                                            let found_item = item_index
+                                                .get(&path.id)
+                                                .or(current_crate.dummy_trait_items.get(&path.id))
+                                                .or(previous_crate.and_then(|crate_| {
+                                                    crate_.dummy_trait_items.get(&path.id)
+                                                }));
+                                            if let Some(item) = found_item {
                                                 Box::new(std::iter::once(
                                                     origin.make_implemented_trait_token(path, item),
                                                 ))
                                             } else {
-                                                let item: Item = Item {
-                                                    id: path.id.clone(),
-                                                    crate_id: 0,
-                                                    name: Some(path.name.clone()),
-                                                    span: None,
-                                                    visibility: rustdoc_types::Visibility::Public,
-                                                    docs: None,
-                                                    links: std::collections::HashMap::new(),
-                                                    attrs: Vec::new(),
-                                                    deprecation: None,
-                                                    inner: rustdoc_types::ItemEnum::Trait(Trait {
-                                                        is_auto: true,
-                                                        is_unsafe: false,
-                                                        items: Vec::new(),
-                                                        generics: rustdoc_types::Generics {
-                                                            params: Vec::new(),
-                                                            where_predicates: Vec::new(),
-                                                        },
-                                                        bounds: Vec::new(),
-                                                        implementations: Vec::new(),
-                                                    }),
-                                                };
-                                                Box::new(std::iter::once(
-                                                    origin
-                                                        .make_implemented_trait_token(path, &item),
-                                                ))
+                                                Box::new(std::iter::empty())
                                             }
                                         } else {
                                             Box::new(std::iter::empty())
