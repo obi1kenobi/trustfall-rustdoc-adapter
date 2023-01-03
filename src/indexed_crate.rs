@@ -22,7 +22,7 @@ pub struct IndexedCrate<'a> {
     ///
     /// A more complete future solution may generate multiple crates' rustdoc JSON
     /// and link to the external crate's trait items as necessary.
-    pub(crate) dummy_trait_items: HashMap<Id, Item>,
+    pub(crate) manually_inlined_builtin_traits: HashMap<Id, Item>,
 }
 
 impl<'a> IndexedCrate<'a> {
@@ -30,7 +30,7 @@ impl<'a> IndexedCrate<'a> {
         Self {
             inner: crate_,
             visibility_forest: calculate_visibility_forest(crate_),
-            dummy_trait_items: create_dummy_trait_items(crate_),
+            manually_inlined_builtin_traits: create_manually_inlined_builtin_traits(crate_),
         }
     }
 
@@ -163,7 +163,7 @@ fn collect_public_items<'a>(
     }
 }
 
-fn create_dummy_trait_items(crate_: &Crate) -> HashMap<Id, Item> {
+fn create_manually_inlined_builtin_traits(crate_: &Crate) -> HashMap<Id, Item> {
     let paths = crate_
         .index
         .values()
@@ -174,8 +174,8 @@ fn create_dummy_trait_items(crate_: &Crate) -> HashMap<Id, Item> {
         })
         .filter_map(|impl_| impl_.trait_.as_ref());
 
-    // Limiting the creation of dummy traits to only those that are used by the lints.
-    // There are other foreign traits and it is not obvious how the dummy traits
+    // Limiting the creation of manually inlined traits to only those that are used by the lints.
+    // There are other foreign traits and it is not obvious how the manually inlined traits
     // should look like for them.
     let derivable_traits = [
         "Debug",
@@ -202,7 +202,7 @@ fn create_dummy_trait_items(crate_: &Crate) -> HashMap<Id, Item> {
 
     paths
         .map(|path| {
-            let dummy_item: Item = Item {
+            let manual_item: Item = Item {
                 id: path.id.clone(),
                 crate_id: 0,
                 name: Some(path.name.clone()),
@@ -228,7 +228,7 @@ fn create_dummy_trait_items(crate_: &Crate) -> HashMap<Id, Item> {
                     implementations: Vec::new(),
                 }),
             };
-            (path.id.clone(), dummy_item)
+            (path.id.clone(), manual_item)
         })
         .collect()
 }

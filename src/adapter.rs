@@ -1168,17 +1168,17 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                             // in `item_index`. Otherwise, the
                                             // `rustdoc_types::Trait` is not in this rustdoc.
                                             // The needed foreign traits for lints are hand-written
-                                            // in `dummy_trait_items`.
+                                            // in `manually_inlined_builtin_traits`.
                                             // See the comments in `src/indexed_crate.rs`
                                             // for details.
                                             let found_item = item_index
                                                 .get(&path.id)
                                                 .or_else(|| {
-                                                    current_crate.dummy_trait_items.get(&path.id)
+                                                    current_crate.manually_inlined_builtin_traits.get(&path.id)
                                                 })
                                                 .or_else(|| {
                                                     previous_crate.and_then(|crate_| {
-                                                        crate_.dummy_trait_items.get(&path.id)
+                                                        crate_.manually_inlined_builtin_traits.get(&path.id)
                                                     })
                                                 });
                                             if let Some(item) = found_item {
