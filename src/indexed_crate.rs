@@ -9,13 +9,19 @@ pub struct IndexedCrate<'a> {
     // For an Id, give the list of item Ids under which it is publicly visible.
     pub(crate) visibility_forest: HashMap<&'a Id, Vec<&'a Id>>,
 
-    /// As of https://github.com/rust-lang/rust/pull/105182
-    /// the `rustdoc_types::Trait`s from foreign/outside crates
-    /// (in particular, traits like `Debug`, `Send` or `Eq`) are no longer present in `inner`.
-    /// Unfortunately, the current schema requires having `rustdoc_types::Trait` for each
-    /// trait implementation.
-    /// The `dummy_trait_items` tries to fix this problem by creating a hand-written `Trait`
-    /// for each of the std traits the user can use.
+    /// Trait items defined in external crates are not present in the `inner: &Crate` field,
+    /// even if they are implemented by a type in that crate. This also includes
+    /// Rust's built-in traits like `Debug, Send, Eq` etc.
+    ///
+    /// This change is approximately as of rustdoc v23,
+    /// in https://github.com/rust-lang/rust/pull/105182
+    ///
+    /// As a temporary workaround, we manually create the trait items
+    /// for the most common Rust built-in traits and link to those items
+    /// as if they were still part of the rustdoc JSON file.
+    ///
+    /// A more complete future solution may generate multiple crates' rustdoc JSON
+    /// and link to the external crate's trait items as necessary.
     pub(crate) dummy_trait_items: HashMap<Id, Item>,
 }
 
