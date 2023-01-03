@@ -1166,17 +1166,21 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                             // When the implemented trait is from the same crate
                                             // as its definition, the trait should be present
                                             // in `item_index`. Otherwise, the
-                                            // `rustdoc_types::Trait` is not in this rustdoc. 
-                                            // The needed foreign traits for lints are hand-written 
+                                            // `rustdoc_types::Trait` is not in this rustdoc.
+                                            // The needed foreign traits for lints are hand-written
                                             // in `dummy_trait_items`.
                                             // See the comments in `src/indexed_crate.rs`
                                             // for details.
                                             let found_item = item_index
                                                 .get(&path.id)
-                                                .or_else(|| current_crate.dummy_trait_items.get(&path.id))
-                                                .or_else(|| previous_crate.and_then(|crate_| {
-                                                    crate_.dummy_trait_items.get(&path.id)
-                                                }));
+                                                .or_else(|| {
+                                                    current_crate.dummy_trait_items.get(&path.id)
+                                                })
+                                                .or_else(|| {
+                                                    previous_crate.and_then(|crate_| {
+                                                        crate_.dummy_trait_items.get(&path.id)
+                                                    })
+                                                });
                                             if let Some(item) = found_item {
                                                 Box::new(std::iter::once(
                                                     origin.make_implemented_trait_token(path, item),
