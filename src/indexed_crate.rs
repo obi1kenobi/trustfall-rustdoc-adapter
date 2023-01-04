@@ -168,6 +168,7 @@ fn collect_public_items<'a>(
     }
 }
 
+#[derive(Debug)]
 struct ManualTraitItem {
     name: &'static str,
     is_auto: bool,
