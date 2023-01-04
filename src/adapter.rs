@@ -1176,7 +1176,28 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                             token.as_impl().expect("not an Impl token");
 
                                         if let Some(path) = &impl_token.trait_ {
-                                            if let Some(item) = item_index.get(&path.id) {
+                                            // When the implemented trait is from the same crate
+                                            // as its definition, the trait is expected to be present
+                                            // in `item_index`. Otherwise, the
+                                            // `rustdoc_types::Trait` is not in this rustdoc,
+                                            // even if the trait is part of Rust `core` or `std`.
+                                            // As a temporary workaround, some common
+                                            // Rust built-in traits are manually "inlined"
+                                            // with items stored in `manually_inlined_builtin_traits`.
+                                            let found_item = item_index
+                                                .get(&path.id)
+                                                .or_else(|| {
+                                                    let manually_inlined_builtin_traits = match origin {
+                                                        Origin::CurrentCrate => &current_crate.manually_inlined_builtin_traits,
+                                                        Origin::PreviousCrate => {
+                                                            &previous_crate
+                                                                .expect("no previous crate provided")
+                                                                .manually_inlined_builtin_traits
+                                                        }
+                                                    };
+                                                    manually_inlined_builtin_traits.get(&path.id)
+                                                });
+                                            if let Some(item) = found_item {
                                                 Box::new(std::iter::once(
                                                     origin.make_implemented_trait_token(path, item),
                                                 ))
