@@ -2,10 +2,11 @@ use std::collections::HashMap;
 
 use rustdoc_types::{Crate, Id, Item, Visibility};
 
-/// Besides the parsed rustdoc, it additionally contains
-/// some manually inlined `rustdoc_types::Trait`s of
-/// most common built-in traits.
-/// This is a temporary step, until we'll adopt rustdocs of foreign crates.
+/// The rustdoc for a crate, together with associated indexed data to speed up common operations.
+///
+/// Besides the parsed rustdoc, it also contains some manually-inlined `rustdoc_types::Trait`s
+/// of the most common built-in traits.
+/// This is a temporary step, until we're able to combine rustdocs of multiple crates.
 #[derive(Debug, Clone)]
 pub struct IndexedCrate<'a> {
     pub(crate) inner: &'a Crate,
