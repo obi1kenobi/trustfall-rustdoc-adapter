@@ -2,6 +2,7 @@ use std::{collections::BTreeSet, rc::Rc, sync::Arc};
 
 use rustdoc_types::{
     Crate, Enum, Function, Id, Impl, Item, ItemEnum, Path, Span, Struct, Trait, Type, Variant,
+    VariantKind,
 };
 use trustfall_core::{
     interpreter::{Adapter, DataContext, InterpretedQuery},
@@ -154,9 +155,11 @@ impl<'a> Token<'a> {
                 rustdoc_types::ItemEnum::Struct(..) => "Struct",
                 rustdoc_types::ItemEnum::Enum(..) => "Enum",
                 rustdoc_types::ItemEnum::Function(..) => "Function",
-                rustdoc_types::ItemEnum::Variant(Variant::Plain(..)) => "PlainVariant",
-                rustdoc_types::ItemEnum::Variant(Variant::Tuple(..)) => "TupleVariant",
-                rustdoc_types::ItemEnum::Variant(Variant::Struct { .. }) => "StructVariant",
+                rustdoc_types::ItemEnum::Variant(variant) => match variant.kind {
+                    VariantKind::Plain => "PlainVariant",
+                    VariantKind::Tuple(..) => "TupleVariant",
+                    VariantKind::Struct { .. } => "StructVariant",
+                },
                 rustdoc_types::ItemEnum::StructField(..) => "StructField",
                 rustdoc_types::ItemEnum::Impl(..) => "Impl",
                 rustdoc_types::ItemEnum::Trait(..) => "Trait",
@@ -1000,8 +1003,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                 Some(token) => {
                                     let origin = token.origin;
                                     let item = token.as_variant().expect("token was not a Variant");
-                                    match item {
-                                        Variant::Struct {
+                                    match &item.kind {
+                                        VariantKind::Struct {
                                             fields,
                                             fields_stripped: _,
                                         } => {
@@ -1434,19 +1437,14 @@ mod tests {
                 .map(|(k, v)| (Arc::from(k.to_string()), (*v).into()))
                 .collect(),
         );
-        let results_iter = interpret_ir(adapter.clone(), parsed_query, args).unwrap();
+        let results_iter = interpret_ir(adapter, parsed_query, args).unwrap();
 
         let actual_results: Vec<BTreeMap<_, _>> = results_iter
             .map(|res| res.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
             .collect();
 
-        let expected_result: FieldValue = vec![
-            "test_crates",
-            "import_handling",
-            "inner",
-            "CheckPubUseHandling",
-        ]
-        .into();
+        let expected_result: FieldValue =
+            vec!["pub_use_handling", "inner", "CheckPubUseHandling"].into();
         assert_eq!(1, actual_results.len(), "{actual_results:?}");
         assert_eq!(
             expected_result, actual_results[0]["canonical_path"],
@@ -1459,14 +1457,8 @@ mod tests {
         actual_paths.sort_unstable();
 
         let expected_paths = vec![
-            vec!["test_crates", "CheckPubUseHandling"],
-            vec!["test_crates", "import_handling", "CheckPubUseHandling"],
-            vec![
-                "test_crates",
-                "import_handling",
-                "inner",
-                "CheckPubUseHandling",
-            ],
+            vec!["pub_use_handling", "CheckPubUseHandling"],
+            vec!["pub_use_handling", "inner", "CheckPubUseHandling"],
         ];
         assert_eq!(expected_paths, actual_paths);
     }
