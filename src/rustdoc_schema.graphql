@@ -389,7 +389,7 @@ type Trait implements Item & Importable {
   visibility_limit: String!
 
   # own properties
-  variants_stripped: Boolean!
+  unsafe: Boolean!
 
   # edges from Item
   span: Span
