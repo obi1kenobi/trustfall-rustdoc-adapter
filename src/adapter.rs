@@ -989,7 +989,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
                 }
             },
-            "StructVariant" => match edge_name.as_ref() {
+            "Variant" | "PlainVariant" | "TupleVariant" | "StructVariant" => match edge_name
+                .as_ref()
+            {
                 "field" => {
                     let current_crate = self.current_crate;
                     let previous_crate = self.previous_crate;
@@ -1000,28 +1002,37 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                 Some(token) => {
                                     let origin = token.origin;
                                     let item = token.as_variant().expect("token was not a Variant");
+                                    let item_index = match origin {
+                                        Origin::CurrentCrate => &current_crate.inner.index,
+                                        Origin::PreviousCrate => {
+                                            &previous_crate
+                                                .expect("no previous crate provided")
+                                                .inner
+                                                .index
+                                        }
+                                    };
+
                                     match item {
+                                        Variant::Plain(_) => Box::new(std::iter::empty()),
+                                        Variant::Tuple(fields) => {
+                                            Box::new(fields.iter().filter(|x| x.is_some()).map(
+                                                move |field_id| {
+                                                    origin.make_item_token(
+                                                        item_index
+                                                            .get(field_id.as_ref().unwrap())
+                                                            .expect("missing item"),
+                                                    )
+                                                },
+                                            ))
+                                        }
                                         Variant::Struct {
                                             fields,
                                             fields_stripped: _,
-                                        } => {
-                                            let item_index = match origin {
-                                                Origin::CurrentCrate => &current_crate.inner.index,
-                                                Origin::PreviousCrate => {
-                                                    &previous_crate
-                                                        .expect("no previous crate provided")
-                                                        .inner
-                                                        .index
-                                                }
-                                            };
-
-                                            Box::new(fields.iter().map(move |field_id| {
-                                                origin.make_item_token(
-                                                    item_index.get(field_id).expect("missing item"),
-                                                )
-                                            }))
-                                        }
-                                        _ => unreachable!("the StructVariant token unexpectedly was not a struct variant: {token:?}")
+                                        } => Box::new(fields.iter().map(move |field_id| {
+                                            origin.make_item_token(
+                                                item_index.get(field_id).expect("missing item"),
+                                            )
+                                        })),
                                     }
                                 }
                             };
