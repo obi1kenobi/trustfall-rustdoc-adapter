@@ -1,0 +1,8 @@
+[package]
+name = "pub_generic_type_alias_same_signature_but_not_equivalent"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
