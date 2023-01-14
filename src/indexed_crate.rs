@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rustdoc_types::{Crate, Id, Item, Visibility};
 
@@ -34,7 +34,15 @@ impl<'a> IndexedCrate<'a> {
     pub fn new(crate_: &'a Crate) -> Self {
         Self {
             inner: crate_,
-            visibility_forest: compute_parent_ids_for_public_items(crate_),
+            visibility_forest: compute_parent_ids_for_public_items(crate_)
+                .into_iter()
+                .map(|(key, values)| {
+                    // Ensure a consistent order, since queries can observe this order directly.
+                    let mut values: Vec<_> = values.into_iter().collect();
+                    values.sort_unstable_by_key(|x| &x.0);
+                    (key, values)
+                })
+                .collect(),
             manually_inlined_builtin_traits: create_manually_inlined_builtin_traits(crate_),
         }
     }
@@ -45,7 +53,13 @@ impl<'a> IndexedCrate<'a> {
         let mut result = vec![];
 
         if self.inner.index.contains_key(id) {
-            self.collect_publicly_importable_names(id, &mut vec![], &mut result);
+            let mut already_visited_ids = Default::default();
+            self.collect_publicly_importable_names(
+                id,
+                &mut already_visited_ids,
+                &mut vec![],
+                &mut result,
+            );
         }
 
         result
@@ -54,11 +68,17 @@ impl<'a> IndexedCrate<'a> {
     fn collect_publicly_importable_names(
         &self,
         next_id: &'a Id,
+        already_visited_ids: &mut HashSet<&'a Id>,
         stack: &mut Vec<&'a str>,
         output: &mut Vec<Vec<&'a str>>,
     ) {
-        let item = &self.inner.index[next_id];
+        if !already_visited_ids.insert(next_id) {
+            // We found a cycle, and we've already processed this item.
+            // Nothing more to do here.
+            return;
+        }
 
+        let item = &self.inner.index[next_id];
         let (push_name, popped_name) = match &item.inner {
             rustdoc_types::ItemEnum::Import(import_item) => {
                 if import_item.glob {
@@ -71,23 +91,7 @@ impl<'a> IndexedCrate<'a> {
                     let push_name = Some(import_item.name.as_str());
 
                     // The imported item may be renamed here, so pop it from the stack.
-                    //
-                    // Due to how we record Id -> parent Id relationships,
-                    // if the imported (and perhaps renamed) item is a module,
-                    // its name was never added to the stack so we don't have to pop it here.
-                    let popped_name = {
-                        let should_pop = import_item
-                            .id
-                            .as_ref()
-                            .and_then(|id| self.inner.index.get(id))
-                            .map(|item| !matches!(&item.inner, rustdoc_types::ItemEnum::Module(..)))
-                            .unwrap_or_default();
-                        if should_pop {
-                            Some(stack.pop().expect("no name to pop"))
-                        } else {
-                            None
-                        }
-                    };
+                    let popped_name = Some(stack.pop().expect("no name to pop"));
 
                     (push_name, popped_name)
                 }
@@ -100,7 +104,7 @@ impl<'a> IndexedCrate<'a> {
             stack.push(pushed_name);
         }
 
-        self.collect_publicly_importable_names_inner(next_id, stack, output);
+        self.collect_publicly_importable_names_inner(next_id, already_visited_ids, stack, output);
 
         // Undo any changes made to the stack, returning it to its pre-recursion state.
         if let Some(pushed_name) = push_name {
@@ -110,11 +114,16 @@ impl<'a> IndexedCrate<'a> {
         if let Some(popped_name) = popped_name {
             stack.push(popped_name);
         }
+
+        // We're leaving this item. Remove it from the visited set.
+        let removed = already_visited_ids.remove(next_id);
+        assert!(removed);
     }
 
     fn collect_publicly_importable_names_inner(
         &self,
         next_id: &'a Id,
+        already_visited_ids: &mut HashSet<&'a Id>,
         stack: &mut Vec<&'a str>,
         output: &mut Vec<Vec<&'a str>>,
     ) {
@@ -123,18 +132,30 @@ impl<'a> IndexedCrate<'a> {
             output.push(final_name);
         } else if let Some(visible_parents) = self.visibility_forest.get(next_id) {
             for parent_id in visible_parents.iter().copied() {
-                self.collect_publicly_importable_names(parent_id, stack, output);
+                self.collect_publicly_importable_names(
+                    parent_id,
+                    already_visited_ids,
+                    stack,
+                    output,
+                );
             }
         }
     }
 }
 
-fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<&Id, Vec<&Id>> {
+fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<&Id, HashSet<&Id>> {
     let mut result = Default::default();
     let root_id = &crate_.root;
     if let Some(root_module) = crate_.index.get(root_id) {
         if root_module.visibility == Visibility::Public {
-            visit_root_reachable_public_items(crate_, &mut result, root_module, None);
+            let mut currently_visited_items = Default::default();
+            visit_root_reachable_public_items(
+                crate_,
+                &mut result,
+                &mut currently_visited_items,
+                root_module,
+                None,
+            );
         }
     }
 
@@ -144,7 +165,8 @@ fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<&Id, Vec<&Id>>
 /// Collect all public items that are reachable from the crate root and record their parent Ids.
 fn visit_root_reachable_public_items<'a>(
     crate_: &'a Crate,
-    parents: &mut HashMap<&'a Id, Vec<&'a Id>>,
+    parents: &mut HashMap<&'a Id, HashSet<&'a Id>>,
+    currently_visited_items: &mut HashSet<&'a Id>,
     item: &'a Item,
     parent_id: Option<&'a Id>,
 ) {
@@ -164,50 +186,61 @@ fn visit_root_reachable_public_items<'a>(
 
     let item_parents = parents.entry(&item.id).or_default();
     if let Some(parent_id) = parent_id {
-        item_parents.push(parent_id);
+        item_parents.insert(parent_id);
+    }
+
+    if !currently_visited_items.insert(&item.id) {
+        // We found a cycle in the import graph, and we've already processed this item.
+        // Nothing more to do here.
+        return;
     }
 
     let next_parent_id = Some(&item.id);
     match &item.inner {
         rustdoc_types::ItemEnum::Module(m) => {
             for inner in m.items.iter().filter_map(|id| crate_.index.get(id)) {
-                visit_root_reachable_public_items(crate_, parents, inner, next_parent_id);
+                visit_root_reachable_public_items(
+                    crate_,
+                    parents,
+                    currently_visited_items,
+                    inner,
+                    next_parent_id,
+                );
             }
         }
         rustdoc_types::ItemEnum::Import(imp) => {
             // Imports of modules, and glob imports of enums,
             // import the *contents* of the pointed-to item rather than the item itself.
             if let Some(imported_item) = imp.id.as_ref().and_then(|id| crate_.index.get(id)) {
-                if let rustdoc_types::ItemEnum::Module(module_item) = &imported_item.inner {
-                    for inner_id in &module_item.items {
+                if imp.glob {
+                    // Glob imports point directly to the contents of the pointed-to module.
+                    // For each item in that module, the import's parent becomes its parent as well.
+                    let next_parent_id = parent_id;
+
+                    let inner_ids = match &imported_item.inner {
+                        rustdoc_types::ItemEnum::Module(mod_item) => &mod_item.items,
+                        rustdoc_types::ItemEnum::Enum(enum_item) => &enum_item.variants,
+                        _ => unreachable!(
+                            "found a glob import of an unexpected kind of item: \
+                            {imp:?} {imported_item:?}"
+                        ),
+                    };
+                    for inner_id in inner_ids {
                         if let Some(item) = crate_.index.get(inner_id) {
                             visit_root_reachable_public_items(
                                 crate_,
                                 parents,
+                                currently_visited_items,
                                 item,
                                 next_parent_id,
                             );
                         }
                     }
-                } else if imp.glob {
-                    if let rustdoc_types::ItemEnum::Enum(enum_item) = &imported_item.inner {
-                        for inner_id in &enum_item.variants {
-                            if let Some(item) = crate_.index.get(inner_id) {
-                                visit_root_reachable_public_items(
-                                    crate_,
-                                    parents,
-                                    item,
-                                    next_parent_id,
-                                );
-                            }
-                        }
-                    } else {
-                        unreachable!("found a glob import of an unexpected kind of item: {imp:?} {imported_item:?}")
-                    }
                 } else {
                     visit_root_reachable_public_items(
                         crate_,
                         parents,
+                        currently_visited_items,
                         imported_item,
                         next_parent_id,
                     );
@@ -227,7 +260,13 @@ fn visit_root_reachable_public_items<'a>(
                 .chain(struct_.impls.iter())
                 .filter_map(|id| crate_.index.get(id))
             {
-                visit_root_reachable_public_items(crate_, parents, inner, next_parent_id);
+                visit_root_reachable_public_items(
+                    crate_,
+                    parents,
+                    currently_visited_items,
+                    inner,
+                    next_parent_id,
+                );
             }
         }
         rustdoc_types::ItemEnum::Enum(enum_) => {
@@ -237,23 +276,45 @@ fn visit_root_reachable_public_items<'a>(
                 .chain(enum_.impls.iter())
                 .filter_map(|id| crate_.index.get(id))
             {
-                visit_root_reachable_public_items(crate_, parents, inner, next_parent_id);
+                visit_root_reachable_public_items(
+                    crate_,
+                    parents,
+                    currently_visited_items,
+                    inner,
+                    next_parent_id,
+                );
             }
         }
         rustdoc_types::ItemEnum::Trait(trait_) => {
             for inner in trait_.items.iter().filter_map(|id| crate_.index.get(id)) {
-                visit_root_reachable_public_items(crate_, parents, inner, next_parent_id);
+                visit_root_reachable_public_items(
+                    crate_,
+                    parents,
+                    currently_visited_items,
+                    inner,
+                    next_parent_id,
+                );
             }
         }
         rustdoc_types::ItemEnum::Impl(impl_) => {
             for inner in impl_.items.iter().filter_map(|id| crate_.index.get(id)) {
-                visit_root_reachable_public_items(crate_, parents, inner, next_parent_id);
+                visit_root_reachable_public_items(
+                    crate_,
+                    parents,
+                    currently_visited_items,
+                    inner,
+                    next_parent_id,
+                );
             }
         }
         _ => {
             // No-op, no further items within to consider.
         }
     }
+
+    // We are leaving this item. Remove it from the visited set.
+    let removed = currently_visited_items.remove(&item.id);
+    assert!(removed);
 }
 
 #[derive(Debug)]
@@ -617,6 +678,68 @@ mod tests {
                 ],
                 "Second" => btreeset![
                     "glob_reexport_enum_variants::Second",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_reexport_cycle() {
+            let test_crate = "glob_reexport_cycle";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    "glob_reexport_cycle::first::foo",
+                    "glob_reexport_cycle::second::foo",
+                ],
+                "Bar" => btreeset![
+                    "glob_reexport_cycle::first::Bar",
+                    "glob_reexport_cycle::second::Bar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn infinite_recursive_reexport() {
+            let test_crate = "infinite_recursive_reexport";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    // We don't want to expand all infinitely-many names here.
+                    // We only return cycle-free paths, which are the following:
+                    "infinite_recursive_reexport::foo",
+                    "infinite_recursive_reexport::inner::foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn infinite_indirect_recursive_reexport() {
+            let test_crate = "infinite_indirect_recursive_reexport";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    // We don't want to expand all infinitely-many names here.
+                    // We only return cycle-free paths, which are the following:
+                    "infinite_indirect_recursive_reexport::foo",
+                    "infinite_indirect_recursive_reexport::nested::foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn infinite_corecursive_reexport() {
+            let test_crate = "infinite_corecursive_reexport";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    // We don't want to expand all infinitely-many names here.
+                    // We only return cycle-free paths, which are the following:
+                    "infinite_corecursive_reexport::a::foo",
+                    "infinite_corecursive_reexport::b::a::foo",
                 ],
             };
 
