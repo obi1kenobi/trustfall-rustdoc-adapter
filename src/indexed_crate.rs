@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use rustdoc_types::{Crate, Id, Item, Visibility};
+use rustdoc_types::{Crate, GenericArgs, Id, Item, Typedef, Visibility};
 
 /// The rustdoc for a crate, together with associated indexed data to speed up common operations.
 ///
@@ -95,6 +95,17 @@ impl<'a> IndexedCrate<'a> {
 
                     (push_name, popped_name)
                 }
+            }
+            rustdoc_types::ItemEnum::Typedef(..) => {
+                // Use the typedef name instead of the underlying item's own name,
+                // since it might be renaming the underlying item.
+                let push_name = Some(item.name.as_deref().expect("typedef had no name"));
+
+                // If there is an underlying item, pop it from the stack
+                // since it may be renamed here.
+                let popped_name = stack.pop();
+
+                (push_name, popped_name)
             }
             _ => (item.name.as_deref(), None),
         };
@@ -307,6 +318,23 @@ fn visit_root_reachable_public_items<'a>(
                 );
             }
         }
+        rustdoc_types::ItemEnum::Typedef(ty) => {
+            // We're interested in type aliases that are specifically used to rename types:
+            //   `pub type Foo = Bar`
+            // If the underlying type is generic, it's only a valid renaming if the typedef
+            // is also generic in all the same parameters.
+            //
+            // The Rust compiler ignores `where` bounds on typedefs, so we ignore them too.
+            if let Some(reexport_target) = get_typedef_equivalent_reexport_target(crate_, ty) {
+                visit_root_reachable_public_items(
+                    crate_,
+                    parents,
+                    currently_visited_items,
+                    reexport_target,
+                    next_parent_id,
+                );
+            }
+        }
         _ => {
             // No-op, no further items within to consider.
         }
@@ -315,6 +343,144 @@ fn visit_root_reachable_public_items<'a>(
     // We are leaving this item. Remove it from the visited set.
     let removed = currently_visited_items.remove(&item.id);
     assert!(removed);
+}
+
+/// Type aliases can sometimes be equivalent to a regular `pub use` re-export:
+/// `pub type Foo = crate::Bar` is an example, equivalent to `pub use crate::Bar`.
+///
+/// If the underlying type has generic parameters, the type alias must include
+/// all the same generic parameters in the same order.
+/// `pub type Foo<A, B> = crate::Bar<B, A>` is *not* equivalent to `pub use crate::Bar`.
+fn get_typedef_equivalent_reexport_target<'a>(
+    crate_: &'a Crate,
+    ty: &'a Typedef,
+) -> Option<&'a Item> {
+    println!("{ty:?}");
+    if let rustdoc_types::Type::ResolvedPath(resolved_path) = &ty.type_ {
+        let underlying = crate_.index.get(&resolved_path.id)?;
+
+        if let Some(GenericArgs::AngleBracketed { args, bindings }) = resolved_path.args.as_deref()
+        {
+            if !bindings.is_empty() {
+                // The type alias specifies some of the underlying type's generic parameters.
+                // This is not equivalent to a re-export.
+                return None;
+            }
+
+            let underlying_generics = match &underlying.inner {
+                rustdoc_types::ItemEnum::Struct(struct_) => &struct_.generics,
+                rustdoc_types::ItemEnum::Enum(enum_) => &enum_.generics,
+                rustdoc_types::ItemEnum::Trait(trait_) => &trait_.generics,
+                rustdoc_types::ItemEnum::Union(union_) => &union_.generics,
+                rustdoc_types::ItemEnum::Typedef(ty) => &ty.generics,
+                _ => unreachable!("unexpected underlying item kind: {underlying:?}"),
+            };
+
+            // For the typedef to be equivalent to a re-export, all of the following must hold:
+            // - The typedef has the same number of generic parameters as the underlying.
+            // - All underlying generic parameters are available on the typedef,
+            //   are of the same kind, in the same order, with the same defaults.
+            if ty.generics.params.len() != args.len() {
+                return None;
+            }
+            assert_eq!(
+                underlying_generics.params.len(),
+                args.len(),
+                "underlying type expected different number of generic args than were provided: \
+                {underlying_generics:?} {args:?}\nitem = {underlying:?}"
+            );
+            for (ty_generic, (underlying_param, arg_generic)) in ty
+                .generics
+                .params
+                .iter()
+                .zip(underlying_generics.params.iter().zip(args.iter()))
+            {
+                let arg_generic_name = match arg_generic {
+                    rustdoc_types::GenericArg::Lifetime(name) => name.as_str(),
+                    rustdoc_types::GenericArg::Type(rustdoc_types::Type::Generic(t)) => t.as_str(),
+                    rustdoc_types::GenericArg::Type(_) => return None,
+                    rustdoc_types::GenericArg::Const(c) => {
+                        // Nominally, this is the const expression, not the const generic's name.
+                        // However, except for pathological edge cases, if the expression is not
+                        // simply the const generic parameter itself, then the type isn't the same.
+                        //
+                        // An example pathological case where this isn't the case is:
+                        // `pub type Foo<const N: usize> = Underlying<N + 1 - 1>;`
+                        // Detecting that this is the same expression requires that one of
+                        // rustdoc or our code do const-evaluation here.
+                        //
+                        // Const expressions like this are currently only on nightly,
+                        // so we can't test them on stable Rust at the moment.
+                        //
+                        // TODO: revisit this decision when const expressions in types are stable
+                        c.expr.as_str()
+                    }
+                    rustdoc_types::GenericArg::Infer => return None,
+                };
+                if ty_generic.name.as_str() != arg_generic_name {
+                    // The typedef params are not in the same order as the underlying type's.
+                    return None;
+                }
+
+                match (&ty_generic.kind, &underlying_param.kind) {
+                    (
+                        rustdoc_types::GenericParamDefKind::Lifetime { .. },
+                        rustdoc_types::GenericParamDefKind::Lifetime { .. },
+                    ) => {
+                        // Typedefs cannot have "outlives" relationships on their lifetimes,
+                        // so there's nothing further to compare here. So far, it's a match.
+                    }
+                    (
+                        rustdoc_types::GenericParamDefKind::Type {
+                            default: ty_default,
+                            ..
+                        },
+                        rustdoc_types::GenericParamDefKind::Type {
+                            default: underlying_default,
+                            ..
+                        },
+                    ) => {
+                        // If the typedef doesn't have the same default values for its generics,
+                        // then it isn't equivalent to the underlying and so isn't a re-export.
+                        if ty_default != underlying_default {
+                            // The defaults have changed.
+                            return None;
+                        }
+                        // We don't care about the other fields.
+                        // Generic bounds on typedefs are ignored by rustc and generate a lint.
+                    }
+                    (
+                        rustdoc_types::GenericParamDefKind::Const {
+                            type_: ty_type,
+                            default: ty_default,
+                        },
+                        rustdoc_types::GenericParamDefKind::Const {
+                            type_: underlying_type,
+                            default: underlying_default,
+                        },
+                    ) => {
+                        // If the typedef doesn't have the same default values for its generics,
+                        // then it isn't equivalent to the underlying and so isn't a re-export.
+                        //
+                        // Similarly, if it is in any way possible to change the const generic type,
+                        // that makes the typedef not a re-export anymore.
+                        if ty_default != underlying_default || ty_type != underlying_type {
+                            // The generic type or its default has changed.
+                            return None;
+                        }
+                    }
+                    _ => {
+                        // Not the same kind of generic parameter.
+                        return None;
+                    }
+                }
+            }
+        }
+
+        Some(underlying)
+    } else {
+        None
+    }
 }
 
 #[derive(Debug)]
@@ -490,6 +656,8 @@ mod tests {
         ) {
             let rustdoc = load_pregenerated_rustdoc(test_crate);
             let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            println!("vis: {:#?}", indexed_crate.visibility_forest);
 
             for (&expected_item_name, expected_importable_paths) in expected_items {
                 assert!(
@@ -740,6 +908,245 @@ mod tests {
                     // We only return cycle-free paths, which are the following:
                     "infinite_corecursive_reexport::a::foo",
                     "infinite_corecursive_reexport::b::a::foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_type_alias_reexport() {
+            let test_crate = "pub_type_alias_reexport";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "pub_type_alias_reexport::Exported",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_generic_type_alias_reexport() {
+            let test_crate = "pub_generic_type_alias_reexport";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    // Only `Exported` and `ExportedRenamedParams` are re-exports.
+                    //
+                    //`ExportedRenamedParams` renames the generic parameters
+                    // but does not change their meaning.
+                    //
+                    // `ExportedWithDefaults` is not a re-export because it adds
+                    //
+                    // The other type aliases are not equivalent since they constrain
+                    // some of the underlying type's generic parameters.
+                    "pub_generic_type_alias_reexport::Exported",
+                    "pub_generic_type_alias_reexport::ExportedRenamedParams",
+                ],
+                "Exported" => btreeset![
+                    // The type alias itself is also a visible item.
+                    "pub_generic_type_alias_reexport::Exported",
+                ],
+                "ExportedWithDefaults" => btreeset![
+                    // The type alias itself is also a visible item.
+                    "pub_generic_type_alias_reexport::ExportedWithDefaults",
+                ],
+                "ExportedRenamedParams" => btreeset![
+                    // The type alias itself is also a visible item.
+                    "pub_generic_type_alias_reexport::ExportedRenamedParams",
+                ],
+                "ExportedSpecificLifetime" => btreeset![
+                    "pub_generic_type_alias_reexport::ExportedSpecificLifetime",
+                ],
+                "ExportedSpecificType" => btreeset![
+                    "pub_generic_type_alias_reexport::ExportedSpecificType",
+                ],
+                "ExportedSpecificConst" => btreeset![
+                    "pub_generic_type_alias_reexport::ExportedSpecificConst",
+                ],
+                "ExportedFullySpecified" => btreeset![
+                    "pub_generic_type_alias_reexport::ExportedFullySpecified",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_generic_type_alias_shuffled_order() {
+            let test_crate = "pub_generic_type_alias_shuffled_order";
+            let expected_items = btreemap! {
+                // The type aliases reverse the generic parameters' orders,
+                // so they are not re-exports of the underlying types.
+                "GenericFoo" => btreeset![
+                    "pub_generic_type_alias_shuffled_order::inner::GenericFoo",
+                ],
+                "LifetimeFoo" => btreeset![
+                    "pub_generic_type_alias_shuffled_order::inner::LifetimeFoo",
+                ],
+                "ConstFoo" => btreeset![
+                    "pub_generic_type_alias_shuffled_order::inner::ConstFoo",
+                ],
+                "ReversedGenericFoo" => btreeset![
+                    "pub_generic_type_alias_shuffled_order::ReversedGenericFoo",
+                ],
+                "ReversedLifetimeFoo" => btreeset![
+                    "pub_generic_type_alias_shuffled_order::ReversedLifetimeFoo",
+                ],
+                "ReversedConstFoo" => btreeset![
+                    "pub_generic_type_alias_shuffled_order::ReversedConstFoo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_generic_type_alias_added_defaults() {
+            let test_crate = "pub_generic_type_alias_added_defaults";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "pub_generic_type_alias_added_defaults::inner::Foo",
+                ],
+                "Bar" => btreeset![
+                    "pub_generic_type_alias_added_defaults::inner::Bar",
+                ],
+                "DefaultFoo" => btreeset![
+                    "pub_generic_type_alias_added_defaults::DefaultFoo",
+                ],
+                "DefaultBar" => btreeset![
+                    "pub_generic_type_alias_added_defaults::DefaultBar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_generic_type_alias_changed_defaults() {
+            let test_crate = "pub_generic_type_alias_changed_defaults";
+            let expected_items = btreemap! {
+                // The type aliases change the default values of the generic parameters,
+                // so they are not re-exports of the underlying types.
+                "Foo" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::inner::Foo",
+                ],
+                "Bar" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::inner::Bar",
+                ],
+                "ExportedWithoutTypeDefault" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::ExportedWithoutTypeDefault",
+                ],
+                "ExportedWithoutConstDefault" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::ExportedWithoutConstDefault",
+                ],
+                "ExportedWithoutDefaults" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::ExportedWithoutDefaults",
+                ],
+                "ExportedWithDifferentTypeDefault" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::ExportedWithDifferentTypeDefault",
+                ],
+                "ExportedWithDifferentConstDefault" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::ExportedWithDifferentConstDefault",
+                ],
+                "ExportedWithDifferentDefaults" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::ExportedWithDifferentDefaults",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_generic_type_alias_same_signature_but_not_equivalent() {
+            let test_crate = "pub_generic_type_alias_same_signature_but_not_equivalent";
+            let expected_items = btreemap! {
+                "GenericFoo" => btreeset![
+                    "pub_generic_type_alias_same_signature_but_not_equivalent::inner::GenericFoo",
+                ],
+                "ChangedFoo" => btreeset![
+                    "pub_generic_type_alias_same_signature_but_not_equivalent::ChangedFoo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_type_alias_of_type_alias() {
+            let test_crate = "pub_type_alias_of_type_alias";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "pub_type_alias_of_type_alias::inner::Foo",
+                    "pub_type_alias_of_type_alias::inner::AliasedFoo",
+                    "pub_type_alias_of_type_alias::ExportedFoo",
+                ],
+                "Bar" => btreeset![
+                    "pub_type_alias_of_type_alias::inner::Bar",
+                    "pub_type_alias_of_type_alias::inner::AliasedBar",
+                    "pub_type_alias_of_type_alias::ExportedBar",
+                ],
+                "AliasedFoo" => btreeset![
+                    "pub_type_alias_of_type_alias::inner::AliasedFoo",
+                    "pub_type_alias_of_type_alias::ExportedFoo",
+                ],
+                "AliasedBar" => btreeset![
+                    "pub_type_alias_of_type_alias::inner::AliasedBar",
+                    "pub_type_alias_of_type_alias::ExportedBar",
+                ],
+                "ExportedFoo" => btreeset![
+                    "pub_type_alias_of_type_alias::ExportedFoo",
+                ],
+                "ExportedBar" => btreeset![
+                    "pub_type_alias_of_type_alias::ExportedBar",
+                ],
+                "DifferentLifetimeBar" => btreeset![
+                    "pub_type_alias_of_type_alias::DifferentLifetimeBar",
+                ],
+                "DifferentGenericBar" => btreeset![
+                    "pub_type_alias_of_type_alias::DifferentGenericBar",
+                ],
+                "DifferentConstBar" => btreeset![
+                    "pub_type_alias_of_type_alias::DifferentConstBar",
+                ],
+                "ReorderedBar" => btreeset![
+                    "pub_type_alias_of_type_alias::ReorderedBar",
+                ],
+                "DefaultValueBar" => btreeset![
+                    "pub_type_alias_of_type_alias::DefaultValueBar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_type_alias_of_composite_type() {
+            let test_crate = "pub_type_alias_of_composite_type";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "pub_type_alias_of_composite_type::inner::Foo",
+                ],
+                "I64Tuple" => btreeset![
+                    "pub_type_alias_of_composite_type::I64Tuple",
+                ],
+                "MixedTuple" => btreeset![
+                    "pub_type_alias_of_composite_type::MixedTuple",
+                ],
+                "GenericTuple" => btreeset![
+                    "pub_type_alias_of_composite_type::GenericTuple",
+                ],
+                "LifetimeTuple" => btreeset![
+                    "pub_type_alias_of_composite_type::LifetimeTuple",
+                ],
+                "ConstTuple" => btreeset![
+                    "pub_type_alias_of_composite_type::ConstTuple",
+                ],
+                "DefaultGenericTuple" => btreeset![
+                    "pub_type_alias_of_composite_type::DefaultGenericTuple",
+                ],
+                "DefaultConstTuple" => btreeset![
+                    "pub_type_alias_of_composite_type::DefaultConstTuple",
                 ],
             };
 
