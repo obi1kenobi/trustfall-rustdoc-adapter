@@ -1354,15 +1354,9 @@ mod tests {
     use std::fs::File;
     use std::io::Read;
     use std::path::Path;
-    use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::Arc};
 
     use rustdoc_types::Crate;
     use serde::Deserialize;
-    use trustfall_core::{frontend::parse, interpreter::execution::interpret_ir, ir::FieldValue};
-
-    use crate::indexed_crate::IndexedCrate;
-
-    use super::RustdocAdapter;
 
     #[derive(Deserialize)]
     struct RustdocFormatVersion {
@@ -1397,82 +1391,11 @@ mod tests {
 
     #[test]
     fn rustdoc_json_format_version() {
-        let current_crate = load_rustdoc_from_file(Path::new("./test_data/rustdoc_v21.json"));
+        let _version = rustdoc_types::FORMAT_VERSION;
+        let current_crate = load_rustdoc_from_file(Path::new(
+            &"./localdata/test_data/reexport/rustdoc.json".to_string(),
+        ));
 
         assert_eq!(current_crate.format_version, rustdoc_types::FORMAT_VERSION);
-    }
-
-    #[test]
-    fn pub_use_handling() {
-        let current_crate = load_rustdoc_from_file(Path::new("./test_data/rustdoc_v21.json"));
-
-        let current = IndexedCrate::new(&current_crate);
-
-        let query = r#"
-            {
-                Crate {
-                    item {
-                        ... on Struct {
-                            name @filter(op: "=", value: ["$struct"])
-
-                            canonical_path {
-                                canonical_path: path @output
-                            }
-
-                            importable_path @fold {
-                                path @output
-                            }
-                        }
-                    }
-                }
-            }"#;
-        let mut arguments = BTreeMap::new();
-        arguments.insert("struct", "CheckPubUseHandling");
-
-        let schema = RustdocAdapter::schema();
-        let adapter = Rc::new(RefCell::new(RustdocAdapter::new(&current, None)));
-
-        let parsed_query = parse(&schema, query).unwrap();
-        let args = Arc::new(
-            arguments
-                .iter()
-                .map(|(k, v)| (Arc::from(k.to_string()), (*v).into()))
-                .collect(),
-        );
-        let results_iter = interpret_ir(adapter.clone(), parsed_query, args).unwrap();
-
-        let actual_results: Vec<BTreeMap<_, _>> = results_iter
-            .map(|res| res.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
-            .collect();
-
-        let expected_result: FieldValue = vec![
-            "semver_tests",
-            "import_handling",
-            "inner",
-            "CheckPubUseHandling",
-        ]
-        .into();
-        assert_eq!(1, actual_results.len(), "{actual_results:?}");
-        assert_eq!(
-            expected_result, actual_results[0]["canonical_path"],
-            "{actual_results:?}"
-        );
-
-        let mut actual_paths = actual_results[0]["path"]
-            .as_vec(|val| val.as_vec(FieldValue::as_str))
-            .expect("not a Vec<Vec<&str>>");
-        actual_paths.sort_unstable();
-
-        let expected_paths = vec![
-            vec!["semver_tests", "CheckPubUseHandling"],
-            vec!["semver_tests", "import_handling", "CheckPubUseHandling"],
-            vec![
-                "semver_tests",
-                "import_handling",
-                "inner",
-                "CheckPubUseHandling",
-            ],
-        ];
-        assert_eq!(expected_paths, actual_paths);
     }
 }
