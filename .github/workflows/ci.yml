@@ -55,6 +55,9 @@ jobs:
   rust-tests:
     name: Run tests
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain: ["nightly"]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -64,10 +67,14 @@ jobs:
       - name: Install rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: ${{ matrix.toolchain }}
           profile: minimal
+          override: true
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Regenerate test data
+        run: ./scripts/regenerate_test_rustdocs.sh +${{ matrix.toolchain }}
 
       - name: compile
         run: cargo test --no-run
