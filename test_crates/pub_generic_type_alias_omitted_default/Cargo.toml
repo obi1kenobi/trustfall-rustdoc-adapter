@@ -1,6 +1,6 @@
 [package]
 publish = false
-name = "infinite_indirect_recursive_reexport"
+name = "pub_generic_type_alias_omitted_default"
 version = "0.1.0"
 edition = "2021"
 

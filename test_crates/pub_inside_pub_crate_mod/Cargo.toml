@@ -1,4 +1,5 @@
 [package]
+publish = false
 name = "pub_inside_pub_crate_mod"
 version = "0.1.0"
 edition = "2021"
