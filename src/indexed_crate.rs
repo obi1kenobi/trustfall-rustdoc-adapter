@@ -351,6 +351,11 @@ fn visit_root_reachable_public_items<'a>(
 /// If the underlying type has generic parameters, the type alias must include
 /// all the same generic parameters in the same order.
 /// `pub type Foo<A, B> = crate::Bar<B, A>` is *not* equivalent to `pub use crate::Bar`.
+///
+/// If the underlying type has default values for any of its generic parameters,
+/// the same exact parameters with the same order and defaults must be present on the type alias.
+/// `pub type Foo<A> = crate::Bar<A>` is *not* equivalent to `crate::Bar<A, B = ()>`
+/// since `Foo<A, B = i64>` is not valid whereas `crate::Bar<A, B = i64>` is fine.
 fn get_typedef_equivalent_reexport_target<'a>(
     crate_: &'a Crate,
     ty: &'a Typedef,
@@ -380,14 +385,17 @@ fn get_typedef_equivalent_reexport_target<'a>(
             // - All underlying generic parameters are available on the typedef,
             //   are of the same kind, in the same order, with the same defaults.
             if ty.generics.params.len() != args.len() {
+                // The typedef takes a different number of parameters than
+                // it supplies to the underlying type. It cannot be a re-export.
                 return None;
             }
-            assert_eq!(
-                underlying_generics.params.len(),
-                args.len(),
-                "underlying type expected different number of generic args than were provided: \
-                {underlying_generics:?} {args:?}\nitem = {underlying:?}"
-            );
+            if underlying_generics.params.len() != args.len() {
+                // The underlying type supports more generic parameter than the typedef supplies
+                // when using it -- the unspecified generic parameters take the default values
+                // that must have been specified on the underlying type.
+                // Nevertheless, this is not a re-export since the types are not equivalent.
+                return None;
+            }
             for (ty_generic, (underlying_param, arg_generic)) in ty
                 .generics
                 .params
@@ -1172,6 +1180,39 @@ mod tests {
                 ],
                 "DefaultConstTuple" => btreeset![
                     "pub_type_alias_of_composite_type::DefaultConstTuple",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_generic_type_alias_omitted_default() {
+            let test_crate = "pub_generic_type_alias_omitted_default";
+            let expected_items = btreemap! {
+                "DefaultConst" => btreeset![
+                    "pub_generic_type_alias_omitted_default::inner::DefaultConst",
+                ],
+                "DefaultType" => btreeset![
+                    "pub_generic_type_alias_omitted_default::inner::DefaultType",
+                ],
+                "ConstOnly" => btreeset![
+                    "pub_generic_type_alias_omitted_default::inner::ConstOnly",
+                ],
+                "TypeOnly" => btreeset![
+                    "pub_generic_type_alias_omitted_default::inner::TypeOnly",
+                ],
+                "OmittedConst" => btreeset![
+                    "pub_generic_type_alias_omitted_default::OmittedConst",
+                ],
+                "OmittedType" => btreeset![
+                    "pub_generic_type_alias_omitted_default::OmittedType",
+                ],
+                "NonGenericConst" => btreeset![
+                    "pub_generic_type_alias_omitted_default::NonGenericConst",
+                ],
+                "NonGenericType" => btreeset![
+                    "pub_generic_type_alias_omitted_default::NonGenericType",
                 ],
             };
 
