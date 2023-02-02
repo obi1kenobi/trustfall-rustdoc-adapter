@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use rustdoc_types::{Crate, GenericArgs, Id, Item, Typedef, Visibility};
 
@@ -13,6 +13,8 @@ pub struct IndexedCrate<'a> {
 
     // For an Id, give the list of item Ids under which it is publicly visible.
     pub(crate) visibility_forest: HashMap<&'a Id, Vec<&'a Id>>,
+
+    pub(crate) imports_index: Option<BTreeMap<Vec<&'a str>, Vec<&'a Id>>>,
 
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
     /// even if they are implemented by a type in that crate. This also includes
@@ -32,7 +34,7 @@ pub struct IndexedCrate<'a> {
 
 impl<'a> IndexedCrate<'a> {
     pub fn new(crate_: &'a Crate) -> Self {
-        Self {
+        let mut value = Self {
             inner: crate_,
             visibility_forest: compute_parent_ids_for_public_items(crate_)
                 .into_iter()
@@ -44,7 +46,33 @@ impl<'a> IndexedCrate<'a> {
                 })
                 .collect(),
             manually_inlined_builtin_traits: create_manually_inlined_builtin_traits(crate_),
+            imports_index: None,
+        };
+
+        let mut imports_index: BTreeMap<Vec<&str>, Vec<&Id>> = BTreeMap::new();
+        for item_id in crate_.index.iter().filter_map(|(id, item)| {
+            matches!(
+                item.inner,
+                rustdoc_types::ItemEnum::Struct(..)
+                    | rustdoc_types::ItemEnum::StructField(..)
+                    | rustdoc_types::ItemEnum::Enum(..)
+                    | rustdoc_types::ItemEnum::Variant(..)
+                    | rustdoc_types::ItemEnum::Function(..)
+                    | rustdoc_types::ItemEnum::Impl(..)
+                    | rustdoc_types::ItemEnum::Trait(..)
+            )
+            .then_some(id)
+        }) {
+            for importable_path in value.publicly_importable_names(item_id) {
+                imports_index
+                    .entry(importable_path)
+                    .or_default()
+                    .push(item_id);
+            }
         }
+
+        value.imports_index = Some(imports_index);
+        value
     }
 
     /// Return all the paths (as Vec<&'a str> of component names, joinable with "::")

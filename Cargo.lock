@@ -534,9 +534,7 @@ dependencies = [
 
 [[package]]
 name = "trustfall_core"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f9270da3f637b107458c4c84a6595a9913aab71fb20a363119d7686e759d11b"
+version = "0.2.0"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
@@ -557,8 +555,6 @@ dependencies = [
 [[package]]
 name = "trustfall_filetests_macros"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "709b815561cd5fc1b4a0572ec2e35d16f9ce65895318f147ee3602bbbf6cb24b"
 dependencies = [
  "globset",
  "proc-macro2",

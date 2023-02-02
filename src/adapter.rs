@@ -5,8 +5,11 @@ use rustdoc_types::{
     VariantKind,
 };
 use trustfall_core::{
-    interpreter::{Adapter, DataContext, InterpretedQuery},
-    ir::{EdgeParameters, Eid, FieldValue, Vid},
+    interpreter::{
+        hints::{CandidateValue, QueryInfo, VertexInfo},
+        Adapter, DataContext,
+    },
+    ir::{EdgeParameters, FieldValue},
     schema::Schema,
 };
 
@@ -530,8 +533,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         &mut self,
         edge: Arc<str>,
         _parameters: Option<Arc<EdgeParameters>>,
-        _query_hint: InterpretedQuery,
-        _vertex_hint: Vid,
+        _query_info: &QueryInfo,
     ) -> Box<dyn Iterator<Item = Self::DataToken> + 'a> {
         match edge.as_ref() {
             "Crate" => Box::new(std::iter::once(Token::new_crate(
@@ -554,8 +556,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         data_contexts: Box<dyn Iterator<Item = DataContext<Self::DataToken>> + 'a>,
         current_type_name: Arc<str>,
         field_name: Arc<str>,
-        _query_hint: InterpretedQuery,
-        _vertex_hint: Vid,
+        _query_info: &QueryInfo,
     ) -> Box<dyn Iterator<Item = (DataContext<Self::DataToken>, FieldValue)> + 'a> {
         if field_name.as_ref() == "__typename" {
             Box::new(data_contexts.map(|ctx| match &ctx.current_token {
@@ -658,9 +659,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         current_type_name: Arc<str>,
         edge_name: Arc<str>,
         parameters: Option<Arc<EdgeParameters>>,
-        _query_hint: InterpretedQuery,
-        _vertex_hint: Vid,
-        _edge_hint: Eid,
+        query_info: &QueryInfo,
     ) -> Box<
         dyn Iterator<
                 Item = (
@@ -707,39 +706,92 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             },
             "Crate" => {
                 match edge_name.as_ref() {
-                    "item" => Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                            match &ctx.current_token {
-                                None => Box::new(std::iter::empty()),
-                                Some(token) => {
-                                    let origin = token.origin;
-                                    let crate_token =
-                                        token.as_indexed_crate().expect("token was not a Crate");
+                    "item" => {
+                        if let Some(resolver) = query_info
+                            .destination()
+                            .and_then(|x| x.optional_edge("importable_path"))
+                            .and_then(|y| y.destination().dynamic_field_value("path"))
+                        {
+                            Box::new(resolver.resolve(self, data_contexts).map(move |(ctx, candidates)| {
+                                let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx.current_token {
+                                    None => Box::new(std::iter::empty()),
+                                    Some(token) => {
+                                        let origin = token.origin;
+                                        let crate_token = token
+                                            .as_indexed_crate()
+                                            .expect("token was not a Crate");
+                                        match candidates {
+                                            CandidateValue::Impossible => Box::new(std::iter::empty()),
+                                            CandidateValue::Single(value) => {
+                                                let path_components: Vec<&str> = value.as_vec().as_ref().expect("ImportablePath.path was not a list").iter().map(|x| x.as_str().unwrap()).collect();
+                                                if let Some(items) = crate_token.imports_index.as_ref().unwrap().get(&path_components).cloned() {
+                                                    Box::new(items.into_iter().map(|item_id| &crate_token.inner.index[item_id]).filter(|item| {
+                                                        // Filter out item types that are not currently supported.
+                                                        matches!(
+                                                            item.inner,
+                                                            rustdoc_types::ItemEnum::Struct(..)
+                                                                | rustdoc_types::ItemEnum::StructField(
+                                                                    ..
+                                                                )
+                                                                | rustdoc_types::ItemEnum::Enum(..)
+                                                                | rustdoc_types::ItemEnum::Variant(..)
+                                                                | rustdoc_types::ItemEnum::Function(..)
+                                                                | rustdoc_types::ItemEnum::Impl(..)
+                                                                | rustdoc_types::ItemEnum::Trait(..)
+                                                        )
+                                                    }).map(move |value| origin.make_item_token(value)))
+                                                } else {
+                                                    Box::new(std::iter::empty())
+                                                }
+                                            },
+                                            CandidateValue::Multiple(_values) => {
+                                                todo!()
+                                            }
+                                        }
+                                    }
+                                };
 
-                                    let iter = crate_token
-                                        .inner
-                                        .index
-                                        .values()
-                                        .filter(|item| {
-                                            // Filter out item types that are not currently supported.
-                                            matches!(
-                                                item.inner,
-                                                rustdoc_types::ItemEnum::Struct(..)
-                                                    | rustdoc_types::ItemEnum::StructField(..)
-                                                    | rustdoc_types::ItemEnum::Enum(..)
-                                                    | rustdoc_types::ItemEnum::Variant(..)
-                                                    | rustdoc_types::ItemEnum::Function(..)
-                                                    | rustdoc_types::ItemEnum::Impl(..)
-                                                    | rustdoc_types::ItemEnum::Trait(..)
-                                            )
-                                        })
-                                        .map(move |value| origin.make_item_token(value));
-                                    Box::new(iter)
-                                }
-                            };
+                                (ctx, neighbors)
+                            }))
+                        } else {
+                            Box::new(data_contexts.map(move |ctx| {
+                                let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
+                                    match &ctx.current_token {
+                                        None => Box::new(std::iter::empty()),
+                                        Some(token) => {
+                                            let origin = token.origin;
+                                            let crate_token = token
+                                                .as_indexed_crate()
+                                                .expect("token was not a Crate");
 
-                        (ctx, neighbors)
-                    })),
+                                            let iter = crate_token
+                                                .inner
+                                                .index
+                                                .values()
+                                                .filter(|item| {
+                                                    // Filter out item types that are not currently supported.
+                                                    matches!(
+                                                        item.inner,
+                                                        rustdoc_types::ItemEnum::Struct(..)
+                                                            | rustdoc_types::ItemEnum::StructField(
+                                                                ..
+                                                            )
+                                                            | rustdoc_types::ItemEnum::Enum(..)
+                                                            | rustdoc_types::ItemEnum::Variant(..)
+                                                            | rustdoc_types::ItemEnum::Function(..)
+                                                            | rustdoc_types::ItemEnum::Impl(..)
+                                                            | rustdoc_types::ItemEnum::Trait(..)
+                                                    )
+                                                })
+                                                .map(move |value| origin.make_item_token(value));
+                                            Box::new(iter)
+                                        }
+                                    };
+
+                                (ctx, neighbors)
+                            }))
+                        }
+                    }
                     _ => unreachable!(
                         "project_neighbors {current_type_name} {edge_name} {parameters:?}"
                     ),
@@ -1314,8 +1366,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         data_contexts: Box<dyn Iterator<Item = DataContext<Self::DataToken>> + 'a>,
         current_type_name: Arc<str>,
         coerce_to_type_name: Arc<str>,
-        _query_hint: InterpretedQuery,
-        _vertex_hint: Vid,
+        _query_info: &QueryInfo,
     ) -> Box<dyn Iterator<Item = (DataContext<Self::DataToken>, bool)> + 'a> {
         match current_type_name.as_ref() {
             "Item" | "Variant" | "FunctionLike" | "Importable" | "ImplOwner" | "RawType"
