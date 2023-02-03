@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use rustdoc_types::{Crate, GenericArgs, Id, Item, Typedef, Visibility};
 
@@ -15,10 +15,10 @@ pub struct IndexedCrate<'a> {
     pub(crate) visibility_forest: HashMap<&'a Id, Vec<&'a Id>>,
 
     // index: importable name (in any namespace) -> list of items under that name
-    pub(crate) imports_index: Option<BTreeMap<Vec<&'a str>, Vec<&'a Id>>>,
+    pub(crate) imports_index: Option<HashMap<Vec<&'a str>, Vec<&'a Item>>>,
 
     // index: (item id, impl content name) -> list of (impl id, item by that name (e.g. function))
-    pub(crate) impl_index: Option<HashMap<(&'a Id, &'a str), Vec<(&'a Id, &'a Id)>>>,
+    pub(crate) impl_index: Option<HashMap<(&'a Id, &'a str), Vec<(&'a Item, &'a Item)>>>,
 
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
     /// even if they are implemented by a type in that crate. This also includes
@@ -54,8 +54,9 @@ impl<'a> IndexedCrate<'a> {
             impl_index: None,
         };
 
-        let mut imports_index: BTreeMap<Vec<&str>, Vec<&Id>> = BTreeMap::new();
-        for item_id in crate_.index.iter().filter_map(|(id, item)| {
+        let mut imports_index: HashMap<Vec<&str>, Vec<&Item>> =
+            HashMap::with_capacity(crate_.index.len());
+        for item in crate_.index.values().filter_map(|item| {
             matches!(
                 item.inner,
                 rustdoc_types::ItemEnum::Struct(..)
@@ -66,19 +67,16 @@ impl<'a> IndexedCrate<'a> {
                     | rustdoc_types::ItemEnum::Impl(..)
                     | rustdoc_types::ItemEnum::Trait(..)
             )
-            .then_some(id)
+            .then_some(item)
         }) {
-            for importable_path in value.publicly_importable_names(item_id) {
-                imports_index
-                    .entry(importable_path)
-                    .or_default()
-                    .push(item_id);
+            for importable_path in value.publicly_importable_names(&item.id) {
+                imports_index.entry(importable_path).or_default().push(item);
             }
         }
         let index_size = imports_index.len();
         value.imports_index = Some(imports_index);
 
-        let mut impl_index: HashMap<(&'a Id, &'a str), Vec<(&'a Id, &'a Id)>> =
+        let mut impl_index: HashMap<(&'a Id, &'a str), Vec<(&'a Item, &'a Item)>> =
             HashMap::with_capacity(index_size);
         for (id, impl_items) in crate_.index.iter().filter_map(|(id, item)| {
             let impls = match &item.inner {
@@ -87,25 +85,21 @@ impl<'a> IndexedCrate<'a> {
                 _ => return None,
             };
 
-            let impl_items = impls.iter().filter_map(|impl_id| {
-                crate_.index.get(impl_id).and_then(|item| {
-                    if let rustdoc_types::ItemEnum::Impl(impl_item) = &item.inner {
-                        Some((impl_id, impl_item))
-                    } else {
-                        None
-                    }
-                })
-            });
+            let impl_items = impls.iter().filter_map(|impl_id| crate_.index.get(impl_id));
 
             Some((id, impl_items))
         }) {
-            for (impl_id, impl_item) in impl_items {
-                let trait_provided_methods: BTreeSet<_> = impl_item
+            for impl_item in impl_items {
+                let impl_inner = match &impl_item.inner {
+                    rustdoc_types::ItemEnum::Impl(impl_inner) => impl_inner,
+                    _ => unreachable!("expected impl but got another item type: {impl_item:?}"),
+                };
+                let trait_provided_methods: BTreeSet<_> = impl_inner
                     .provided_trait_methods
                     .iter()
                     .map(|x| x.as_str())
                     .collect();
-                if let Some(trait_item) = impl_item
+                if let Some(trait_item) = impl_inner
                     .trait_
                     .as_ref()
                     .and_then(|trait_path| crate_.index.get(&trait_path.id))
@@ -131,12 +125,12 @@ impl<'a> IndexedCrate<'a> {
                                         .expect("item should have had a name"),
                                 ))
                                 .or_default()
-                                .push((impl_id, &provided_item.id));
+                                .push((impl_item, provided_item));
                         }
                     }
                 }
 
-                for contained_item in impl_item
+                for contained_item in impl_inner
                     .items
                     .iter()
                     .filter_map(|item_id| crate_.index.get(item_id))
@@ -145,7 +139,7 @@ impl<'a> IndexedCrate<'a> {
                         impl_index
                             .entry((id, contained_item_name))
                             .or_default()
-                            .push((impl_id, &contained_item.id));
+                            .push((impl_item, contained_item));
                     }
                 }
             }

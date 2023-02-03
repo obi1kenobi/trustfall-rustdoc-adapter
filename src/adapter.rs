@@ -725,7 +725,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                             CandidateValue::Single(value) => {
                                                 let path_components: Vec<&str> = value.as_vec().as_ref().expect("ImportablePath.path was not a list").iter().map(|x| x.as_str().unwrap()).collect();
                                                 if let Some(items) = crate_token.imports_index.as_ref().unwrap().get(&path_components).cloned() {
-                                                    Box::new(items.into_iter().map(|item_id| &crate_token.inner.index[item_id]).filter(|item| {
+                                                    Box::new(items.into_iter().filter(|item| {
                                                         // Filter out item types that are not currently supported.
                                                         matches!(
                                                             item.inner,
@@ -935,25 +935,16 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                 None => Box::new(std::iter::empty()),
                                 Some(token) => {
                                     let origin = token.origin;
-                                    let (impl_index, item_index) = match origin {
-                                        Origin::CurrentCrate => (
-                                            current_crate
-                                                .impl_index
-                                                .as_ref()
-                                                .expect("no impl index present"),
-                                            &current_crate.inner.index,
-                                        ),
-                                        Origin::PreviousCrate => {
-                                            let previous_crate =
-                                                previous_crate.expect("no previous crate provided");
-                                            (
-                                                previous_crate
-                                                    .impl_index
-                                                    .as_ref()
-                                                    .expect("no impl index provided"),
-                                                &previous_crate.inner.index,
-                                            )
-                                        }
+                                    let impl_index = match origin {
+                                        Origin::CurrentCrate => current_crate
+                                            .impl_index
+                                            .as_ref()
+                                            .expect("no impl index present"),
+                                        Origin::PreviousCrate => previous_crate
+                                            .expect("no previous crate provided")
+                                            .impl_index
+                                            .as_ref()
+                                            .expect("no impl index provided"),
                                     };
 
                                     let item_id = &token.as_item().expect("not an item").id;
@@ -966,29 +957,23 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                             if let Some(method_ids) =
                                                 impl_index.get(&(item_id, method_name))
                                             {
-                                                Box::new(
-                                                    method_ids
-                                                        .clone()
-                                                        .into_iter()
-                                                        .filter_map(move |(impl_id, _)| {
-                                                            item_index.get(impl_id)
-                                                        })
-                                                        .filter_map(move |item| {
-                                                            let impl_content = match &item.inner {
-                                                                rustdoc_types::ItemEnum::Impl(
-                                                                    imp,
-                                                                ) => imp,
-                                                                _ => unreachable!(),
-                                                            };
-                                                            if !inherent_impls_only
-                                                                || impl_content.trait_.is_none()
-                                                            {
-                                                                Some(origin.make_item_token(item))
-                                                            } else {
-                                                                None
+                                                Box::new(method_ids.clone().into_iter().filter_map(
+                                                    move |(impl_item, _)| {
+                                                        let impl_content = match &impl_item.inner {
+                                                            rustdoc_types::ItemEnum::Impl(imp) => {
+                                                                imp
                                                             }
-                                                        }),
-                                                )
+                                                            _ => unreachable!(),
+                                                        };
+                                                        if !inherent_impls_only
+                                                            || impl_content.trait_.is_none()
+                                                        {
+                                                            Some(origin.make_item_token(impl_item))
+                                                        } else {
+                                                            None
+                                                        }
+                                                    },
+                                                ))
                                             } else {
                                                 Box::new(std::iter::empty())
                                             }
@@ -1253,25 +1238,16 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                             None => Box::new(std::iter::empty()),
                                             Some(token) => {
                                                 let origin = token.origin;
-                                                let (impl_index, item_index) = match origin {
-                                                    Origin::CurrentCrate => (
-                                                        current_crate
-                                                            .impl_index
-                                                            .as_ref()
-                                                            .expect("no impl index present"),
-                                                        &current_crate.inner.index,
-                                                    ),
-                                                    Origin::PreviousCrate => {
-                                                        let previous_crate = previous_crate
-                                                            .expect("no previous crate provided");
-                                                        (
-                                                            previous_crate
-                                                                .impl_index
-                                                                .as_ref()
-                                                                .expect("no impl index provided"),
-                                                            &previous_crate.inner.index,
-                                                        )
-                                                    }
+                                                let impl_index = match origin {
+                                                    Origin::CurrentCrate => current_crate
+                                                        .impl_index
+                                                        .as_ref()
+                                                        .expect("no impl index present"),
+                                                    Origin::PreviousCrate => previous_crate
+                                                        .expect("no previous crate provided")
+                                                        .impl_index
+                                                        .as_ref()
+                                                        .expect("no impl index provided"),
                                                 };
 
                                                 let impl_token =
@@ -1295,17 +1271,11 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                                             .get(&(impl_owner_id, method_name))
                                                         {
                                                             Box::new(
-                                                                method_ids
-                                                                    .clone()
-                                                                    .into_iter()
-                                                                    .filter_map(
-                                                                        move |(_, item_id)| {
-                                                                            item_index.get(item_id)
-                                                                        },
-                                                                    )
-                                                                    .map(move |item| {
+                                                                method_ids.clone().into_iter().map(
+                                                                    move |(_, item)| {
                                                                         origin.make_item_token(item)
-                                                                    }),
+                                                                    },
+                                                                ),
                                                             )
                                                         } else {
                                                             Box::new(std::iter::empty())
