@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use rustdoc_types::{Crate, GenericArgs, Id, Item, Typedef, Visibility};
 
@@ -14,7 +14,11 @@ pub struct IndexedCrate<'a> {
     // For an Id, give the list of item Ids under which it is publicly visible.
     pub(crate) visibility_forest: HashMap<&'a Id, Vec<&'a Id>>,
 
+    // index: importable name (in any namespace) -> list of items under that name
     pub(crate) imports_index: Option<BTreeMap<Vec<&'a str>, Vec<&'a Id>>>,
+
+    // index: (item id, impl content name) -> list of (impl id, item by that name (e.g. function))
+    pub(crate) impl_index: Option<HashMap<(&'a Id, &'a str), Vec<(&'a Id, &'a Id)>>>,
 
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
     /// even if they are implemented by a type in that crate. This also includes
@@ -47,6 +51,7 @@ impl<'a> IndexedCrate<'a> {
                 .collect(),
             manually_inlined_builtin_traits: create_manually_inlined_builtin_traits(crate_),
             imports_index: None,
+            impl_index: None,
         };
 
         let mut imports_index: BTreeMap<Vec<&str>, Vec<&Id>> = BTreeMap::new();
@@ -70,8 +75,83 @@ impl<'a> IndexedCrate<'a> {
                     .push(item_id);
             }
         }
-
+        let index_size = imports_index.len();
         value.imports_index = Some(imports_index);
+
+        let mut impl_index: HashMap<(&'a Id, &'a str), Vec<(&'a Id, &'a Id)>> =
+            HashMap::with_capacity(index_size);
+        for (id, impl_items) in crate_.index.iter().filter_map(|(id, item)| {
+            let impls = match &item.inner {
+                rustdoc_types::ItemEnum::Struct(s) => &s.impls,
+                rustdoc_types::ItemEnum::Enum(e) => &e.impls,
+                _ => return None,
+            };
+
+            let impl_items = impls.iter().filter_map(|impl_id| {
+                crate_.index.get(impl_id).and_then(|item| {
+                    if let rustdoc_types::ItemEnum::Impl(impl_item) = &item.inner {
+                        Some((impl_id, impl_item))
+                    } else {
+                        None
+                    }
+                })
+            });
+
+            Some((id, impl_items))
+        }) {
+            for (impl_id, impl_item) in impl_items {
+                let trait_provided_methods: BTreeSet<_> = impl_item
+                    .provided_trait_methods
+                    .iter()
+                    .map(|x| x.as_str())
+                    .collect();
+                if let Some(trait_item) = impl_item
+                    .trait_
+                    .as_ref()
+                    .and_then(|trait_path| crate_.index.get(&trait_path.id))
+                {
+                    if let rustdoc_types::ItemEnum::Trait(trait_item) = &trait_item.inner {
+                        for provided_item in trait_item
+                            .items
+                            .iter()
+                            .filter_map(|id| crate_.index.get(id))
+                            .filter(|item| {
+                                item.name
+                                    .as_deref()
+                                    .map(|name| trait_provided_methods.contains(name))
+                                    .unwrap_or_default()
+                            })
+                        {
+                            impl_index
+                                .entry((
+                                    id,
+                                    provided_item
+                                        .name
+                                        .as_deref()
+                                        .expect("item should have had a name"),
+                                ))
+                                .or_default()
+                                .push((impl_id, &provided_item.id));
+                        }
+                    }
+                }
+
+                for contained_item in impl_item
+                    .items
+                    .iter()
+                    .filter_map(|item_id| crate_.index.get(item_id))
+                {
+                    if let Some(contained_item_name) = contained_item.name.as_deref() {
+                        impl_index
+                            .entry((id, contained_item_name))
+                            .or_default()
+                            .push((impl_id, &contained_item.id));
+                    }
+                }
+            }
+        }
+        value.impl_index = Some(impl_index);
+
         value
     }
 
