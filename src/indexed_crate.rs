@@ -339,7 +339,6 @@ fn get_typedef_equivalent_reexport_target<'a>(
     crate_: &'a Crate,
     ty: &'a Typedef,
 ) -> Option<&'a Item> {
-    println!("{ty:?}");
     if let rustdoc_types::Type::ResolvedPath(resolved_path) = &ty.type_ {
         let underlying = crate_.index.get(&resolved_path.id)?;
 
@@ -531,8 +530,6 @@ mod tests {
         ) {
             let rustdoc = load_pregenerated_rustdoc(test_crate);
             let indexed_crate = IndexedCrate::new(&rustdoc);
-
-            println!("vis: {:#?}", indexed_crate.visibility_forest);
 
             for (&expected_item_name, expected_importable_paths) in expected_items {
                 assert!(
