@@ -790,6 +790,20 @@ mod tests {
         }
 
         #[test]
+        fn renaming_reexport_of_reexport() {
+            let test_crate = "renaming_reexport_of_reexport";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    "renaming_reexport_of_reexport::bar",
+                    "renaming_reexport_of_reexport::foo",
+                    "renaming_reexport_of_reexport::inner::foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
         fn renaming_mod_reexport() {
             let test_crate = "renaming_mod_reexport";
             let expected_items = btreemap! {
