@@ -1297,5 +1297,19 @@ mod tests {
 
             assert_duplicated_exported_items_match(test_crate, &expected_items);
         }
+
+        #[test]
+        fn explicit_reexport_of_matching_names() {
+            let test_crate = "explicit_reexport_of_matching_names";
+            let expected_items = btreemap! {
+                "Foo" => (3, btreeset![
+                    "explicit_reexport_of_matching_names::Bar",
+                    "explicit_reexport_of_matching_names::Foo",
+                    "explicit_reexport_of_matching_names::nested::Foo",
+                ]),
+            };
+
+            assert_duplicated_exported_items_match(test_crate, &expected_items);
+        }
     }
 }
