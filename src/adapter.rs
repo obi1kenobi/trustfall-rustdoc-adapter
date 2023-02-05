@@ -712,6 +712,15 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                             .and_then(|x| x.first_edge("importable_path"))
                             .and_then(|y| y.destination().dynamic_field_value("path"))
                         {
+                            // `first_edge("importable_path")` is *technically wrong* here,
+                            // but not in a way that any of our lints can notice.
+                            // If the edge were marked `@optional` but contained a filter,
+                            // the filter would discard non-matching result sets entirely
+                            // but the logic here would make it look like the edge didn't exist
+                            // in the first place.
+                            //
+                            // No lints include `importable_path @optional`.
+                            // Use of `@fold` is not affected.
                             Box::new(resolver.resolve(self, data_contexts).map(move |(ctx, candidates)| {
                                 let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx.current_token {
                                     None => Box::new(std::iter::empty()),
