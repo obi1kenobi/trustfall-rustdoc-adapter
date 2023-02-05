@@ -709,7 +709,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     "item" => {
                         if let Some(resolver) = query_info
                             .destination()
-                            .and_then(|x| x.optional_edge("importable_path"))
+                            .and_then(|x| x.first_edge("importable_path"))
                             .and_then(|y| y.destination().dynamic_field_value("path"))
                         {
                             Box::new(resolver.resolve(self, data_contexts).map(move |(ctx, candidates)| {
@@ -744,9 +744,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                                     Box::new(std::iter::empty())
                                                 }
                                             },
-                                            CandidateValue::Multiple(_values) => {
-                                                todo!()
-                                            }
+                                            _ => todo!(),
                                         }
                                     }
                                 };
@@ -926,7 +924,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
 
                 if let Some(resolver) = query_info
                     .destination()
-                    .and_then(|x| x.optional_edge("method"))
+                    .and_then(|x| x.first_edge("method"))
                     .and_then(|y| y.destination().dynamic_field_value("name"))
                 {
                     Box::new(resolver.resolve(self, data_contexts).map(
@@ -978,9 +976,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                                 Box::new(std::iter::empty())
                                             }
                                         }
-                                        CandidateValue::Multiple(_multiple) => {
-                                            todo!()
-                                        }
+                                        _ => todo!(),
                                     }
                                 }
                             };
@@ -1281,9 +1277,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                                             Box::new(std::iter::empty())
                                                         }
                                                     }
-                                                    CandidateValue::Multiple(_multiple) => {
-                                                        todo!()
-                                                    }
+                                                    _ => todo!(),
                                                 }
                                             }
                                         };
