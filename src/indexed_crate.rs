@@ -755,8 +755,8 @@ mod tests {
                     .collect_vec();
                 if item_id_candidates.len() != *expected_count {
                     panic!(
-                        "Expected to find exactly one item with name {expected_item_name}, \
-                        but found these matching IDs: {item_id_candidates:?}"
+                        "Expected to find exactly {expected_count} items with name \
+                        {expected_item_name}, but found these matching IDs: {item_id_candidates:?}"
                     );
                 }
                 for item_id in item_id_candidates {
