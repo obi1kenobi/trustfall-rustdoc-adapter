@@ -19,7 +19,7 @@ pub struct IndexedCrate<'a> {
     /// Rust's built-in traits like `Debug, Send, Eq` etc.
     ///
     /// This change is approximately as of rustdoc v23,
-    /// in https://github.com/rust-lang/rust/pull/105182
+    /// in <https://github.com/rust-lang/rust/pull/105182>
     ///
     /// As a temporary workaround, we manually create the trait items
     /// for the most common Rust built-in traits and link to those items
