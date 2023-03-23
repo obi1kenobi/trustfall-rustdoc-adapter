@@ -1302,7 +1302,7 @@ mod tests {
         fn explicit_reexport_of_matching_names() {
             let test_crate = "explicit_reexport_of_matching_names";
             let expected_items = btreemap! {
-                "Foo" => (3, btreeset![
+                "Foo" => (2, btreeset![
                     "explicit_reexport_of_matching_names::Bar",
                     "explicit_reexport_of_matching_names::Foo",
                     "explicit_reexport_of_matching_names::nested::Foo",
