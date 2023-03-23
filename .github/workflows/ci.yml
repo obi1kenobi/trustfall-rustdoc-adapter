@@ -51,17 +51,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: r7kamura/rust-problem-matchers@v1
+
       - name: cargo clippy
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --workspace --all-features --all-targets -- -D warnings -Dclippy::print_stdout -Dclippy::print_stderr -Dclippy::dbg_macro --allow deprecated
+        run: cargo clippy --workspace --all-features --all-targets -- -D warnings -Dclippy::print_stdout -Dclippy::print_stderr -Dclippy::dbg_macro --allow deprecated
 
       - name: cargo fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: -- --check
+        run: cargo fmt -- --check
 
   rust-tests:
     name: Run tests
