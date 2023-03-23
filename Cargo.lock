@@ -498,6 +498,7 @@ dependencies = [
  "serde",
  "serde_json",
  "trustfall",
+ "version_check",
 ]
 
 [[package]]
