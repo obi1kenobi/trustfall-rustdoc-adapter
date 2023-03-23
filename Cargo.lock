@@ -489,7 +489,7 @@ dependencies = [
 
 [[package]]
 name = "trustfall-rustdoc-adapter"
-version = "24.1.1"
+version = "24.2.0"
 dependencies = [
  "anyhow",
  "itertools",
