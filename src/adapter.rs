@@ -43,87 +43,87 @@ pub enum Origin {
 }
 
 impl Origin {
-    fn make_item_token<'a>(&self, item: &'a Item) -> Token<'a> {
-        Token {
+    fn make_item_vertex<'a>(&self, item: &'a Item) -> Vertex<'a> {
+        Vertex {
             origin: *self,
             kind: item.into(),
         }
     }
 
-    fn make_span_token<'a>(&self, span: &'a Span) -> Token<'a> {
-        Token {
+    fn make_span_vertex<'a>(&self, span: &'a Span) -> Vertex<'a> {
+        Vertex {
             origin: *self,
             kind: span.into(),
         }
     }
 
-    fn make_path_token<'a>(&self, path: &'a [String]) -> Token<'a> {
-        Token {
+    fn make_path_vertex<'a>(&self, path: &'a [String]) -> Vertex<'a> {
+        Vertex {
             origin: *self,
-            kind: TokenKind::Path(path),
+            kind: VertexKind::Path(path),
         }
     }
 
-    fn make_importable_path_token<'a>(&self, importable_path: Vec<&'a str>) -> Token<'a> {
-        Token {
+    fn make_importable_path_vertex<'a>(&self, importable_path: Vec<&'a str>) -> Vertex<'a> {
+        Vertex {
             origin: *self,
-            kind: TokenKind::ImportablePath(importable_path),
+            kind: VertexKind::ImportablePath(importable_path),
         }
     }
 
-    fn make_raw_type_token<'a>(&self, raw_type: &'a rustdoc_types::Type) -> Token<'a> {
-        Token {
+    fn make_raw_type_vertex<'a>(&self, raw_type: &'a rustdoc_types::Type) -> Vertex<'a> {
+        Vertex {
             origin: *self,
-            kind: TokenKind::RawType(raw_type),
+            kind: VertexKind::RawType(raw_type),
         }
     }
 
-    fn make_attribute_token<'a>(&self, attr: Attribute<'a>) -> Token<'a> {
-        Token {
+    fn make_attribute_vertex<'a>(&self, attr: Attribute<'a>) -> Vertex<'a> {
+        Vertex {
             origin: *self,
-            kind: TokenKind::Attribute(attr),
+            kind: VertexKind::Attribute(attr),
         }
     }
 
-    fn make_attribute_meta_item_token<'a>(
+    fn make_attribute_meta_item_vertex<'a>(
         &self,
         meta_item: Rc<AttributeMetaItem<'a>>,
-    ) -> Token<'a> {
-        Token {
+    ) -> Vertex<'a> {
+        Vertex {
             origin: *self,
-            kind: TokenKind::AttributeMetaItem(meta_item),
+            kind: VertexKind::AttributeMetaItem(meta_item),
         }
     }
 
-    fn make_implemented_trait_token<'a>(
+    fn make_implemented_trait_vertex<'a>(
         &self,
         path: &'a rustdoc_types::Path,
         trait_def: &'a Item,
-    ) -> Token<'a> {
-        Token {
+    ) -> Vertex<'a> {
+        Vertex {
             origin: *self,
-            kind: TokenKind::ImplementedTrait(path, trait_def),
+            kind: VertexKind::ImplementedTrait(path, trait_def),
         }
     }
 
-    fn make_function_parameter_token<'a>(&self, name: &'a str) -> Token<'a> {
-        Token {
+    fn make_function_parameter_vertex<'a>(&self, name: &'a str) -> Vertex<'a> {
+        Vertex {
             origin: *self,
-            kind: TokenKind::FunctionParameter(name),
+            kind: VertexKind::FunctionParameter(name),
         }
     }
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
-pub struct Token<'a> {
+pub struct Vertex<'a> {
     origin: Origin,
-    kind: TokenKind<'a>,
+    kind: VertexKind<'a>,
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
-pub enum TokenKind<'a> {
+pub enum VertexKind<'a> {
     CrateDiff((&'a IndexedCrate<'a>, &'a IndexedCrate<'a>)),
     Crate(&'a IndexedCrate<'a>),
     Item(&'a Item),
@@ -138,20 +138,20 @@ pub enum TokenKind<'a> {
 }
 
 #[allow(dead_code)]
-impl<'a> Token<'a> {
+impl<'a> Vertex<'a> {
     fn new_crate(origin: Origin, crate_: &'a IndexedCrate<'a>) -> Self {
         Self {
             origin,
-            kind: TokenKind::Crate(crate_),
+            kind: VertexKind::Crate(crate_),
         }
     }
 
-    /// The name of the actual runtime type of this token,
+    /// The name of the actual runtime type of this vertex,
     /// intended to fulfill resolution requests for the __typename property.
     #[inline]
     fn typename(&self) -> &'static str {
         match self.kind {
-            TokenKind::Item(item) => match &item.inner {
+            VertexKind::Item(item) => match &item.inner {
                 rustdoc_types::ItemEnum::Struct(..) => "Struct",
                 rustdoc_types::ItemEnum::Enum(..) => "Enum",
                 rustdoc_types::ItemEnum::Function(..) => "Function",
@@ -165,33 +165,33 @@ impl<'a> Token<'a> {
                 rustdoc_types::ItemEnum::Trait(..) => "Trait",
                 _ => unreachable!("unexpected item.inner for item: {item:?}"),
             },
-            TokenKind::Span(..) => "Span",
-            TokenKind::Path(..) => "Path",
-            TokenKind::ImportablePath(..) => "ImportablePath",
-            TokenKind::Crate(..) => "Crate",
-            TokenKind::CrateDiff(..) => "CrateDiff",
-            TokenKind::Attribute(..) => "Attribute",
-            TokenKind::AttributeMetaItem(..) => "AttributeMetaItem",
-            TokenKind::ImplementedTrait(..) => "ImplementedTrait",
-            TokenKind::RawType(ty) => match ty {
+            VertexKind::Span(..) => "Span",
+            VertexKind::Path(..) => "Path",
+            VertexKind::ImportablePath(..) => "ImportablePath",
+            VertexKind::Crate(..) => "Crate",
+            VertexKind::CrateDiff(..) => "CrateDiff",
+            VertexKind::Attribute(..) => "Attribute",
+            VertexKind::AttributeMetaItem(..) => "AttributeMetaItem",
+            VertexKind::ImplementedTrait(..) => "ImplementedTrait",
+            VertexKind::RawType(ty) => match ty {
                 rustdoc_types::Type::ResolvedPath { .. } => "ResolvedPathType",
                 rustdoc_types::Type::Primitive(..) => "PrimitiveType",
                 _ => "OtherType",
             },
-            TokenKind::FunctionParameter(..) => "FunctionParameter",
+            VertexKind::FunctionParameter(..) => "FunctionParameter",
         }
     }
 
     fn as_crate_diff(&self) -> Option<(&'a IndexedCrate<'a>, &'a IndexedCrate<'a>)> {
         match &self.kind {
-            TokenKind::CrateDiff(tuple) => Some(*tuple),
+            VertexKind::CrateDiff(tuple) => Some(*tuple),
             _ => None,
         }
     }
 
     fn as_indexed_crate(&self) -> Option<&'a IndexedCrate<'a>> {
         match self.kind {
-            TokenKind::Crate(c) => Some(c),
+            VertexKind::Crate(c) => Some(c),
             _ => None,
         }
     }
@@ -202,7 +202,7 @@ impl<'a> Token<'a> {
 
     fn as_item(&self) -> Option<&'a Item> {
         match self.kind {
-            TokenKind::Item(item) => Some(item),
+            VertexKind::Item(item) => Some(item),
             _ => None,
         }
     }
@@ -223,7 +223,7 @@ impl<'a> Token<'a> {
 
     fn as_span(&self) -> Option<&'a Span> {
         match self.kind {
-            TokenKind::Span(s) => Some(s),
+            VertexKind::Span(s) => Some(s),
             _ => None,
         }
     }
@@ -251,14 +251,14 @@ impl<'a> Token<'a> {
 
     fn as_path(&self) -> Option<&'a [String]> {
         match &self.kind {
-            TokenKind::Path(path) => Some(*path),
+            VertexKind::Path(path) => Some(*path),
             _ => None,
         }
     }
 
     fn as_importable_path(&self) -> Option<&'_ Vec<&'a str>> {
         match &self.kind {
-            TokenKind::ImportablePath(path) => Some(path),
+            VertexKind::ImportablePath(path) => Some(path),
             _ => None,
         }
     }
@@ -272,7 +272,7 @@ impl<'a> Token<'a> {
 
     fn as_function_parameter(&self) -> Option<&'a str> {
         match &self.kind {
-            TokenKind::FunctionParameter(name) => Some(name),
+            VertexKind::FunctionParameter(name) => Some(name),
             _ => None,
         }
     }
@@ -286,53 +286,53 @@ impl<'a> Token<'a> {
 
     fn as_attribute(&self) -> Option<&'_ Attribute<'a>> {
         match &self.kind {
-            TokenKind::Attribute(attr) => Some(attr),
+            VertexKind::Attribute(attr) => Some(attr),
             _ => None,
         }
     }
 
     fn as_attribute_meta_item(&self) -> Option<&'_ AttributeMetaItem<'a>> {
         match &self.kind {
-            TokenKind::AttributeMetaItem(meta_item) => Some(meta_item),
+            VertexKind::AttributeMetaItem(meta_item) => Some(meta_item),
             _ => None,
         }
     }
 
     fn as_raw_type(&self) -> Option<&'a rustdoc_types::Type> {
         match &self.kind {
-            TokenKind::RawType(ty) => Some(*ty),
+            VertexKind::RawType(ty) => Some(*ty),
             _ => None,
         }
     }
 
     fn as_implemented_trait(&self) -> Option<(&'a rustdoc_types::Path, &'a Item)> {
         match &self.kind {
-            TokenKind::ImplementedTrait(path, trait_item) => Some((*path, *trait_item)),
+            VertexKind::ImplementedTrait(path, trait_item) => Some((*path, *trait_item)),
             _ => None,
         }
     }
 }
 
-impl<'a> From<&'a Item> for TokenKind<'a> {
+impl<'a> From<&'a Item> for VertexKind<'a> {
     fn from(item: &'a Item) -> Self {
         Self::Item(item)
     }
 }
 
-impl<'a> From<&'a IndexedCrate<'a>> for TokenKind<'a> {
+impl<'a> From<&'a IndexedCrate<'a>> for VertexKind<'a> {
     fn from(c: &'a IndexedCrate<'a>) -> Self {
         Self::Crate(c)
     }
 }
 
-impl<'a> From<&'a Span> for TokenKind<'a> {
+impl<'a> From<&'a Span> for VertexKind<'a> {
     fn from(s: &'a Span) -> Self {
         Self::Span(s)
     }
 }
 
-fn get_crate_property(crate_token: &Token, field_name: &str) -> FieldValue {
-    let crate_item = crate_token.as_crate().expect("token was not a Crate");
+fn get_crate_property(crate_vertex: &Vertex, field_name: &str) -> FieldValue {
+    let crate_item = crate_vertex.as_crate().expect("vertex was not a Crate");
     match field_name {
         "root" => (&crate_item.root.0).into(),
         "crate_version" => (&crate_item.crate_version).into(),
@@ -342,8 +342,8 @@ fn get_crate_property(crate_token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
-fn get_item_property(item_token: &Token, field_name: &str) -> FieldValue {
-    let item = item_token.as_item().expect("token was not an Item");
+fn get_item_property(item_vertex: &Vertex, field_name: &str) -> FieldValue {
+    let item = item_vertex.as_item().expect("vertex was not an Item");
     match field_name {
         "id" => (&item.id.0).into(),
         "crate_id" => (&item.crate_id).into(),
@@ -362,8 +362,10 @@ fn get_item_property(item_token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
-fn get_struct_property(item_token: &Token, field_name: &str) -> FieldValue {
-    let (_, struct_item) = item_token.as_struct_item().expect("token was not a Struct");
+fn get_struct_property(item_vertex: &Vertex, field_name: &str) -> FieldValue {
+    let (_, struct_item) = item_vertex
+        .as_struct_item()
+        .expect("vertex was not a Struct");
     match field_name {
         "struct_type" => match struct_item.kind {
             rustdoc_types::StructKind::Plain { .. } => "plain",
@@ -381,8 +383,8 @@ fn get_struct_property(item_token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
-fn get_span_property(item_token: &Token, field_name: &str) -> FieldValue {
-    let span = item_token.as_span().expect("token was not a Span");
+fn get_span_property(item_vertex: &Vertex, field_name: &str) -> FieldValue {
+    let span = item_vertex.as_span().expect("vertex was not a Span");
     match field_name {
         "filename" => span
             .filename
@@ -397,28 +399,28 @@ fn get_span_property(item_token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
-fn get_enum_property(item_token: &Token, field_name: &str) -> FieldValue {
-    let enum_item = item_token.as_enum().expect("token was not an Enum");
+fn get_enum_property(item_vertex: &Vertex, field_name: &str) -> FieldValue {
+    let enum_item = item_vertex.as_enum().expect("vertex was not an Enum");
     match field_name {
         "variants_stripped" => enum_item.variants_stripped.into(),
         _ => unreachable!("Enum property {field_name}"),
     }
 }
 
-fn get_path_property(token: &Token, field_name: &str) -> FieldValue {
-    let path_token = token.as_path().expect("token was not a Path");
+fn get_path_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let path_vertex = vertex.as_path().expect("vertex was not a Path");
     match field_name {
-        "path" => path_token.into(),
+        "path" => path_vertex.into(),
         _ => unreachable!("Path property {field_name}"),
     }
 }
 
-fn get_importable_path_property(token: &Token, field_name: &str) -> FieldValue {
-    let path_token = token
+fn get_importable_path_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let path_vertex = vertex
         .as_importable_path()
-        .expect("token was not an ImportablePath");
+        .expect("vertex was not an ImportablePath");
     match field_name {
-        "path" => path_token
+        "path" => path_vertex
             .iter()
             .map(|x| x.to_string())
             .collect::<Vec<_>>()
@@ -428,8 +430,8 @@ fn get_importable_path_property(token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
-fn get_function_like_property(token: &Token, field_name: &str) -> FieldValue {
-    let function = token.as_function().expect("not a function");
+fn get_function_like_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let function = vertex.as_function().expect("not a function");
 
     match field_name {
         "const" => function.header.const_.into(),
@@ -439,29 +441,29 @@ fn get_function_like_property(token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
-fn get_function_parameter_property(token: &Token, field_name: &str) -> FieldValue {
-    let function_parameter_token = token
+fn get_function_parameter_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let function_parameter_vertex = vertex
         .as_function_parameter()
-        .expect("token was not a FunctionParameter");
+        .expect("vertex was not a FunctionParameter");
 
     match field_name {
-        "name" => function_parameter_token.into(),
+        "name" => function_parameter_vertex.into(),
         _ => unreachable!("FunctionParameter property {field_name}"),
     }
 }
 
-fn get_impl_property(token: &Token, field_name: &str) -> FieldValue {
-    let impl_token = token.as_impl().expect("token was not an Impl");
+fn get_impl_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let impl_vertex = vertex.as_impl().expect("vertex was not an Impl");
     match field_name {
-        "unsafe" => impl_token.is_unsafe.into(),
-        "negative" => impl_token.negative.into(),
-        "synthetic" => impl_token.synthetic.into(),
+        "unsafe" => impl_vertex.is_unsafe.into(),
+        "negative" => impl_vertex.negative.into(),
+        "synthetic" => impl_vertex.synthetic.into(),
         _ => unreachable!("Impl property {field_name}"),
     }
 }
 
-fn get_attribute_property(token: &Token, field_name: &str) -> FieldValue {
-    let attribute = token.as_attribute().expect("token was not an Attribute");
+fn get_attribute_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let attribute = vertex.as_attribute().expect("vertex was not an Attribute");
     match field_name {
         "raw_attribute" => attribute.raw_attribute().into(),
         "is_inner" => attribute.is_inner.into(),
@@ -469,10 +471,10 @@ fn get_attribute_property(token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
-fn get_attribute_meta_item_property(token: &Token, field_name: &str) -> FieldValue {
-    let meta_item = token
+fn get_attribute_meta_item_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let meta_item = vertex
         .as_attribute_meta_item()
-        .expect("token was not an AttributeMetaItem");
+        .expect("vertex was not an AttributeMetaItem");
     match field_name {
         "raw_item" => meta_item.raw_item.into(),
         "base" => meta_item.base.into(),
@@ -481,30 +483,30 @@ fn get_attribute_meta_item_property(token: &Token, field_name: &str) -> FieldVal
     }
 }
 
-fn get_raw_type_property(token: &Token, field_name: &str) -> FieldValue {
-    let type_token = token.as_raw_type().expect("token was not a RawType");
+fn get_raw_type_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let type_vertex = vertex.as_raw_type().expect("vertex was not a RawType");
     match field_name {
-        "name" => match type_token {
+        "name" => match type_vertex {
             rustdoc_types::Type::ResolvedPath(path) => (&path.name).into(),
             rustdoc_types::Type::Primitive(name) => name.into(),
-            _ => unreachable!("unexpected RawType token content: {type_token:?}"),
+            _ => unreachable!("unexpected RawType vertex content: {type_vertex:?}"),
         },
         _ => unreachable!("RawType property {field_name}"),
     }
 }
 
-fn get_trait_property(token: &Token, field_name: &str) -> FieldValue {
-    let trait_token = token.as_trait().expect("token was not a Trait");
+fn get_trait_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let trait_vertex = vertex.as_trait().expect("vertex was not a Trait");
     match field_name {
-        "unsafe" => trait_token.is_unsafe.into(),
+        "unsafe" => trait_vertex.is_unsafe.into(),
         _ => unreachable!("Trait property {field_name}"),
     }
 }
 
-fn get_implemented_trait_property(token: &Token, field_name: &str) -> FieldValue {
-    let (path, _) = token
+fn get_implemented_trait_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let (path, _) = vertex
         .as_implemented_trait()
-        .expect("token was not a ImplementedTrait");
+        .expect("vertex was not a ImplementedTrait");
     match field_name {
         "name" => (&path.name).into(),
         _ => unreachable!("ImplementedTrait property {field_name}"),
@@ -512,19 +514,19 @@ fn get_implemented_trait_property(token: &Token, field_name: &str) -> FieldValue
 }
 
 fn property_mapper<'a>(
-    ctx: DataContext<Token<'a>>,
+    ctx: DataContext<Vertex<'a>>,
     field_name: &str,
-    property_getter: fn(&Token<'a>, &str) -> FieldValue,
-) -> (DataContext<Token<'a>>, FieldValue) {
+    property_getter: fn(&Vertex<'a>, &str) -> FieldValue,
+) -> (DataContext<Vertex<'a>>, FieldValue) {
     let value = match &ctx.current_token {
-        Some(token) => property_getter(token, field_name),
+        Some(vertex) => property_getter(vertex, field_name),
         None => FieldValue::Null,
     };
     (ctx, value)
 }
 
 impl<'a> Adapter<'a> for RustdocAdapter<'a> {
-    type DataToken = Token<'a>;
+    type DataToken = Vertex<'a>;
 
     fn get_starting_tokens(
         &mut self,
@@ -534,15 +536,15 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         _vertex_hint: Vid,
     ) -> Box<dyn Iterator<Item = Self::DataToken> + 'a> {
         match edge.as_ref() {
-            "Crate" => Box::new(std::iter::once(Token::new_crate(
+            "Crate" => Box::new(std::iter::once(Vertex::new_crate(
                 Origin::CurrentCrate,
                 self.current_crate,
             ))),
             "CrateDiff" => {
                 let previous_crate = self.previous_crate.expect("no previous crate provided");
-                Box::new(std::iter::once(Token {
+                Box::new(std::iter::once(Vertex {
                     origin: Origin::CurrentCrate,
-                    kind: TokenKind::CrateDiff((self.current_crate, previous_crate)),
+                    kind: VertexKind::CrateDiff((self.current_crate, previous_crate)),
                 }))
             }
             _ => unreachable!("{edge}"),
@@ -559,8 +561,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
     ) -> Box<dyn Iterator<Item = (DataContext<Self::DataToken>, FieldValue)> + 'a> {
         if field_name.as_ref() == "__typename" {
             Box::new(data_contexts.map(|ctx| match &ctx.current_token {
-                Some(token) => {
-                    let value = token.typename().into();
+                Some(vertex) => {
+                    let value = vertex.typename().into();
                     (ctx, value)
                 }
                 None => (ctx, FieldValue::Null),
@@ -676,10 +678,10 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         .current_token
                     {
                         None => Box::new(std::iter::empty()),
-                        Some(token) => {
+                        Some(vertex) => {
                             let crate_tuple =
-                                token.as_crate_diff().expect("token was not a CrateDiff");
-                            let neighbor = Token::new_crate(Origin::CurrentCrate, crate_tuple.0);
+                                vertex.as_crate_diff().expect("vertex was not a CrateDiff");
+                            let neighbor = Vertex::new_crate(Origin::CurrentCrate, crate_tuple.0);
                             Box::new(std::iter::once(neighbor))
                         }
                     };
@@ -691,10 +693,10 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         .current_token
                     {
                         None => Box::new(std::iter::empty()),
-                        Some(token) => {
+                        Some(vertex) => {
                             let crate_tuple =
-                                token.as_crate_diff().expect("token was not a CrateDiff");
-                            let neighbor = Token::new_crate(Origin::PreviousCrate, crate_tuple.1);
+                                vertex.as_crate_diff().expect("vertex was not a CrateDiff");
+                            let neighbor = Vertex::new_crate(Origin::PreviousCrate, crate_tuple.1);
                             Box::new(std::iter::once(neighbor))
                         }
                     };
@@ -711,12 +713,12 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
                             match &ctx.current_token {
                                 None => Box::new(std::iter::empty()),
-                                Some(token) => {
-                                    let origin = token.origin;
-                                    let crate_token =
-                                        token.as_indexed_crate().expect("token was not a Crate");
+                                Some(vertex) => {
+                                    let origin = vertex.origin;
+                                    let crate_vertex =
+                                        vertex.as_indexed_crate().expect("vertex was not a Crate");
 
-                                    let iter = crate_token
+                                    let iter = crate_vertex
                                         .inner
                                         .index
                                         .values()
@@ -733,7 +735,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                                     | rustdoc_types::ItemEnum::Trait(..)
                                             )
                                         })
-                                        .map(move |value| origin.make_item_token(value));
+                                        .map(move |value| origin.make_item_vertex(value));
                                     Box::new(iter)
                                 }
                             };
@@ -757,9 +759,10 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                             let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
                                 match &ctx.current_token {
                                     None => Box::new(std::iter::empty()),
-                                    Some(token) => {
-                                        let origin = token.origin;
-                                        let item = token.as_item().expect("token was not an Item");
+                                    Some(vertex) => {
+                                        let origin = vertex.origin;
+                                        let item =
+                                            vertex.as_item().expect("vertex was not an Item");
                                         let item_id = &item.id;
 
                                         if let Some(path) = match origin {
@@ -775,7 +778,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                                 .get(item_id)
                                                 .map(|x| &x.path),
                                         } {
-                                            Box::new(std::iter::once(origin.make_path_token(path)))
+                                            Box::new(std::iter::once(origin.make_path_vertex(path)))
                                         } else {
                                             Box::new(std::iter::empty())
                                         }
@@ -793,9 +796,10 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                             let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
                                 match &ctx.current_token {
                                     None => Box::new(std::iter::empty()),
-                                    Some(token) => {
-                                        let origin = token.origin;
-                                        let item = token.as_item().expect("token was not an Item");
+                                    Some(vertex) => {
+                                        let origin = vertex.origin;
+                                        let item =
+                                            vertex.as_item().expect("vertex was not an Item");
                                         let item_id = &item.id;
 
                                         let parent_crate = match origin {
@@ -809,7 +813,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                             parent_crate
                                                 .publicly_importable_names(item_id)
                                                 .into_iter()
-                                                .map(move |x| origin.make_importable_path_token(x)),
+                                                .map(move |x| {
+                                                    origin.make_importable_path_vertex(x)
+                                                }),
                                         )
                                     }
                                 };
@@ -832,11 +838,11 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
                             match &ctx.current_token {
                                 None => Box::new(std::iter::empty()),
-                                Some(token) => {
-                                    let origin = token.origin;
-                                    let item = token.as_item().expect("token was not an Item");
+                                Some(vertex) => {
+                                    let origin = vertex.origin;
+                                    let item = vertex.as_item().expect("vertex was not an Item");
                                     if let Some(span) = &item.span {
-                                        Box::new(std::iter::once(origin.make_span_token(span)))
+                                        Box::new(std::iter::once(origin.make_span_vertex(span)))
                                     } else {
                                         Box::new(std::iter::empty())
                                     }
@@ -849,11 +855,11 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
                             match &ctx.current_token {
                                 None => Box::new(std::iter::empty()),
-                                Some(token) => {
-                                    let origin = token.origin;
-                                    let item = token.as_item().expect("token was not an Item");
+                                Some(vertex) => {
+                                    let origin = vertex.origin;
+                                    let item = vertex.as_item().expect("vertex was not an Item");
                                     Box::new(item.attrs.iter().map(move |attr| {
-                                        origin.make_attribute_token(Attribute::new(attr.as_str()))
+                                        origin.make_attribute_vertex(Attribute::new(attr.as_str()))
                                     }))
                                 }
                             };
@@ -875,8 +881,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
                         match &ctx.current_token {
                             None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
+                            Some(vertex) => {
+                                let origin = vertex.origin;
                                 let item_index = match origin {
                                     Origin::CurrentCrate => &current_crate.inner.index,
                                     Origin::PreviousCrate => {
@@ -889,19 +895,19 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
 
                                 // Get the IDs of all the impl blocks.
                                 // Relies on the fact that only structs and enums can have impls,
-                                // so we know that the token must represent either a struct or an enum.
-                                let impl_ids = token
+                                // so we know that the vertex must represent either a struct or an enum.
+                                let impl_ids = vertex
                                     .as_struct_item()
                                     .map(|(_, s)| &s.impls)
-                                    .or_else(|| token.as_enum().map(|e| &e.impls))
-                                    .expect("token was neither a struct nor an enum");
+                                    .or_else(|| vertex.as_enum().map(|e| &e.impls))
+                                    .expect("vertex was neither a struct nor an enum");
 
                                 Box::new(impl_ids.iter().filter_map(move |item_id| {
                                     let next_item = item_index.get(item_id);
                                     next_item.and_then(|next_item| match &next_item.inner {
                                         rustdoc_types::ItemEnum::Impl(imp) => {
                                             if !inherent_impls_only || imp.trait_.is_none() {
-                                                Some(origin.make_item_token(next_item))
+                                                Some(origin.make_item_vertex(next_item))
                                             } else {
                                                 None
                                             }
@@ -920,18 +926,18 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
                         match &ctx.current_token {
                             None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
+                            Some(vertex) => {
+                                let origin = vertex.origin;
 
                                 Box::new(
-                                    token
+                                    vertex
                                         .as_function()
-                                        .expect("token was not a Function")
+                                        .expect("vertex was not a Function")
                                         .decl
                                         .inputs
                                         .iter()
                                         .map(move |(name, _type_)| {
-                                            origin.make_function_parameter_token(name)
+                                            origin.make_function_parameter_vertex(name)
                                         }),
                                 )
                             }
@@ -949,10 +955,10 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                             .current_token
                         {
                             None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
+                            Some(vertex) => {
+                                let origin = vertex.origin;
                                 let (_, struct_item) =
-                                    token.as_struct_item().expect("token was not a Struct");
+                                    vertex.as_struct_item().expect("vertex was not a Struct");
 
                                 let item_index = match origin {
                                     Origin::CurrentCrate => &current_crate.inner.index,
@@ -978,7 +984,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                     };
 
                                 Box::new(field_ids_iter.map(move |field_id| {
-                                    origin.make_item_token(
+                                    origin.make_item_vertex(
                                         item_index.get(field_id).expect("missing item"),
                                     )
                                 }))
@@ -999,46 +1005,47 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     let current_crate = self.current_crate;
                     let previous_crate = self.previous_crate;
                     Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                            match &ctx.current_token {
-                                None => Box::new(std::iter::empty()),
-                                Some(token) => {
-                                    let origin = token.origin;
-                                    let item = token.as_variant().expect("token was not a Variant");
-                                    let item_index = match origin {
-                                        Origin::CurrentCrate => &current_crate.inner.index,
-                                        Origin::PreviousCrate => {
-                                            &previous_crate
-                                                .expect("no previous crate provided")
-                                                .inner
-                                                .index
-                                        }
-                                    };
-
-                                    match &item.kind {
-                                        VariantKind::Plain => Box::new(std::iter::empty()),
-                                        VariantKind::Tuple(fields) => {
-                                            Box::new(fields.iter().filter(|x| x.is_some()).map(
-                                                move |field_id| {
-                                                    origin.make_item_token(
-                                                        item_index
-                                                            .get(field_id.as_ref().unwrap())
-                                                            .expect("missing item"),
-                                                    )
-                                                },
-                                            ))
-                                        }
-                                        VariantKind::Struct {
-                                            fields,
-                                            fields_stripped: _,
-                                        } => Box::new(fields.iter().map(move |field_id| {
-                                            origin.make_item_token(
-                                                item_index.get(field_id).expect("missing item"),
-                                            )
-                                        })),
+                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
+                            .current_token
+                        {
+                            None => Box::new(std::iter::empty()),
+                            Some(vertex) => {
+                                let origin = vertex.origin;
+                                let item = vertex.as_variant().expect("vertex was not a Variant");
+                                let item_index = match origin {
+                                    Origin::CurrentCrate => &current_crate.inner.index,
+                                    Origin::PreviousCrate => {
+                                        &previous_crate
+                                            .expect("no previous crate provided")
+                                            .inner
+                                            .index
                                     }
+                                };
+
+                                match &item.kind {
+                                    VariantKind::Plain => Box::new(std::iter::empty()),
+                                    VariantKind::Tuple(fields) => {
+                                        Box::new(fields.iter().filter(|x| x.is_some()).map(
+                                            move |field_id| {
+                                                origin.make_item_vertex(
+                                                    item_index
+                                                        .get(field_id.as_ref().unwrap())
+                                                        .expect("missing item"),
+                                                )
+                                            },
+                                        ))
+                                    }
+                                    VariantKind::Struct {
+                                        fields,
+                                        fields_stripped: _,
+                                    } => Box::new(fields.iter().map(move |field_id| {
+                                        origin.make_item_vertex(
+                                            item_index.get(field_id).expect("missing item"),
+                                        )
+                                    })),
                                 }
-                            };
+                            }
+                        };
 
                         (ctx, neighbors)
                     }))
@@ -1052,29 +1059,30 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     let current_crate = self.current_crate;
                     let previous_crate = self.previous_crate;
                     Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                            match &ctx.current_token {
-                                None => Box::new(std::iter::empty()),
-                                Some(token) => {
-                                    let origin = token.origin;
-                                    let enum_item = token.as_enum().expect("token was not an Enum");
+                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
+                            .current_token
+                        {
+                            None => Box::new(std::iter::empty()),
+                            Some(vertex) => {
+                                let origin = vertex.origin;
+                                let enum_item = vertex.as_enum().expect("vertex was not an Enum");
 
-                                    let item_index = match origin {
-                                        Origin::CurrentCrate => &current_crate.inner.index,
-                                        Origin::PreviousCrate => {
-                                            &previous_crate
-                                                .expect("no previous crate provided")
-                                                .inner
-                                                .index
-                                        }
-                                    };
-                                    Box::new(enum_item.variants.iter().map(move |field_id| {
-                                        origin.make_item_token(
-                                            item_index.get(field_id).expect("missing item"),
-                                        )
-                                    }))
-                                }
-                            };
+                                let item_index = match origin {
+                                    Origin::CurrentCrate => &current_crate.inner.index,
+                                    Origin::PreviousCrate => {
+                                        &previous_crate
+                                            .expect("no previous crate provided")
+                                            .inner
+                                            .index
+                                    }
+                                };
+                                Box::new(enum_item.variants.iter().map(move |field_id| {
+                                    origin.make_item_vertex(
+                                        item_index.get(field_id).expect("missing item"),
+                                    )
+                                }))
+                            }
+                        };
 
                         (ctx, neighbors)
                     }))
@@ -1088,12 +1096,12 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
                         match &ctx.current_token {
                             None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
-                                let (_, field_type) = token
+                            Some(vertex) => {
+                                let origin = vertex.origin;
+                                let (_, field_type) = vertex
                                     .as_struct_field_item()
-                                    .expect("not a StructField token");
-                                Box::new(std::iter::once(origin.make_raw_type_token(field_type)))
+                                    .expect("not a StructField vertex");
+                                Box::new(std::iter::once(origin.make_raw_type_vertex(field_type)))
                             }
                         };
 
@@ -1113,8 +1121,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                             .current_token
                         {
                             None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
+                            Some(vertex) => {
+                                let origin = vertex.origin;
                                 let item_index = match origin {
                                     Origin::CurrentCrate => &current_crate.inner.index,
                                     Origin::PreviousCrate => {
@@ -1122,13 +1130,13 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                     }
                                 };
 
-                                let impl_token = token.as_impl().expect("not an Impl token");
-                                let provided_methods: Box<dyn Iterator<Item = &Id>> = if impl_token.provided_trait_methods.is_empty() {
+                                let impl_vertex = vertex.as_impl().expect("not an Impl vertex");
+                                let provided_methods: Box<dyn Iterator<Item = &Id>> = if impl_vertex.provided_trait_methods.is_empty() {
                                     Box::new(std::iter::empty())
                                 } else {
-                                    let method_names: BTreeSet<&str> = impl_token.provided_trait_methods.iter().map(|x| x.as_str()).collect();
+                                    let method_names: BTreeSet<&str> = impl_vertex.provided_trait_methods.iter().map(|x| x.as_str()).collect();
 
-                                    let trait_path = impl_token.trait_.as_ref().expect("no trait but provided_trait_methods was non-empty");
+                                    let trait_path = impl_vertex.trait_.as_ref().expect("no trait but provided_trait_methods was non-empty");
                                     let trait_item = item_index.get(&trait_path.id);
 
                                     if let Some(trait_item) = trait_item {
@@ -1148,12 +1156,12 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                         Box::new(std::iter::empty())
                                     }
                                 };
-                                Box::new(provided_methods.chain(impl_token.items.iter()).filter_map(move |item_id| {
+                                Box::new(provided_methods.chain(impl_vertex.items.iter()).filter_map(move |item_id| {
                                     let next_item = &item_index.get(item_id);
                                     if let Some(next_item) = next_item {
                                         match &next_item.inner {
                                             rustdoc_types::ItemEnum::Function(..) => {
-                                                Some(origin.make_item_token(next_item))
+                                                Some(origin.make_item_vertex(next_item))
                                             }
                                             _ => None,
                                         }
@@ -1174,8 +1182,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                             let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
                                 match &ctx.current_token {
                                     None => Box::new(std::iter::empty()),
-                                    Some(token) => {
-                                        let origin = token.origin;
+                                    Some(vertex) => {
+                                        let origin = vertex.origin;
                                         let item_index = match origin {
                                             Origin::CurrentCrate => &current_crate.inner.index,
                                             Origin::PreviousCrate => {
@@ -1186,10 +1194,10 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                             }
                                         };
 
-                                        let impl_token =
-                                            token.as_impl().expect("not an Impl token");
+                                        let impl_vertex =
+                                            vertex.as_impl().expect("not an Impl vertex");
 
-                                        if let Some(path) = &impl_token.trait_ {
+                                        if let Some(path) = &impl_vertex.trait_ {
                                             // When the implemented trait is from the same crate
                                             // as its definition, the trait is expected to be present
                                             // in `item_index`. Otherwise, the
@@ -1213,7 +1221,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                                 });
                                             if let Some(item) = found_item {
                                                 Box::new(std::iter::once(
-                                                    origin.make_implemented_trait_token(path, item),
+                                                    origin.make_implemented_trait_vertex(path, item),
                                                 ))
                                             } else {
                                                 Box::new(std::iter::empty())
@@ -1239,13 +1247,13 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
                         match &ctx.current_token {
                             None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
+                            Some(vertex) => {
+                                let origin = vertex.origin;
 
-                                let (_, trait_item) = token
+                                let (_, trait_item) = vertex
                                     .as_implemented_trait()
-                                    .expect("token was not an ImplementedTrait");
-                                Box::new(std::iter::once(origin.make_item_token(trait_item)))
+                                    .expect("vertex was not an ImplementedTrait");
+                                Box::new(std::iter::once(origin.make_item_vertex(trait_item)))
                             }
                         };
 
@@ -1261,13 +1269,13 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         .current_token
                     {
                         None => Box::new(std::iter::empty()),
-                        Some(token) => {
-                            let origin = token.origin;
+                        Some(vertex) => {
+                            let origin = vertex.origin;
 
                             let attribute =
-                                token.as_attribute().expect("token was not an Attribute");
+                                vertex.as_attribute().expect("vertex was not an Attribute");
                             Box::new(std::iter::once(
-                                origin.make_attribute_meta_item_token(attribute.content.clone()),
+                                origin.make_attribute_meta_item_vertex(attribute.content.clone()),
                             ))
                         }
                     };
@@ -1283,15 +1291,15 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
                         match &ctx.current_token {
                             None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
+                            Some(vertex) => {
+                                let origin = vertex.origin;
 
-                                let meta_item = token
+                                let meta_item = vertex
                                     .as_attribute_meta_item()
-                                    .expect("token was not an AttributeMetaItem");
+                                    .expect("vertex was not an AttributeMetaItem");
                                 if let Some(arguments) = meta_item.arguments.clone() {
                                     Box::new(arguments.into_iter().map(move |argument| {
-                                        origin.make_attribute_meta_item_token(argument)
+                                        origin.make_attribute_meta_item_vertex(argument)
                                     }))
                                 } else {
                                     Box::new(std::iter::empty())
@@ -1323,8 +1331,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 Box::new(data_contexts.map(move |ctx| {
                     let can_coerce = match &ctx.current_token {
                         None => false,
-                        Some(token) => {
-                            let actual_type_name = token.typename();
+                        Some(vertex) => {
+                            let actual_type_name = vertex.typename();
 
                             match coerce_to_type_name.as_ref() {
                                 "Variant" => matches!(
