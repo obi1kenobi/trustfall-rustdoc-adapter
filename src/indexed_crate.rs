@@ -18,6 +18,7 @@ pub struct IndexedCrate<'a> {
     pub(crate) imports_index: Option<HashMap<Vec<&'a str>, Vec<&'a Item>>>,
 
     // index: (item id, impl content name) -> list of (impl id, item by that name (e.g. function))
+    #[allow(clippy::type_complexity)]
     pub(crate) impl_index: Option<HashMap<(&'a Id, &'a str), Vec<(&'a Item, &'a Item)>>>,
 
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,

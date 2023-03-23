@@ -6,7 +6,7 @@ use rustdoc_types::{
 };
 use trustfall_core::{
     interpreter::{
-        hints::{CandidateValue, QueryInfo, VertexInfo},
+        CandidateValue, QueryInfo, VertexInfo,
         Adapter, DataContext,
     },
     ir::{EdgeParameters, FieldValue},
@@ -337,8 +337,8 @@ impl<'a> From<&'a Span> for TokenKind<'a> {
 fn get_crate_property(crate_token: &Token, field_name: &str) -> FieldValue {
     let crate_item = crate_token.as_crate().expect("token was not a Crate");
     match field_name {
-        "root" => (&crate_item.root.0).into(),
-        "crate_version" => (&crate_item.crate_version).into(),
+        "root" => crate_item.root.0.clone().into(),
+        "crate_version" => crate_item.crate_version.clone().into(),
         "includes_private" => crate_item.includes_private.into(),
         "format_version" => crate_item.format_version.into(),
         _ => unreachable!("Crate property {field_name}"),
@@ -348,10 +348,10 @@ fn get_crate_property(crate_token: &Token, field_name: &str) -> FieldValue {
 fn get_item_property(item_token: &Token, field_name: &str) -> FieldValue {
     let item = item_token.as_item().expect("token was not an Item");
     match field_name {
-        "id" => (&item.id.0).into(),
-        "crate_id" => (&item.crate_id).into(),
-        "name" => (&item.name).into(),
-        "docs" => (&item.docs).into(),
+        "id" => item.id.0.clone().into(),
+        "crate_id" => item.crate_id.into(),
+        "name" => item.name.clone().into(),
+        "docs" => item.docs.clone().into(),
         "attrs" => item.attrs.clone().into(),
         "visibility_limit" => match &item.visibility {
             rustdoc_types::Visibility::Public => "public".into(),
@@ -519,7 +519,7 @@ fn property_mapper<'a>(
     field_name: &str,
     property_getter: fn(&Token<'a>, &str) -> FieldValue,
 ) -> (DataContext<Token<'a>>, FieldValue) {
-    let value = match &ctx.current_token {
+    let value = match ctx.active_vertex() {
         Some(token) => property_getter(token, field_name),
         None => FieldValue::Null,
     };
@@ -527,14 +527,14 @@ fn property_mapper<'a>(
 }
 
 impl<'a> Adapter<'a> for RustdocAdapter<'a> {
-    type DataToken = Token<'a>;
+    type Vertex = Token<'a>;
 
-    fn get_starting_tokens(
+    fn resolve_starting_vertices(
         &mut self,
-        edge: Arc<str>,
-        _parameters: Option<Arc<EdgeParameters>>,
+        edge: &Arc<str>,
+        _parameters: &EdgeParameters,
         _query_info: &QueryInfo,
-    ) -> Box<dyn Iterator<Item = Self::DataToken> + 'a> {
+    ) -> Box<dyn Iterator<Item = Self::Vertex> + 'a> {
         match edge.as_ref() {
             "Crate" => Box::new(std::iter::once(Token::new_crate(
                 Origin::CurrentCrate,
@@ -551,15 +551,15 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         }
     }
 
-    fn project_property(
+    fn resolve_property(
         &mut self,
-        data_contexts: Box<dyn Iterator<Item = DataContext<Self::DataToken>> + 'a>,
-        current_type_name: Arc<str>,
-        field_name: Arc<str>,
+        data_contexts: Box<dyn Iterator<Item = DataContext<Self::Vertex>> + 'a>,
+        current_type_name: &Arc<str>,
+        field_name: &Arc<str>,
         _query_info: &QueryInfo,
-    ) -> Box<dyn Iterator<Item = (DataContext<Self::DataToken>, FieldValue)> + 'a> {
+    ) -> Box<dyn Iterator<Item = (DataContext<Self::Vertex>, FieldValue)> + 'a> {
         if field_name.as_ref() == "__typename" {
-            Box::new(data_contexts.map(|ctx| match &ctx.current_token {
+            Box::new(data_contexts.map(|ctx| match ctx.active_vertex() {
                 Some(token) => {
                     let value = token.typename().into();
                     (ctx, value)
@@ -567,6 +567,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 None => (ctx, FieldValue::Null),
             }))
         } else {
+            let field_name = field_name.clone();
             match current_type_name.as_ref() {
                 "Crate" => {
                     Box::new(data_contexts.map(move |ctx| {
@@ -653,26 +654,26 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         }
     }
 
-    fn project_neighbors(
+    fn resolve_neighbors(
         &mut self,
-        data_contexts: Box<dyn Iterator<Item = DataContext<Self::DataToken>> + 'a>,
-        current_type_name: Arc<str>,
-        edge_name: Arc<str>,
-        parameters: Option<Arc<EdgeParameters>>,
+        data_contexts: Box<dyn Iterator<Item = DataContext<Self::Vertex>> + 'a>,
+        current_type_name: &Arc<str>,
+        edge_name: &Arc<str>,
+        parameters: &EdgeParameters,
         query_info: &QueryInfo,
     ) -> Box<
         dyn Iterator<
                 Item = (
-                    DataContext<Self::DataToken>,
-                    Box<dyn Iterator<Item = Self::DataToken> + 'a>,
+                    DataContext<Self::Vertex>,
+                    Box<dyn Iterator<Item = Self::Vertex> + 'a>,
                 ),
             > + 'a,
     > {
         match current_type_name.as_ref() {
             "CrateDiff" => match edge_name.as_ref() {
                 "current" => Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
-                        .current_token
+                    let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> = match &ctx
+                        .active_vertex()
                     {
                         None => Box::new(std::iter::empty()),
                         Some(token) => {
@@ -686,8 +687,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     (ctx, neighbors)
                 })),
                 "baseline" => Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
-                        .current_token
+                    let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> = match &ctx
+                        .active_vertex()
                     {
                         None => Box::new(std::iter::empty()),
                         Some(token) => {
@@ -722,7 +723,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                             // No lints include `importable_path @optional`.
                             // Use of `@fold` is not affected.
                             Box::new(resolver.resolve(self, data_contexts).map(move |(ctx, candidates)| {
-                                let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx.current_token {
+                                let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> = match ctx.active_vertex() {
                                     None => Box::new(std::iter::empty()),
                                     Some(token) => {
                                         let origin = token.origin;
@@ -762,8 +763,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                             }))
                         } else {
                             Box::new(data_contexts.map(move |ctx| {
-                                let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                                    match &ctx.current_token {
+                                let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
+                                    match ctx.active_vertex() {
                                         None => Box::new(std::iter::empty()),
                                         Some(token) => {
                                             let origin = token.origin;
@@ -813,8 +814,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         let previous_crate = self.previous_crate;
 
                         Box::new(data_contexts.map(move |ctx| {
-                            let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                                match &ctx.current_token {
+                            let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
+                                match ctx.active_vertex() {
                                     None => Box::new(std::iter::empty()),
                                     Some(token) => {
                                         let origin = token.origin;
@@ -849,8 +850,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         let previous_crate = self.previous_crate;
 
                         Box::new(data_contexts.map(move |ctx| {
-                            let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                                match &ctx.current_token {
+                            let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
+                                match ctx.active_vertex() {
                                     None => Box::new(std::iter::empty()),
                                     Some(token) => {
                                         let origin = token.origin;
@@ -888,8 +889,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             {
                 match edge_name.as_ref() {
                     "span" => Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                            match &ctx.current_token {
+                        let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
+                            match ctx.active_vertex() {
                                 None => Box::new(std::iter::empty()),
                                 Some(token) => {
                                     let origin = token.origin;
@@ -905,8 +906,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         (ctx, neighbors)
                     })),
                     "attribute" => Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                            match &ctx.current_token {
+                        let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
+                            match ctx.active_vertex() {
                                 None => Box::new(std::iter::empty()),
                                 Some(token) => {
                                     let origin = token.origin;
@@ -938,7 +939,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 {
                     Box::new(resolver.resolve(self, data_contexts).map(
                         move |(ctx, method_name)| {
-                            let neighbors: Box<dyn Iterator<Item = _>> = match &ctx.current_token {
+                            let neighbors: Box<dyn Iterator<Item = _>> = match ctx.active_vertex() {
                                 None => Box::new(std::iter::empty()),
                                 Some(token) => {
                                     let origin = token.origin;
@@ -995,8 +996,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     ))
                 } else {
                     Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                            match &ctx.current_token {
+                        let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
+                            match ctx.active_vertex() {
                                 None => Box::new(std::iter::empty()),
                                 Some(token) => {
                                     let origin = token.origin;
@@ -1041,8 +1042,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             }
             "Function" | "Method" | "FunctionLike" if matches!(edge_name.as_ref(), "parameter") => {
                 Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                        match &ctx.current_token {
+                    let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
+                        match ctx.active_vertex() {
                             None => Box::new(std::iter::empty()),
                             Some(token) => {
                                 let origin = token.origin;
@@ -1069,8 +1070,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     let current_crate = self.current_crate;
                     let previous_crate = self.previous_crate;
                     Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
-                            .current_token
+                        let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> = match &ctx
+                            .active_vertex()
                         {
                             None => Box::new(std::iter::empty()),
                             Some(token) => {
@@ -1123,8 +1124,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     let current_crate = self.current_crate;
                     let previous_crate = self.previous_crate;
                     Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                            match &ctx.current_token {
+                        let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
+                            match ctx.active_vertex() {
                                 None => Box::new(std::iter::empty()),
                                 Some(token) => {
                                     let origin = token.origin;
@@ -1176,8 +1177,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     let current_crate = self.current_crate;
                     let previous_crate = self.previous_crate;
                     Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                            match &ctx.current_token {
+                        let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
+                            match ctx.active_vertex() {
                                 None => Box::new(std::iter::empty()),
                                 Some(token) => {
                                     let origin = token.origin;
@@ -1209,8 +1210,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             },
             "StructField" => match edge_name.as_ref() {
                 "raw_type" => Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                        match &ctx.current_token {
+                    let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
+                        match ctx.active_vertex() {
                             None => Box::new(std::iter::empty()),
                             Some(token) => {
                                 let origin = token.origin;
@@ -1238,8 +1239,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         {
                             Box::new(resolver.resolve(self, data_contexts).map(
                                 move |(ctx, method_name)| {
-                                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                                        match &ctx.current_token {
+                                    let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
+                                        match ctx.active_vertex() {
                                             None => Box::new(std::iter::empty()),
                                             Some(token) => {
                                                 let origin = token.origin;
@@ -1296,8 +1297,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                             ))
                         } else {
                             Box::new(data_contexts.map(move |ctx| {
-                                let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
-                                    .current_token
+                                let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> = match &ctx
+                                    .active_vertex()
                                 {
                                     None => Box::new(std::iter::empty()),
                                     Some(token) => {
@@ -1359,8 +1360,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         let current_crate = self.current_crate;
                         let previous_crate = self.previous_crate;
                         Box::new(data_contexts.map(move |ctx| {
-                            let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                                match &ctx.current_token {
+                            let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
+                                match ctx.active_vertex() {
                                     None => Box::new(std::iter::empty()),
                                     Some(token) => {
                                         let origin = token.origin;
@@ -1424,8 +1425,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             }
             "ImplementedTrait" => match edge_name.as_ref() {
                 "trait" => Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                        match &ctx.current_token {
+                    let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
+                        match ctx.active_vertex() {
                             None => Box::new(std::iter::empty()),
                             Some(token) => {
                                 let origin = token.origin;
@@ -1445,8 +1446,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             },
             "Attribute" => match edge_name.as_ref() {
                 "content" => Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
-                        .current_token
+                    let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> = match &ctx
+                        .active_vertex()
                     {
                         None => Box::new(std::iter::empty()),
                         Some(token) => {
@@ -1468,8 +1469,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             },
             "AttributeMetaItem" => match edge_name.as_ref() {
                 "argument" => Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                        match &ctx.current_token {
+                    let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
+                        match ctx.active_vertex() {
                             None => Box::new(std::iter::empty()),
                             Some(token) => {
                                 let origin = token.origin;
@@ -1497,18 +1498,19 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         }
     }
 
-    fn can_coerce_to_type(
+    fn resolve_coercion(
         &mut self,
-        data_contexts: Box<dyn Iterator<Item = DataContext<Self::DataToken>> + 'a>,
-        current_type_name: Arc<str>,
-        coerce_to_type_name: Arc<str>,
+        data_contexts: Box<dyn Iterator<Item = DataContext<Self::Vertex>> + 'a>,
+        current_type_name: &Arc<str>,
+        coerce_to_type_name: &Arc<str>,
         _query_info: &QueryInfo,
-    ) -> Box<dyn Iterator<Item = (DataContext<Self::DataToken>, bool)> + 'a> {
+    ) -> Box<dyn Iterator<Item = (DataContext<Self::Vertex>, bool)> + 'a> {
+        let coerce_to_type_name = coerce_to_type_name.clone();
         match current_type_name.as_ref() {
             "Item" | "Variant" | "FunctionLike" | "Importable" | "ImplOwner" | "RawType"
             | "ResolvedPathType" => {
                 Box::new(data_contexts.map(move |ctx| {
-                    let can_coerce = match &ctx.current_token {
+                    let can_coerce = match ctx.active_vertex() {
                         None => false,
                         Some(token) => {
                             let actual_type_name = token.typename();
