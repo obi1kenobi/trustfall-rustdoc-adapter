@@ -1312,10 +1312,12 @@ mod tests {
 
                 assert_duplicated_exported_items_match(test_crate, &expected_items);
             } else {
-                eprintln!(
+                use std::io::Write;
+                writeln!(
+                    std::io::stderr(),
                     "skipping 'explicit_reexport_of_matching_names' test due to Rust {:?}",
                     version_check::Version::read(),
-                );
+                ).expect("write failed");
             }
         }
     }
