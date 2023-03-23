@@ -4,10 +4,13 @@ use rustdoc_types::{
     Crate, Enum, Function, Id, Impl, Item, ItemEnum, Path, Span, Struct, Trait, Type, Variant,
     VariantKind,
 };
-use trustfall_core::{
-    interpreter::{Adapter, DataContext, InterpretedQuery},
-    ir::{EdgeParameters, Eid, FieldValue, Vid},
-    schema::Schema,
+use trustfall::{
+    provider::{
+        resolve_coercion_with, resolve_neighbors_with, resolve_property_with, Adapter,
+        ContextIterator, ContextOutcomeIterator, EdgeParameters, QueryInfo, Typename,
+        VertexIterator,
+    },
+    FieldValue, Schema,
 };
 
 use crate::attributes::{Attribute, AttributeMetaItem};
@@ -43,87 +46,87 @@ pub enum Origin {
 }
 
 impl Origin {
-    fn make_item_token<'a>(&self, item: &'a Item) -> Token<'a> {
-        Token {
+    fn make_item_vertex<'a>(&self, item: &'a Item) -> Vertex<'a> {
+        Vertex {
             origin: *self,
             kind: item.into(),
         }
     }
 
-    fn make_span_token<'a>(&self, span: &'a Span) -> Token<'a> {
-        Token {
+    fn make_span_vertex<'a>(&self, span: &'a Span) -> Vertex<'a> {
+        Vertex {
             origin: *self,
             kind: span.into(),
         }
     }
 
-    fn make_path_token<'a>(&self, path: &'a [String]) -> Token<'a> {
-        Token {
+    fn make_path_vertex<'a>(&self, path: &'a [String]) -> Vertex<'a> {
+        Vertex {
             origin: *self,
-            kind: TokenKind::Path(path),
+            kind: VertexKind::Path(path),
         }
     }
 
-    fn make_importable_path_token<'a>(&self, importable_path: Vec<&'a str>) -> Token<'a> {
-        Token {
+    fn make_importable_path_vertex<'a>(&self, importable_path: Vec<&'a str>) -> Vertex<'a> {
+        Vertex {
             origin: *self,
-            kind: TokenKind::ImportablePath(importable_path),
+            kind: VertexKind::ImportablePath(importable_path),
         }
     }
 
-    fn make_raw_type_token<'a>(&self, raw_type: &'a rustdoc_types::Type) -> Token<'a> {
-        Token {
+    fn make_raw_type_vertex<'a>(&self, raw_type: &'a rustdoc_types::Type) -> Vertex<'a> {
+        Vertex {
             origin: *self,
-            kind: TokenKind::RawType(raw_type),
+            kind: VertexKind::RawType(raw_type),
         }
     }
 
-    fn make_attribute_token<'a>(&self, attr: Attribute<'a>) -> Token<'a> {
-        Token {
+    fn make_attribute_vertex<'a>(&self, attr: Attribute<'a>) -> Vertex<'a> {
+        Vertex {
             origin: *self,
-            kind: TokenKind::Attribute(attr),
+            kind: VertexKind::Attribute(attr),
         }
     }
 
-    fn make_attribute_meta_item_token<'a>(
+    fn make_attribute_meta_item_vertex<'a>(
         &self,
         meta_item: Rc<AttributeMetaItem<'a>>,
-    ) -> Token<'a> {
-        Token {
+    ) -> Vertex<'a> {
+        Vertex {
             origin: *self,
-            kind: TokenKind::AttributeMetaItem(meta_item),
+            kind: VertexKind::AttributeMetaItem(meta_item),
         }
     }
 
-    fn make_implemented_trait_token<'a>(
+    fn make_implemented_trait_vertex<'a>(
         &self,
         path: &'a rustdoc_types::Path,
         trait_def: &'a Item,
-    ) -> Token<'a> {
-        Token {
+    ) -> Vertex<'a> {
+        Vertex {
             origin: *self,
-            kind: TokenKind::ImplementedTrait(path, trait_def),
+            kind: VertexKind::ImplementedTrait(path, trait_def),
         }
     }
 
-    fn make_function_parameter_token<'a>(&self, name: &'a str) -> Token<'a> {
-        Token {
+    fn make_function_parameter_vertex<'a>(&self, name: &'a str) -> Vertex<'a> {
+        Vertex {
             origin: *self,
-            kind: TokenKind::FunctionParameter(name),
+            kind: VertexKind::FunctionParameter(name),
         }
     }
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
-pub struct Token<'a> {
+pub struct Vertex<'a> {
     origin: Origin,
-    kind: TokenKind<'a>,
+    kind: VertexKind<'a>,
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
-pub enum TokenKind<'a> {
+pub enum VertexKind<'a> {
     CrateDiff((&'a IndexedCrate<'a>, &'a IndexedCrate<'a>)),
     Crate(&'a IndexedCrate<'a>),
     Item(&'a Item),
@@ -137,21 +140,13 @@ pub enum TokenKind<'a> {
     FunctionParameter(&'a str),
 }
 
-#[allow(dead_code)]
-impl<'a> Token<'a> {
-    fn new_crate(origin: Origin, crate_: &'a IndexedCrate<'a>) -> Self {
-        Self {
-            origin,
-            kind: TokenKind::Crate(crate_),
-        }
-    }
-
-    /// The name of the actual runtime type of this token,
+impl<'a> Typename for Vertex<'a> {
+    /// The name of the actual runtime type of this vertex,
     /// intended to fulfill resolution requests for the __typename property.
     #[inline]
     fn typename(&self) -> &'static str {
         match self.kind {
-            TokenKind::Item(item) => match &item.inner {
+            VertexKind::Item(item) => match &item.inner {
                 rustdoc_types::ItemEnum::Struct(..) => "Struct",
                 rustdoc_types::ItemEnum::Enum(..) => "Enum",
                 rustdoc_types::ItemEnum::Function(..) => "Function",
@@ -165,33 +160,43 @@ impl<'a> Token<'a> {
                 rustdoc_types::ItemEnum::Trait(..) => "Trait",
                 _ => unreachable!("unexpected item.inner for item: {item:?}"),
             },
-            TokenKind::Span(..) => "Span",
-            TokenKind::Path(..) => "Path",
-            TokenKind::ImportablePath(..) => "ImportablePath",
-            TokenKind::Crate(..) => "Crate",
-            TokenKind::CrateDiff(..) => "CrateDiff",
-            TokenKind::Attribute(..) => "Attribute",
-            TokenKind::AttributeMetaItem(..) => "AttributeMetaItem",
-            TokenKind::ImplementedTrait(..) => "ImplementedTrait",
-            TokenKind::RawType(ty) => match ty {
+            VertexKind::Span(..) => "Span",
+            VertexKind::Path(..) => "Path",
+            VertexKind::ImportablePath(..) => "ImportablePath",
+            VertexKind::Crate(..) => "Crate",
+            VertexKind::CrateDiff(..) => "CrateDiff",
+            VertexKind::Attribute(..) => "Attribute",
+            VertexKind::AttributeMetaItem(..) => "AttributeMetaItem",
+            VertexKind::ImplementedTrait(..) => "ImplementedTrait",
+            VertexKind::RawType(ty) => match ty {
                 rustdoc_types::Type::ResolvedPath { .. } => "ResolvedPathType",
                 rustdoc_types::Type::Primitive(..) => "PrimitiveType",
                 _ => "OtherType",
             },
-            TokenKind::FunctionParameter(..) => "FunctionParameter",
+            VertexKind::FunctionParameter(..) => "FunctionParameter",
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> Vertex<'a> {
+    fn new_crate(origin: Origin, crate_: &'a IndexedCrate<'a>) -> Self {
+        Self {
+            origin,
+            kind: VertexKind::Crate(crate_),
         }
     }
 
     fn as_crate_diff(&self) -> Option<(&'a IndexedCrate<'a>, &'a IndexedCrate<'a>)> {
         match &self.kind {
-            TokenKind::CrateDiff(tuple) => Some(*tuple),
+            VertexKind::CrateDiff(tuple) => Some(*tuple),
             _ => None,
         }
     }
 
     fn as_indexed_crate(&self) -> Option<&'a IndexedCrate<'a>> {
         match self.kind {
-            TokenKind::Crate(c) => Some(c),
+            VertexKind::Crate(c) => Some(c),
             _ => None,
         }
     }
@@ -202,7 +207,7 @@ impl<'a> Token<'a> {
 
     fn as_item(&self) -> Option<&'a Item> {
         match self.kind {
-            TokenKind::Item(item) => Some(item),
+            VertexKind::Item(item) => Some(item),
             _ => None,
         }
     }
@@ -223,7 +228,7 @@ impl<'a> Token<'a> {
 
     fn as_span(&self) -> Option<&'a Span> {
         match self.kind {
-            TokenKind::Span(s) => Some(s),
+            VertexKind::Span(s) => Some(s),
             _ => None,
         }
     }
@@ -251,14 +256,14 @@ impl<'a> Token<'a> {
 
     fn as_path(&self) -> Option<&'a [String]> {
         match &self.kind {
-            TokenKind::Path(path) => Some(*path),
+            VertexKind::Path(path) => Some(*path),
             _ => None,
         }
     }
 
     fn as_importable_path(&self) -> Option<&'_ Vec<&'a str>> {
         match &self.kind {
-            TokenKind::ImportablePath(path) => Some(path),
+            VertexKind::ImportablePath(path) => Some(path),
             _ => None,
         }
     }
@@ -272,7 +277,7 @@ impl<'a> Token<'a> {
 
     fn as_function_parameter(&self) -> Option<&'a str> {
         match &self.kind {
-            TokenKind::FunctionParameter(name) => Some(name),
+            VertexKind::FunctionParameter(name) => Some(name),
             _ => None,
         }
     }
@@ -286,69 +291,69 @@ impl<'a> Token<'a> {
 
     fn as_attribute(&self) -> Option<&'_ Attribute<'a>> {
         match &self.kind {
-            TokenKind::Attribute(attr) => Some(attr),
+            VertexKind::Attribute(attr) => Some(attr),
             _ => None,
         }
     }
 
     fn as_attribute_meta_item(&self) -> Option<&'_ AttributeMetaItem<'a>> {
         match &self.kind {
-            TokenKind::AttributeMetaItem(meta_item) => Some(meta_item),
+            VertexKind::AttributeMetaItem(meta_item) => Some(meta_item),
             _ => None,
         }
     }
 
     fn as_raw_type(&self) -> Option<&'a rustdoc_types::Type> {
         match &self.kind {
-            TokenKind::RawType(ty) => Some(*ty),
+            VertexKind::RawType(ty) => Some(*ty),
             _ => None,
         }
     }
 
     fn as_implemented_trait(&self) -> Option<(&'a rustdoc_types::Path, &'a Item)> {
         match &self.kind {
-            TokenKind::ImplementedTrait(path, trait_item) => Some((*path, *trait_item)),
+            VertexKind::ImplementedTrait(path, trait_item) => Some((*path, *trait_item)),
             _ => None,
         }
     }
 }
 
-impl<'a> From<&'a Item> for TokenKind<'a> {
+impl<'a> From<&'a Item> for VertexKind<'a> {
     fn from(item: &'a Item) -> Self {
         Self::Item(item)
     }
 }
 
-impl<'a> From<&'a IndexedCrate<'a>> for TokenKind<'a> {
+impl<'a> From<&'a IndexedCrate<'a>> for VertexKind<'a> {
     fn from(c: &'a IndexedCrate<'a>) -> Self {
         Self::Crate(c)
     }
 }
 
-impl<'a> From<&'a Span> for TokenKind<'a> {
+impl<'a> From<&'a Span> for VertexKind<'a> {
     fn from(s: &'a Span) -> Self {
         Self::Span(s)
     }
 }
 
-fn get_crate_property(crate_token: &Token, field_name: &str) -> FieldValue {
-    let crate_item = crate_token.as_crate().expect("token was not a Crate");
+fn get_crate_property(crate_vertex: &Vertex, field_name: &str) -> FieldValue {
+    let crate_item = crate_vertex.as_crate().expect("vertex was not a Crate");
     match field_name {
-        "root" => (&crate_item.root.0).into(),
-        "crate_version" => (&crate_item.crate_version).into(),
+        "root" => crate_item.root.0.clone().into(),
+        "crate_version" => crate_item.crate_version.clone().into(),
         "includes_private" => crate_item.includes_private.into(),
         "format_version" => crate_item.format_version.into(),
         _ => unreachable!("Crate property {field_name}"),
     }
 }
 
-fn get_item_property(item_token: &Token, field_name: &str) -> FieldValue {
-    let item = item_token.as_item().expect("token was not an Item");
+fn get_item_property(item_vertex: &Vertex, field_name: &str) -> FieldValue {
+    let item = item_vertex.as_item().expect("vertex was not an Item");
     match field_name {
-        "id" => (&item.id.0).into(),
-        "crate_id" => (&item.crate_id).into(),
-        "name" => (&item.name).into(),
-        "docs" => (&item.docs).into(),
+        "id" => item.id.0.clone().into(),
+        "crate_id" => item.crate_id.into(),
+        "name" => item.name.clone().into(),
+        "docs" => item.docs.clone().into(),
         "attrs" => item.attrs.clone().into(),
         "visibility_limit" => match &item.visibility {
             rustdoc_types::Visibility::Public => "public".into(),
@@ -362,8 +367,10 @@ fn get_item_property(item_token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
-fn get_struct_property(item_token: &Token, field_name: &str) -> FieldValue {
-    let (_, struct_item) = item_token.as_struct_item().expect("token was not a Struct");
+fn get_struct_property(item_vertex: &Vertex, field_name: &str) -> FieldValue {
+    let (_, struct_item) = item_vertex
+        .as_struct_item()
+        .expect("vertex was not a Struct");
     match field_name {
         "struct_type" => match struct_item.kind {
             rustdoc_types::StructKind::Plain { .. } => "plain",
@@ -381,8 +388,8 @@ fn get_struct_property(item_token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
-fn get_span_property(item_token: &Token, field_name: &str) -> FieldValue {
-    let span = item_token.as_span().expect("token was not a Span");
+fn get_span_property(item_vertex: &Vertex, field_name: &str) -> FieldValue {
+    let span = item_vertex.as_span().expect("vertex was not a Span");
     match field_name {
         "filename" => span
             .filename
@@ -397,28 +404,28 @@ fn get_span_property(item_token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
-fn get_enum_property(item_token: &Token, field_name: &str) -> FieldValue {
-    let enum_item = item_token.as_enum().expect("token was not an Enum");
+fn get_enum_property(item_vertex: &Vertex, field_name: &str) -> FieldValue {
+    let enum_item = item_vertex.as_enum().expect("vertex was not an Enum");
     match field_name {
         "variants_stripped" => enum_item.variants_stripped.into(),
         _ => unreachable!("Enum property {field_name}"),
     }
 }
 
-fn get_path_property(token: &Token, field_name: &str) -> FieldValue {
-    let path_token = token.as_path().expect("token was not a Path");
+fn get_path_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let path_vertex = vertex.as_path().expect("vertex was not a Path");
     match field_name {
-        "path" => path_token.into(),
+        "path" => path_vertex.into(),
         _ => unreachable!("Path property {field_name}"),
     }
 }
 
-fn get_importable_path_property(token: &Token, field_name: &str) -> FieldValue {
-    let path_token = token
+fn get_importable_path_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let path_vertex = vertex
         .as_importable_path()
-        .expect("token was not an ImportablePath");
+        .expect("vertex was not an ImportablePath");
     match field_name {
-        "path" => path_token
+        "path" => path_vertex
             .iter()
             .map(|x| x.to_string())
             .collect::<Vec<_>>()
@@ -428,8 +435,8 @@ fn get_importable_path_property(token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
-fn get_function_like_property(token: &Token, field_name: &str) -> FieldValue {
-    let function = token.as_function().expect("not a function");
+fn get_function_like_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let function = vertex.as_function().expect("not a function");
 
     match field_name {
         "const" => function.header.const_.into(),
@@ -439,29 +446,29 @@ fn get_function_like_property(token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
-fn get_function_parameter_property(token: &Token, field_name: &str) -> FieldValue {
-    let function_parameter_token = token
+fn get_function_parameter_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let function_parameter_vertex = vertex
         .as_function_parameter()
-        .expect("token was not a FunctionParameter");
+        .expect("vertex was not a FunctionParameter");
 
     match field_name {
-        "name" => function_parameter_token.into(),
+        "name" => function_parameter_vertex.into(),
         _ => unreachable!("FunctionParameter property {field_name}"),
     }
 }
 
-fn get_impl_property(token: &Token, field_name: &str) -> FieldValue {
-    let impl_token = token.as_impl().expect("token was not an Impl");
+fn get_impl_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let impl_vertex = vertex.as_impl().expect("vertex was not an Impl");
     match field_name {
-        "unsafe" => impl_token.is_unsafe.into(),
-        "negative" => impl_token.negative.into(),
-        "synthetic" => impl_token.synthetic.into(),
+        "unsafe" => impl_vertex.is_unsafe.into(),
+        "negative" => impl_vertex.negative.into(),
+        "synthetic" => impl_vertex.synthetic.into(),
         _ => unreachable!("Impl property {field_name}"),
     }
 }
 
-fn get_attribute_property(token: &Token, field_name: &str) -> FieldValue {
-    let attribute = token.as_attribute().expect("token was not an Attribute");
+fn get_attribute_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let attribute = vertex.as_attribute().expect("vertex was not an Attribute");
     match field_name {
         "raw_attribute" => attribute.raw_attribute().into(),
         "is_inner" => attribute.is_inner.into(),
@@ -469,10 +476,10 @@ fn get_attribute_property(token: &Token, field_name: &str) -> FieldValue {
     }
 }
 
-fn get_attribute_meta_item_property(token: &Token, field_name: &str) -> FieldValue {
-    let meta_item = token
+fn get_attribute_meta_item_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let meta_item = vertex
         .as_attribute_meta_item()
-        .expect("token was not an AttributeMetaItem");
+        .expect("vertex was not an AttributeMetaItem");
     match field_name {
         "raw_item" => meta_item.raw_item.into(),
         "base" => meta_item.base.into(),
@@ -481,268 +488,202 @@ fn get_attribute_meta_item_property(token: &Token, field_name: &str) -> FieldVal
     }
 }
 
-fn get_raw_type_property(token: &Token, field_name: &str) -> FieldValue {
-    let type_token = token.as_raw_type().expect("token was not a RawType");
+fn get_raw_type_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let type_vertex = vertex.as_raw_type().expect("vertex was not a RawType");
     match field_name {
-        "name" => match type_token {
+        "name" => match type_vertex {
             rustdoc_types::Type::ResolvedPath(path) => (&path.name).into(),
             rustdoc_types::Type::Primitive(name) => name.into(),
-            _ => unreachable!("unexpected RawType token content: {type_token:?}"),
+            _ => unreachable!("unexpected RawType vertex content: {type_vertex:?}"),
         },
         _ => unreachable!("RawType property {field_name}"),
     }
 }
 
-fn get_trait_property(token: &Token, field_name: &str) -> FieldValue {
-    let trait_token = token.as_trait().expect("token was not a Trait");
+fn get_trait_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let trait_vertex = vertex.as_trait().expect("vertex was not a Trait");
     match field_name {
-        "unsafe" => trait_token.is_unsafe.into(),
+        "unsafe" => trait_vertex.is_unsafe.into(),
         _ => unreachable!("Trait property {field_name}"),
     }
 }
 
-fn get_implemented_trait_property(token: &Token, field_name: &str) -> FieldValue {
-    let (path, _) = token
+fn get_implemented_trait_property(vertex: &Vertex, field_name: &str) -> FieldValue {
+    let (path, _) = vertex
         .as_implemented_trait()
-        .expect("token was not a ImplementedTrait");
+        .expect("vertex was not a ImplementedTrait");
     match field_name {
         "name" => (&path.name).into(),
         _ => unreachable!("ImplementedTrait property {field_name}"),
     }
 }
 
-fn property_mapper<'a>(
-    ctx: DataContext<Token<'a>>,
-    field_name: &str,
-    property_getter: fn(&Token<'a>, &str) -> FieldValue,
-) -> (DataContext<Token<'a>>, FieldValue) {
-    let value = match &ctx.current_token {
-        Some(token) => property_getter(token, field_name),
-        None => FieldValue::Null,
-    };
-    (ctx, value)
-}
-
 impl<'a> Adapter<'a> for RustdocAdapter<'a> {
-    type DataToken = Token<'a>;
+    type Vertex = Vertex<'a>;
 
-    fn get_starting_tokens(
+    fn resolve_starting_vertices(
         &mut self,
-        edge: Arc<str>,
-        _parameters: Option<Arc<EdgeParameters>>,
-        _query_hint: InterpretedQuery,
-        _vertex_hint: Vid,
-    ) -> Box<dyn Iterator<Item = Self::DataToken> + 'a> {
-        match edge.as_ref() {
-            "Crate" => Box::new(std::iter::once(Token::new_crate(
+        edge_name: &Arc<str>,
+        _parameters: &EdgeParameters,
+        _query_info: &QueryInfo,
+    ) -> VertexIterator<'a, Self::Vertex> {
+        match edge_name.as_ref() {
+            "Crate" => Box::new(std::iter::once(Vertex::new_crate(
                 Origin::CurrentCrate,
                 self.current_crate,
             ))),
             "CrateDiff" => {
                 let previous_crate = self.previous_crate.expect("no previous crate provided");
-                Box::new(std::iter::once(Token {
+                Box::new(std::iter::once(Vertex {
                     origin: Origin::CurrentCrate,
-                    kind: TokenKind::CrateDiff((self.current_crate, previous_crate)),
+                    kind: VertexKind::CrateDiff((self.current_crate, previous_crate)),
                 }))
             }
-            _ => unreachable!("{edge}"),
+            _ => unreachable!("resolve_starting_vertices {edge_name}"),
         }
     }
 
-    fn project_property(
+    fn resolve_property(
         &mut self,
-        data_contexts: Box<dyn Iterator<Item = DataContext<Self::DataToken>> + 'a>,
-        current_type_name: Arc<str>,
-        field_name: Arc<str>,
-        _query_hint: InterpretedQuery,
-        _vertex_hint: Vid,
-    ) -> Box<dyn Iterator<Item = (DataContext<Self::DataToken>, FieldValue)> + 'a> {
-        if field_name.as_ref() == "__typename" {
-            Box::new(data_contexts.map(|ctx| match &ctx.current_token {
-                Some(token) => {
-                    let value = token.typename().into();
+        contexts: ContextIterator<'a, Self::Vertex>,
+        type_name: &Arc<str>,
+        property_name: &Arc<str>,
+        _query_info: &QueryInfo,
+    ) -> ContextOutcomeIterator<'a, Self::Vertex, FieldValue> {
+        if property_name.as_ref() == "__typename" {
+            Box::new(contexts.map(|ctx| match ctx.active_vertex() {
+                Some(vertex) => {
+                    let value = vertex.typename().into();
                     (ctx, value)
                 }
                 None => (ctx, FieldValue::Null),
             }))
         } else {
-            match current_type_name.as_ref() {
-                "Crate" => {
-                    Box::new(data_contexts.map(move |ctx| {
-                        property_mapper(ctx, field_name.as_ref(), get_crate_property)
-                    }))
-                }
-                "Item" => {
-                    Box::new(data_contexts.map(move |ctx| {
-                        property_mapper(ctx, field_name.as_ref(), get_item_property)
-                    }))
-                }
+            let property_name = property_name.clone();
+            match type_name.as_ref() {
+                "Crate" => resolve_property_with(contexts, move |vertex| {
+                    get_crate_property(vertex, property_name.as_ref())
+                }),
+                "Item" => resolve_property_with(contexts, move |vertex| {
+                    get_item_property(vertex, property_name.as_ref())
+                }),
                 "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant" | "PlainVariant"
                 | "TupleVariant" | "StructVariant" | "Trait" | "Function" | "Method" | "Impl"
                     if matches!(
-                        field_name.as_ref(),
+                        property_name.as_ref(),
                         "id" | "crate_id" | "name" | "docs" | "attrs" | "visibility_limit"
                     ) =>
                 {
                     // properties inherited from Item, accesssed on Item subtypes
-                    Box::new(data_contexts.map(move |ctx| {
-                        property_mapper(ctx, field_name.as_ref(), get_item_property)
-                    }))
+                    resolve_property_with(contexts, move |vertex| {
+                        get_item_property(vertex, property_name.as_ref())
+                    })
                 }
-                "Struct" => Box::new(data_contexts.map(move |ctx| {
-                    property_mapper(ctx, field_name.as_ref(), get_struct_property)
-                })),
-                "Enum" => {
-                    Box::new(data_contexts.map(move |ctx| {
-                        property_mapper(ctx, field_name.as_ref(), get_enum_property)
-                    }))
-                }
-                "Span" => {
-                    Box::new(data_contexts.map(move |ctx| {
-                        property_mapper(ctx, field_name.as_ref(), get_span_property)
-                    }))
-                }
-                "Path" => {
-                    Box::new(data_contexts.map(move |ctx| {
-                        property_mapper(ctx, field_name.as_ref(), get_path_property)
-                    }))
-                }
-                "ImportablePath" => Box::new(data_contexts.map(move |ctx| {
-                    property_mapper(ctx, field_name.as_ref(), get_importable_path_property)
-                })),
+                "Struct" => resolve_property_with(contexts, move |vertex| {
+                    get_struct_property(vertex, property_name.as_ref())
+                }),
+                "Enum" => resolve_property_with(contexts, move |vertex| {
+                    get_enum_property(vertex, property_name.as_ref())
+                }),
+                "Span" => resolve_property_with(contexts, move |vertex| {
+                    get_span_property(vertex, property_name.as_ref())
+                }),
+                "Path" => resolve_property_with(contexts, move |vertex| {
+                    get_path_property(vertex, property_name.as_ref())
+                }),
+                "ImportablePath" => resolve_property_with(contexts, move |vertex| {
+                    get_importable_path_property(vertex, property_name.as_ref())
+                }),
                 "FunctionLike" | "Function" | "Method"
-                    if matches!(field_name.as_ref(), "const" | "unsafe" | "async") =>
+                    if matches!(property_name.as_ref(), "const" | "unsafe" | "async") =>
                 {
-                    Box::new(data_contexts.map(move |ctx| {
-                        property_mapper(ctx, field_name.as_ref(), get_function_like_property)
-                    }))
+                    resolve_property_with(contexts, move |vertex| {
+                        get_function_like_property(vertex, property_name.as_ref())
+                    })
                 }
-                "FunctionParameter" => Box::new(data_contexts.map(move |ctx| {
-                    property_mapper(ctx, field_name.as_ref(), get_function_parameter_property)
-                })),
-                "Impl" => {
-                    Box::new(data_contexts.map(move |ctx| {
-                        property_mapper(ctx, field_name.as_ref(), get_impl_property)
-                    }))
-                }
-                "Attribute" => Box::new(data_contexts.map(move |ctx| {
-                    property_mapper(ctx, field_name.as_ref(), get_attribute_property)
-                })),
-                "AttributeMetaItem" => Box::new(data_contexts.map(move |ctx| {
-                    property_mapper(ctx, field_name.as_ref(), get_attribute_meta_item_property)
-                })),
-                "Trait" => {
-                    Box::new(data_contexts.map(move |ctx| {
-                        property_mapper(ctx, field_name.as_ref(), get_trait_property)
-                    }))
-                }
-                "ImplementedTrait" => Box::new(data_contexts.map(move |ctx| {
-                    property_mapper(ctx, field_name.as_ref(), get_implemented_trait_property)
-                })),
+                "FunctionParameter" => resolve_property_with(contexts, move |vertex| {
+                    get_function_parameter_property(vertex, property_name.as_ref())
+                }),
+                "Impl" => resolve_property_with(contexts, move |vertex| {
+                    get_impl_property(vertex, property_name.as_ref())
+                }),
+                "Attribute" => resolve_property_with(contexts, move |vertex| {
+                    get_attribute_property(vertex, property_name.as_ref())
+                }),
+                "AttributeMetaItem" => resolve_property_with(contexts, move |vertex| {
+                    get_attribute_meta_item_property(vertex, property_name.as_ref())
+                }),
+                "Trait" => resolve_property_with(contexts, move |vertex| {
+                    get_trait_property(vertex, property_name.as_ref())
+                }),
+                "ImplementedTrait" => resolve_property_with(contexts, move |vertex| {
+                    get_implemented_trait_property(vertex, property_name.as_ref())
+                }),
                 "RawType" | "ResolvedPathType" | "PrimitiveType"
-                    if matches!(field_name.as_ref(), "name") =>
+                    if matches!(property_name.as_ref(), "name") =>
                 {
-                    Box::new(data_contexts.map(move |ctx| {
-                        // fields from "RawType"
-                        property_mapper(ctx, field_name.as_ref(), get_raw_type_property)
-                    }))
+                    // fields from "RawType"
+                    resolve_property_with(contexts, move |vertex| {
+                        get_raw_type_property(vertex, property_name.as_ref())
+                    })
                 }
-                _ => unreachable!("project_property {current_type_name} {field_name}"),
+                _ => unreachable!("resolve_property {type_name} {property_name}"),
             }
         }
     }
 
-    fn project_neighbors(
+    fn resolve_neighbors(
         &mut self,
-        data_contexts: Box<dyn Iterator<Item = DataContext<Self::DataToken>> + 'a>,
-        current_type_name: Arc<str>,
-        edge_name: Arc<str>,
-        parameters: Option<Arc<EdgeParameters>>,
-        _query_hint: InterpretedQuery,
-        _vertex_hint: Vid,
-        _edge_hint: Eid,
-    ) -> Box<
-        dyn Iterator<
-                Item = (
-                    DataContext<Self::DataToken>,
-                    Box<dyn Iterator<Item = Self::DataToken> + 'a>,
-                ),
-            > + 'a,
-    > {
-        match current_type_name.as_ref() {
+        contexts: ContextIterator<'a, Self::Vertex>,
+        type_name: &Arc<str>,
+        edge_name: &Arc<str>,
+        parameters: &EdgeParameters,
+        _query_info: &QueryInfo,
+    ) -> ContextOutcomeIterator<'a, Self::Vertex, VertexIterator<'a, Self::Vertex>> {
+        match type_name.as_ref() {
             "CrateDiff" => match edge_name.as_ref() {
-                "current" => Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
-                        .current_token
-                    {
-                        None => Box::new(std::iter::empty()),
-                        Some(token) => {
-                            let crate_tuple =
-                                token.as_crate_diff().expect("token was not a CrateDiff");
-                            let neighbor = Token::new_crate(Origin::CurrentCrate, crate_tuple.0);
-                            Box::new(std::iter::once(neighbor))
-                        }
-                    };
-
-                    (ctx, neighbors)
-                })),
-                "baseline" => Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
-                        .current_token
-                    {
-                        None => Box::new(std::iter::empty()),
-                        Some(token) => {
-                            let crate_tuple =
-                                token.as_crate_diff().expect("token was not a CrateDiff");
-                            let neighbor = Token::new_crate(Origin::PreviousCrate, crate_tuple.1);
-                            Box::new(std::iter::once(neighbor))
-                        }
-                    };
-
-                    (ctx, neighbors)
-                })),
+                "current" => resolve_neighbors_with(contexts, |vertex| {
+                    let crate_tuple = vertex.as_crate_diff().expect("vertex was not a CrateDiff");
+                    let neighbor = Vertex::new_crate(Origin::CurrentCrate, crate_tuple.0);
+                    Box::new(std::iter::once(neighbor))
+                }),
+                "baseline" => resolve_neighbors_with(contexts, |vertex| {
+                    let crate_tuple = vertex.as_crate_diff().expect("vertex was not a CrateDiff");
+                    let neighbor = Vertex::new_crate(Origin::PreviousCrate, crate_tuple.1);
+                    Box::new(std::iter::once(neighbor))
+                }),
                 _ => {
-                    unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
+                    unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}")
                 }
             },
             "Crate" => {
                 match edge_name.as_ref() {
-                    "item" => Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                            match &ctx.current_token {
-                                None => Box::new(std::iter::empty()),
-                                Some(token) => {
-                                    let origin = token.origin;
-                                    let crate_token =
-                                        token.as_indexed_crate().expect("token was not a Crate");
+                    "item" => resolve_neighbors_with(contexts, |vertex| {
+                        let origin = vertex.origin;
+                        let crate_vertex =
+                            vertex.as_indexed_crate().expect("vertex was not a Crate");
 
-                                    let iter = crate_token
-                                        .inner
-                                        .index
-                                        .values()
-                                        .filter(|item| {
-                                            // Filter out item types that are not currently supported.
-                                            matches!(
-                                                item.inner,
-                                                rustdoc_types::ItemEnum::Struct(..)
-                                                    | rustdoc_types::ItemEnum::StructField(..)
-                                                    | rustdoc_types::ItemEnum::Enum(..)
-                                                    | rustdoc_types::ItemEnum::Variant(..)
-                                                    | rustdoc_types::ItemEnum::Function(..)
-                                                    | rustdoc_types::ItemEnum::Impl(..)
-                                                    | rustdoc_types::ItemEnum::Trait(..)
-                                            )
-                                        })
-                                        .map(move |value| origin.make_item_token(value));
-                                    Box::new(iter)
-                                }
-                            };
-
-                        (ctx, neighbors)
-                    })),
-                    _ => unreachable!(
-                        "project_neighbors {current_type_name} {edge_name} {parameters:?}"
-                    ),
+                        let iter = crate_vertex
+                            .inner
+                            .index
+                            .values()
+                            .filter(|item| {
+                                // Filter out item types that are not currently supported.
+                                matches!(
+                                    item.inner,
+                                    rustdoc_types::ItemEnum::Struct(..)
+                                        | rustdoc_types::ItemEnum::StructField(..)
+                                        | rustdoc_types::ItemEnum::Enum(..)
+                                        | rustdoc_types::ItemEnum::Variant(..)
+                                        | rustdoc_types::ItemEnum::Function(..)
+                                        | rustdoc_types::ItemEnum::Impl(..)
+                                        | rustdoc_types::ItemEnum::Trait(..)
+                                )
+                            })
+                            .map(move |value| origin.make_item_vertex(value));
+                        Box::new(iter)
+                    }),
+                    _ => unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}"),
                 }
             }
             "Importable" | "ImplOwner" | "Struct" | "Enum" | "Trait" | "Function"
@@ -752,74 +693,52 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     "canonical_path" => {
                         let current_crate = self.current_crate;
                         let previous_crate = self.previous_crate;
+                        resolve_neighbors_with(contexts, move |vertex| {
+                            let origin = vertex.origin;
+                            let item = vertex.as_item().expect("vertex was not an Item");
+                            let item_id = &item.id;
 
-                        Box::new(data_contexts.map(move |ctx| {
-                            let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                                match &ctx.current_token {
-                                    None => Box::new(std::iter::empty()),
-                                    Some(token) => {
-                                        let origin = token.origin;
-                                        let item = token.as_item().expect("token was not an Item");
-                                        let item_id = &item.id;
-
-                                        if let Some(path) = match origin {
-                                            Origin::CurrentCrate => current_crate
-                                                .inner
-                                                .paths
-                                                .get(item_id)
-                                                .map(|x| &x.path),
-                                            Origin::PreviousCrate => previous_crate
-                                                .expect("no baseline provided")
-                                                .inner
-                                                .paths
-                                                .get(item_id)
-                                                .map(|x| &x.path),
-                                        } {
-                                            Box::new(std::iter::once(origin.make_path_token(path)))
-                                        } else {
-                                            Box::new(std::iter::empty())
-                                        }
-                                    }
-                                };
-
-                            (ctx, neighbors)
-                        }))
+                            if let Some(path) = match origin {
+                                Origin::CurrentCrate => {
+                                    current_crate.inner.paths.get(item_id).map(|x| &x.path)
+                                }
+                                Origin::PreviousCrate => previous_crate
+                                    .expect("no baseline provided")
+                                    .inner
+                                    .paths
+                                    .get(item_id)
+                                    .map(|x| &x.path),
+                            } {
+                                Box::new(std::iter::once(origin.make_path_vertex(path)))
+                            } else {
+                                Box::new(std::iter::empty())
+                            }
+                        })
                     }
                     "importable_path" => {
                         let current_crate = self.current_crate;
                         let previous_crate = self.previous_crate;
+                        resolve_neighbors_with(contexts, move |vertex| {
+                            let origin = vertex.origin;
+                            let item = vertex.as_item().expect("vertex was not an Item");
+                            let item_id = &item.id;
 
-                        Box::new(data_contexts.map(move |ctx| {
-                            let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                                match &ctx.current_token {
-                                    None => Box::new(std::iter::empty()),
-                                    Some(token) => {
-                                        let origin = token.origin;
-                                        let item = token.as_item().expect("token was not an Item");
-                                        let item_id = &item.id;
+                            let parent_crate = match origin {
+                                Origin::CurrentCrate => current_crate,
+                                Origin::PreviousCrate => {
+                                    previous_crate.expect("no baseline provided")
+                                }
+                            };
 
-                                        let parent_crate = match origin {
-                                            Origin::CurrentCrate => current_crate,
-                                            Origin::PreviousCrate => {
-                                                previous_crate.expect("no baseline provided")
-                                            }
-                                        };
-
-                                        Box::new(
-                                            parent_crate
-                                                .publicly_importable_names(item_id)
-                                                .into_iter()
-                                                .map(move |x| origin.make_importable_path_token(x)),
-                                        )
-                                    }
-                                };
-
-                            (ctx, neighbors)
-                        }))
+                            Box::new(
+                                parent_crate
+                                    .publicly_importable_names(item_id)
+                                    .into_iter()
+                                    .map(move |x| origin.make_importable_path_vertex(x)),
+                            )
+                        })
                     }
-                    _ => unreachable!(
-                        "project_neighbors {current_type_name} {edge_name} {parameters:?}"
-                    ),
+                    _ => unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}"),
                 }
             }
             "Item" | "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant"
@@ -828,41 +747,23 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 if matches!(edge_name.as_ref(), "span" | "attribute") =>
             {
                 match edge_name.as_ref() {
-                    "span" => Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                            match &ctx.current_token {
-                                None => Box::new(std::iter::empty()),
-                                Some(token) => {
-                                    let origin = token.origin;
-                                    let item = token.as_item().expect("token was not an Item");
-                                    if let Some(span) = &item.span {
-                                        Box::new(std::iter::once(origin.make_span_token(span)))
-                                    } else {
-                                        Box::new(std::iter::empty())
-                                    }
-                                }
-                            };
-
-                        (ctx, neighbors)
-                    })),
-                    "attribute" => Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                            match &ctx.current_token {
-                                None => Box::new(std::iter::empty()),
-                                Some(token) => {
-                                    let origin = token.origin;
-                                    let item = token.as_item().expect("token was not an Item");
-                                    Box::new(item.attrs.iter().map(move |attr| {
-                                        origin.make_attribute_token(Attribute::new(attr.as_str()))
-                                    }))
-                                }
-                            };
-
-                        (ctx, neighbors)
-                    })),
-                    _ => unreachable!(
-                        "project_neighbors {current_type_name} {edge_name} {parameters:?}"
-                    ),
+                    "span" => resolve_neighbors_with(contexts, move |vertex| {
+                        let origin = vertex.origin;
+                        let item = vertex.as_item().expect("vertex was not an Item");
+                        if let Some(span) = &item.span {
+                            Box::new(std::iter::once(origin.make_span_vertex(span)))
+                        } else {
+                            Box::new(std::iter::empty())
+                        }
+                    }),
+                    "attribute" => resolve_neighbors_with(contexts, move |vertex| {
+                        let origin = vertex.origin;
+                        let item = vertex.as_item().expect("vertex was not an Item");
+                        Box::new(item.attrs.iter().map(move |attr| {
+                            origin.make_attribute_vertex(Attribute::new(attr.as_str()))
+                        }))
+                    }),
+                    _ => unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}"),
                 }
             }
             "ImplOwner" | "Struct" | "Enum"
@@ -871,236 +772,177 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 let current_crate = self.current_crate;
                 let previous_crate = self.previous_crate;
                 let inherent_impls_only = edge_name.as_ref() == "inherent_impl";
-                Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                        match &ctx.current_token {
-                            None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
-                                let item_index = match origin {
-                                    Origin::CurrentCrate => &current_crate.inner.index,
-                                    Origin::PreviousCrate => {
-                                        &previous_crate
-                                            .expect("no previous crate provided")
-                                            .inner
-                                            .index
-                                    }
-                                };
+                resolve_neighbors_with(contexts, move |vertex| {
+                    let origin = vertex.origin;
+                    let item_index = match origin {
+                        Origin::CurrentCrate => &current_crate.inner.index,
+                        Origin::PreviousCrate => {
+                            &previous_crate
+                                .expect("no previous crate provided")
+                                .inner
+                                .index
+                        }
+                    };
 
-                                // Get the IDs of all the impl blocks.
-                                // Relies on the fact that only structs and enums can have impls,
-                                // so we know that the token must represent either a struct or an enum.
-                                let impl_ids = token
-                                    .as_struct_item()
-                                    .map(|(_, s)| &s.impls)
-                                    .or_else(|| token.as_enum().map(|e| &e.impls))
-                                    .expect("token was neither a struct nor an enum");
+                    // Get the IDs of all the impl blocks.
+                    // Relies on the fact that only structs and enums can have impls,
+                    // so we know that the vertex must represent either a struct or an enum.
+                    let impl_ids = vertex
+                        .as_struct_item()
+                        .map(|(_, s)| &s.impls)
+                        .or_else(|| vertex.as_enum().map(|e| &e.impls))
+                        .expect("vertex was neither a struct nor an enum");
 
-                                Box::new(impl_ids.iter().filter_map(move |item_id| {
-                                    let next_item = item_index.get(item_id);
-                                    next_item.and_then(|next_item| match &next_item.inner {
-                                        rustdoc_types::ItemEnum::Impl(imp) => {
-                                            if !inherent_impls_only || imp.trait_.is_none() {
-                                                Some(origin.make_item_token(next_item))
-                                            } else {
-                                                None
-                                            }
-                                        }
-                                        _ => None,
-                                    })
-                                }))
+                    Box::new(impl_ids.iter().filter_map(move |item_id| {
+                        let next_item = item_index.get(item_id);
+                        next_item.and_then(|next_item| match &next_item.inner {
+                            rustdoc_types::ItemEnum::Impl(imp) => {
+                                if !inherent_impls_only || imp.trait_.is_none() {
+                                    Some(origin.make_item_vertex(next_item))
+                                } else {
+                                    None
+                                }
                             }
-                        };
-
-                    (ctx, neighbors)
-                }))
+                            _ => None,
+                        })
+                    }))
+                })
             }
             "Function" | "Method" | "FunctionLike" if matches!(edge_name.as_ref(), "parameter") => {
-                Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                        match &ctx.current_token {
-                            None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
+                resolve_neighbors_with(contexts, move |vertex| {
+                    let origin = vertex.origin;
 
-                                Box::new(
-                                    token
-                                        .as_function()
-                                        .expect("token was not a Function")
-                                        .decl
-                                        .inputs
-                                        .iter()
-                                        .map(move |(name, _type_)| {
-                                            origin.make_function_parameter_token(name)
-                                        }),
-                                )
-                            }
-                        };
-
-                    (ctx, neighbors)
-                }))
+                    Box::new(
+                        vertex
+                            .as_function()
+                            .expect("vertex was not a Function")
+                            .decl
+                            .inputs
+                            .iter()
+                            .map(move |(name, _type_)| origin.make_function_parameter_vertex(name)),
+                    )
+                })
             }
             "Struct" => match edge_name.as_ref() {
                 "field" => {
                     let current_crate = self.current_crate;
                     let previous_crate = self.previous_crate;
-                    Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
-                            .current_token
-                        {
-                            None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
-                                let (_, struct_item) =
-                                    token.as_struct_item().expect("token was not a Struct");
+                    resolve_neighbors_with(contexts, move |vertex| {
+                        let origin = vertex.origin;
+                        let (_, struct_item) =
+                            vertex.as_struct_item().expect("vertex was not a Struct");
 
-                                let item_index = match origin {
-                                    Origin::CurrentCrate => &current_crate.inner.index,
-                                    Origin::PreviousCrate => {
-                                        &previous_crate
-                                            .expect("no previous crate provided")
-                                            .inner
-                                            .index
-                                    }
-                                };
-
-                                let field_ids_iter: Box<dyn Iterator<Item = &Id>> =
-                                    match &struct_item.kind {
-                                        rustdoc_types::StructKind::Unit => {
-                                            Box::new(std::iter::empty())
-                                        }
-                                        rustdoc_types::StructKind::Tuple(field_ids) => {
-                                            Box::new(field_ids.iter().filter_map(|x| x.as_ref()))
-                                        }
-                                        rustdoc_types::StructKind::Plain { fields, .. } => {
-                                            Box::new(fields.iter())
-                                        }
-                                    };
-
-                                Box::new(field_ids_iter.map(move |field_id| {
-                                    origin.make_item_token(
-                                        item_index.get(field_id).expect("missing item"),
-                                    )
-                                }))
+                        let item_index = match origin {
+                            Origin::CurrentCrate => &current_crate.inner.index,
+                            Origin::PreviousCrate => {
+                                &previous_crate
+                                    .expect("no previous crate provided")
+                                    .inner
+                                    .index
                             }
                         };
 
-                        (ctx, neighbors)
-                    }))
+                        let field_ids_iter: Box<dyn Iterator<Item = &Id>> = match &struct_item.kind
+                        {
+                            rustdoc_types::StructKind::Unit => Box::new(std::iter::empty()),
+                            rustdoc_types::StructKind::Tuple(field_ids) => {
+                                Box::new(field_ids.iter().filter_map(|x| x.as_ref()))
+                            }
+                            rustdoc_types::StructKind::Plain { fields, .. } => {
+                                Box::new(fields.iter())
+                            }
+                        };
+
+                        Box::new(field_ids_iter.map(move |field_id| {
+                            origin.make_item_vertex(item_index.get(field_id).expect("missing item"))
+                        }))
+                    })
                 }
                 _ => {
-                    unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
+                    unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}")
                 }
             },
-            "Variant" | "PlainVariant" | "TupleVariant" | "StructVariant" => match edge_name
-                .as_ref()
-            {
-                "field" => {
-                    let current_crate = self.current_crate;
-                    let previous_crate = self.previous_crate;
-                    Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                            match &ctx.current_token {
-                                None => Box::new(std::iter::empty()),
-                                Some(token) => {
-                                    let origin = token.origin;
-                                    let item = token.as_variant().expect("token was not a Variant");
-                                    let item_index = match origin {
-                                        Origin::CurrentCrate => &current_crate.inner.index,
-                                        Origin::PreviousCrate => {
-                                            &previous_crate
-                                                .expect("no previous crate provided")
-                                                .inner
-                                                .index
-                                        }
-                                    };
-
-                                    match &item.kind {
-                                        VariantKind::Plain => Box::new(std::iter::empty()),
-                                        VariantKind::Tuple(fields) => {
-                                            Box::new(fields.iter().filter(|x| x.is_some()).map(
-                                                move |field_id| {
-                                                    origin.make_item_token(
-                                                        item_index
-                                                            .get(field_id.as_ref().unwrap())
-                                                            .expect("missing item"),
-                                                    )
-                                                },
-                                            ))
-                                        }
-                                        VariantKind::Struct {
-                                            fields,
-                                            fields_stripped: _,
-                                        } => Box::new(fields.iter().map(move |field_id| {
-                                            origin.make_item_token(
-                                                item_index.get(field_id).expect("missing item"),
-                                            )
-                                        })),
-                                    }
+            "Variant" | "PlainVariant" | "TupleVariant" | "StructVariant" => {
+                match edge_name.as_ref() {
+                    "field" => {
+                        let current_crate = self.current_crate;
+                        let previous_crate = self.previous_crate;
+                        resolve_neighbors_with(contexts, move |vertex| {
+                            let origin = vertex.origin;
+                            let item = vertex.as_variant().expect("vertex was not a Variant");
+                            let item_index = match origin {
+                                Origin::CurrentCrate => &current_crate.inner.index,
+                                Origin::PreviousCrate => {
+                                    &previous_crate
+                                        .expect("no previous crate provided")
+                                        .inner
+                                        .index
                                 }
                             };
 
-                        (ctx, neighbors)
-                    }))
+                            match &item.kind {
+                                VariantKind::Plain => Box::new(std::iter::empty()),
+                                VariantKind::Tuple(fields) => Box::new(
+                                    fields.iter().filter(|x| x.is_some()).map(move |field_id| {
+                                        origin.make_item_vertex(
+                                            item_index
+                                                .get(field_id.as_ref().unwrap())
+                                                .expect("missing item"),
+                                        )
+                                    }),
+                                ),
+                                VariantKind::Struct {
+                                    fields,
+                                    fields_stripped: _,
+                                } => Box::new(fields.iter().map(move |field_id| {
+                                    origin.make_item_vertex(
+                                        item_index.get(field_id).expect("missing item"),
+                                    )
+                                })),
+                            }
+                        })
+                    }
+                    _ => {
+                        unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}")
+                    }
                 }
-                _ => {
-                    unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
-                }
-            },
+            }
             "Enum" => match edge_name.as_ref() {
                 "variant" => {
                     let current_crate = self.current_crate;
                     let previous_crate = self.previous_crate;
-                    Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                            match &ctx.current_token {
-                                None => Box::new(std::iter::empty()),
-                                Some(token) => {
-                                    let origin = token.origin;
-                                    let enum_item = token.as_enum().expect("token was not an Enum");
+                    resolve_neighbors_with(contexts, move |vertex| {
+                        let origin = vertex.origin;
+                        let enum_item = vertex.as_enum().expect("vertex was not an Enum");
 
-                                    let item_index = match origin {
-                                        Origin::CurrentCrate => &current_crate.inner.index,
-                                        Origin::PreviousCrate => {
-                                            &previous_crate
-                                                .expect("no previous crate provided")
-                                                .inner
-                                                .index
-                                        }
-                                    };
-                                    Box::new(enum_item.variants.iter().map(move |field_id| {
-                                        origin.make_item_token(
-                                            item_index.get(field_id).expect("missing item"),
-                                        )
-                                    }))
-                                }
-                            };
-
-                        (ctx, neighbors)
-                    }))
+                        let item_index = match origin {
+                            Origin::CurrentCrate => &current_crate.inner.index,
+                            Origin::PreviousCrate => {
+                                &previous_crate
+                                    .expect("no previous crate provided")
+                                    .inner
+                                    .index
+                            }
+                        };
+                        Box::new(enum_item.variants.iter().map(move |field_id| {
+                            origin.make_item_vertex(item_index.get(field_id).expect("missing item"))
+                        }))
+                    })
                 }
                 _ => {
-                    unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
+                    unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}")
                 }
             },
             "StructField" => match edge_name.as_ref() {
-                "raw_type" => Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                        match &ctx.current_token {
-                            None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
-                                let (_, field_type) = token
-                                    .as_struct_field_item()
-                                    .expect("not a StructField token");
-                                Box::new(std::iter::once(origin.make_raw_type_token(field_type)))
-                            }
-                        };
-
-                    (ctx, neighbors)
-                })),
+                "raw_type" => resolve_neighbors_with(contexts, move |vertex| {
+                    let origin = vertex.origin;
+                    let (_, field_type) = vertex
+                        .as_struct_field_item()
+                        .expect("not a StructField vertex");
+                    Box::new(std::iter::once(origin.make_raw_type_vertex(field_type)))
+                }),
                 _ => {
-                    unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
+                    unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}")
                 }
             },
             "Impl" => {
@@ -1108,39 +950,48 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     "method" => {
                         let current_crate = self.current_crate;
                         let previous_crate = self.previous_crate;
-                        Box::new(data_contexts.map(move |ctx| {
-                        let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
-                            .current_token
-                        {
-                            None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
-                                let item_index = match origin {
-                                    Origin::CurrentCrate => &current_crate.inner.index,
-                                    Origin::PreviousCrate => {
-                                        &previous_crate.expect("no previous crate provided").inner.index
-                                    }
-                                };
+                        resolve_neighbors_with(contexts, move |vertex| {
+                            let origin = vertex.origin;
+                            let item_index = match origin {
+                                Origin::CurrentCrate => &current_crate.inner.index,
+                                Origin::PreviousCrate => {
+                                    &previous_crate
+                                        .expect("no previous crate provided")
+                                        .inner
+                                        .index
+                                }
+                            };
 
-                                let impl_token = token.as_impl().expect("not an Impl token");
-                                let provided_methods: Box<dyn Iterator<Item = &Id>> = if impl_token.provided_trait_methods.is_empty() {
+                            let impl_vertex = vertex.as_impl().expect("not an Impl vertex");
+                            let provided_methods: Box<dyn Iterator<Item = &Id>> =
+                                if impl_vertex.provided_trait_methods.is_empty() {
                                     Box::new(std::iter::empty())
                                 } else {
-                                    let method_names: BTreeSet<&str> = impl_token.provided_trait_methods.iter().map(|x| x.as_str()).collect();
+                                    let method_names: BTreeSet<&str> = impl_vertex
+                                        .provided_trait_methods
+                                        .iter()
+                                        .map(|x| x.as_str())
+                                        .collect();
 
-                                    let trait_path = impl_token.trait_.as_ref().expect("no trait but provided_trait_methods was non-empty");
+                                    let trait_path = impl_vertex.trait_.as_ref().expect(
+                                        "no trait but provided_trait_methods was non-empty",
+                                    );
                                     let trait_item = item_index.get(&trait_path.id);
 
                                     if let Some(trait_item) = trait_item {
                                         if let ItemEnum::Trait(trait_item) = &trait_item.inner {
-                                            Box::new(trait_item.items.iter().filter(move |item_id| {
-                                                let next_item = &item_index.get(item_id);
-                                                if let Some(name) = next_item.and_then(|x| x.name.as_deref()) {
-                                                    method_names.contains(name)
-                                                } else {
-                                                    false
-                                                }
-                                            }))
+                                            Box::new(trait_item.items.iter().filter(
+                                                move |item_id| {
+                                                    let next_item = &item_index.get(item_id);
+                                                    if let Some(name) =
+                                                        next_item.and_then(|x| x.name.as_deref())
+                                                    {
+                                                        method_names.contains(name)
+                                                    } else {
+                                                        false
+                                                    }
+                                                },
+                                            ))
                                         } else {
                                             unreachable!("found a non-trait type {trait_item:?}");
                                         }
@@ -1148,208 +999,163 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                         Box::new(std::iter::empty())
                                     }
                                 };
-                                Box::new(provided_methods.chain(impl_token.items.iter()).filter_map(move |item_id| {
+                            Box::new(provided_methods.chain(impl_vertex.items.iter()).filter_map(
+                                move |item_id| {
                                     let next_item = &item_index.get(item_id);
                                     if let Some(next_item) = next_item {
                                         match &next_item.inner {
                                             rustdoc_types::ItemEnum::Function(..) => {
-                                                Some(origin.make_item_token(next_item))
+                                                Some(origin.make_item_vertex(next_item))
                                             }
                                             _ => None,
                                         }
                                     } else {
                                         None
                                     }
-                                }))
-                            }
-                        };
-
-                        (ctx, neighbors)
-                    }))
+                                },
+                            ))
+                        })
                     }
                     "implemented_trait" => {
                         let current_crate = self.current_crate;
                         let previous_crate = self.previous_crate;
-                        Box::new(data_contexts.map(move |ctx| {
-                            let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                                match &ctx.current_token {
-                                    None => Box::new(std::iter::empty()),
-                                    Some(token) => {
-                                        let origin = token.origin;
-                                        let item_index = match origin {
-                                            Origin::CurrentCrate => &current_crate.inner.index,
-                                            Origin::PreviousCrate => {
-                                                &previous_crate
-                                                    .expect("no previous crate provided")
-                                                    .inner
-                                                    .index
-                                            }
-                                        };
+                        resolve_neighbors_with(contexts, move |vertex| {
+                            let origin = vertex.origin;
+                            let item_index = match origin {
+                                Origin::CurrentCrate => &current_crate.inner.index,
+                                Origin::PreviousCrate => {
+                                    &previous_crate
+                                        .expect("no previous crate provided")
+                                        .inner
+                                        .index
+                                }
+                            };
 
-                                        let impl_token =
-                                            token.as_impl().expect("not an Impl token");
+                            let impl_vertex = vertex.as_impl().expect("not an Impl vertex");
 
-                                        if let Some(path) = &impl_token.trait_ {
-                                            // When the implemented trait is from the same crate
-                                            // as its definition, the trait is expected to be present
-                                            // in `item_index`. Otherwise, the
-                                            // `rustdoc_types::Trait` is not in this rustdoc,
-                                            // even if the trait is part of Rust `core` or `std`.
-                                            // As a temporary workaround, some common
-                                            // Rust built-in traits are manually "inlined"
-                                            // with items stored in `manually_inlined_builtin_traits`.
-                                            let found_item = item_index
-                                                .get(&path.id)
-                                                .or_else(|| {
-                                                    let manually_inlined_builtin_traits = match origin {
-                                                        Origin::CurrentCrate => &current_crate.manually_inlined_builtin_traits,
-                                                        Origin::PreviousCrate => {
-                                                            &previous_crate
-                                                                .expect("no previous crate provided")
-                                                                .manually_inlined_builtin_traits
-                                                        }
-                                                    };
-                                                    manually_inlined_builtin_traits.get(&path.id)
-                                                });
-                                            if let Some(item) = found_item {
-                                                Box::new(std::iter::once(
-                                                    origin.make_implemented_trait_token(path, item),
-                                                ))
-                                            } else {
-                                                Box::new(std::iter::empty())
-                                            }
-                                        } else {
-                                            Box::new(std::iter::empty())
+                            if let Some(path) = &impl_vertex.trait_ {
+                                // When the implemented trait is from the same crate
+                                // as its definition, the trait is expected to be present
+                                // in `item_index`. Otherwise, the
+                                // `rustdoc_types::Trait` is not in this rustdoc,
+                                // even if the trait is part of Rust `core` or `std`.
+                                // As a temporary workaround, some common
+                                // Rust built-in traits are manually "inlined"
+                                // with items stored in `manually_inlined_builtin_traits`.
+                                let found_item = item_index.get(&path.id).or_else(|| {
+                                    let manually_inlined_builtin_traits = match origin {
+                                        Origin::CurrentCrate => {
+                                            &current_crate.manually_inlined_builtin_traits
                                         }
-                                    }
-                                };
-
-                            (ctx, neighbors)
-                        }))
+                                        Origin::PreviousCrate => {
+                                            &previous_crate
+                                                .expect("no previous crate provided")
+                                                .manually_inlined_builtin_traits
+                                        }
+                                    };
+                                    manually_inlined_builtin_traits.get(&path.id)
+                                });
+                                if let Some(item) = found_item {
+                                    Box::new(std::iter::once(
+                                        origin.make_implemented_trait_vertex(path, item),
+                                    ))
+                                } else {
+                                    Box::new(std::iter::empty())
+                                }
+                            } else {
+                                Box::new(std::iter::empty())
+                            }
+                        })
                     }
                     _ => {
-                        unreachable!(
-                            "project_neighbors {current_type_name} {edge_name} {parameters:?}"
-                        )
+                        unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}")
                     }
                 }
             }
             "ImplementedTrait" => match edge_name.as_ref() {
-                "trait" => Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                        match &ctx.current_token {
-                            None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
+                "trait" => resolve_neighbors_with(contexts, move |vertex| {
+                    let origin = vertex.origin;
 
-                                let (_, trait_item) = token
-                                    .as_implemented_trait()
-                                    .expect("token was not an ImplementedTrait");
-                                Box::new(std::iter::once(origin.make_item_token(trait_item)))
-                            }
-                        };
-
-                    (ctx, neighbors)
-                })),
+                    let (_, trait_item) = vertex
+                        .as_implemented_trait()
+                        .expect("vertex was not an ImplementedTrait");
+                    Box::new(std::iter::once(origin.make_item_vertex(trait_item)))
+                }),
                 _ => {
-                    unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
+                    unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}")
                 }
             },
             "Attribute" => match edge_name.as_ref() {
-                "content" => Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> = match &ctx
-                        .current_token
-                    {
-                        None => Box::new(std::iter::empty()),
-                        Some(token) => {
-                            let origin = token.origin;
+                "content" => resolve_neighbors_with(contexts, move |vertex| {
+                    let origin = vertex.origin;
 
-                            let attribute =
-                                token.as_attribute().expect("token was not an Attribute");
-                            Box::new(std::iter::once(
-                                origin.make_attribute_meta_item_token(attribute.content.clone()),
-                            ))
+                    let attribute = vertex.as_attribute().expect("vertex was not an Attribute");
+                    Box::new(std::iter::once(
+                        origin.make_attribute_meta_item_vertex(attribute.content.clone()),
+                    ))
+                }),
+                _ => {
+                    unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}")
+                }
+            },
+            "AttributeMetaItem" => {
+                match edge_name.as_ref() {
+                    "argument" => resolve_neighbors_with(contexts, move |vertex| {
+                        let origin = vertex.origin;
+
+                        let meta_item = vertex
+                            .as_attribute_meta_item()
+                            .expect("vertex was not an AttributeMetaItem");
+                        if let Some(arguments) = meta_item.arguments.clone() {
+                            Box::new(arguments.into_iter().map(move |argument| {
+                                origin.make_attribute_meta_item_vertex(argument)
+                            }))
+                        } else {
+                            Box::new(std::iter::empty())
                         }
-                    };
-
-                    (ctx, neighbors)
-                })),
-                _ => {
-                    unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
+                    }),
+                    _ => {
+                        unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}")
+                    }
                 }
-            },
-            "AttributeMetaItem" => match edge_name.as_ref() {
-                "argument" => Box::new(data_contexts.map(move |ctx| {
-                    let neighbors: Box<dyn Iterator<Item = Self::DataToken> + 'a> =
-                        match &ctx.current_token {
-                            None => Box::new(std::iter::empty()),
-                            Some(token) => {
-                                let origin = token.origin;
-
-                                let meta_item = token
-                                    .as_attribute_meta_item()
-                                    .expect("token was not an AttributeMetaItem");
-                                if let Some(arguments) = meta_item.arguments.clone() {
-                                    Box::new(arguments.into_iter().map(move |argument| {
-                                        origin.make_attribute_meta_item_token(argument)
-                                    }))
-                                } else {
-                                    Box::new(std::iter::empty())
-                                }
-                            }
-                        };
-
-                    (ctx, neighbors)
-                })),
-                _ => {
-                    unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}")
-                }
-            },
-            _ => unreachable!("project_neighbors {current_type_name} {edge_name} {parameters:?}"),
+            }
+            _ => unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}"),
         }
     }
 
-    fn can_coerce_to_type(
+    fn resolve_coercion(
         &mut self,
-        data_contexts: Box<dyn Iterator<Item = DataContext<Self::DataToken>> + 'a>,
-        current_type_name: Arc<str>,
-        coerce_to_type_name: Arc<str>,
-        _query_hint: InterpretedQuery,
-        _vertex_hint: Vid,
-    ) -> Box<dyn Iterator<Item = (DataContext<Self::DataToken>, bool)> + 'a> {
-        match current_type_name.as_ref() {
+        contexts: ContextIterator<'a, Self::Vertex>,
+        type_name: &Arc<str>,
+        coerce_to_type: &Arc<str>,
+        _query_info: &QueryInfo,
+    ) -> ContextOutcomeIterator<'a, Self::Vertex, bool> {
+        let coerce_to_type = coerce_to_type.clone();
+        match type_name.as_ref() {
             "Item" | "Variant" | "FunctionLike" | "Importable" | "ImplOwner" | "RawType"
             | "ResolvedPathType" => {
-                Box::new(data_contexts.map(move |ctx| {
-                    let can_coerce = match &ctx.current_token {
-                        None => false,
-                        Some(token) => {
-                            let actual_type_name = token.typename();
+                resolve_coercion_with(contexts, move |vertex| {
+                    let actual_type_name = vertex.typename();
 
-                            match coerce_to_type_name.as_ref() {
-                                "Variant" => matches!(
-                                    actual_type_name,
-                                    "PlainVariant" | "TupleVariant" | "StructVariant"
-                                ),
-                                "ImplOwner" => matches!(actual_type_name, "Struct" | "Enum"),
-                                "ResolvedPathType" => matches!(
-                                    actual_type_name,
-                                    "ResolvedPathType" | "ImplementedTrait"
-                                ),
-                                _ => {
-                                    // The remaining types are final (don't have any subtypes)
-                                    // so we can just compare the actual type name to
-                                    // the type we are attempting to coerce to.
-                                    actual_type_name == coerce_to_type_name.as_ref()
-                                }
-                            }
+                    match coerce_to_type.as_ref() {
+                        "Variant" => matches!(
+                            actual_type_name,
+                            "PlainVariant" | "TupleVariant" | "StructVariant"
+                        ),
+                        "ImplOwner" => matches!(actual_type_name, "Struct" | "Enum"),
+                        "ResolvedPathType" => {
+                            matches!(actual_type_name, "ResolvedPathType" | "ImplementedTrait")
                         }
-                    };
-
-                    (ctx, can_coerce)
-                }))
+                        _ => {
+                            // The remaining types are final (don't have any subtypes)
+                            // so we can just compare the actual type name to
+                            // the type we are attempting to coerce to.
+                            actual_type_name == coerce_to_type.as_ref()
+                        }
+                    }
+                })
             }
-            _ => unreachable!("can_coerce_to_type {current_type_name} {coerce_to_type_name}"),
+            _ => unreachable!("resolve_coercion {type_name} {coerce_to_type}"),
         }
     }
 }
