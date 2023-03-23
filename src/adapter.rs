@@ -1215,7 +1215,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                         if let Some(path) = &impl_vertex.trait_ {
                                             if let Some(item) = item_index.get(&path.id) {
                                                 Box::new(std::iter::once(
-                                                    origin.make_implemented_trait_vertex(path, item),
+                                                    origin
+                                                        .make_implemented_trait_vertex(path, item),
                                                 ))
                                             } else {
                                                 Box::new(std::iter::empty())
