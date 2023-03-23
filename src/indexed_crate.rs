@@ -1317,7 +1317,8 @@ mod tests {
                     std::io::stderr(),
                     "skipping 'explicit_reexport_of_matching_names' test due to Rust {:?}",
                     version_check::Version::read(),
-                ).expect("write failed");
+                )
+                .expect("write failed");
             }
         }
     }
