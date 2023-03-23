@@ -18,8 +18,22 @@ jobs:
     needs:
       - lint
       - rust-tests
+    if: ${{ success() || failure() }}  # Run this job even if a dependency has failed.
     steps:
-      - run: exit 0
+      - name: Job outcomes
+        run: |
+          echo "lint: ${{ needs.lint.result }}"
+          echo "rust-tests: ${{ needs.rust-tests.result }}"
+
+      # Fail this required job if any of its dependent jobs have failed.
+      #
+      # Do not attempt to consolidate these steps into one step, it won't work.
+      # Multi-line `if` clauses are not evaluated properly: see the intermediate commits in
+      # https://github.com/obi1kenobi/cargo-semver-checks/pull/405
+      - if: ${{ needs.lint.result != 'success' }}
+        run: exit 1
+      - if: ${{ needs.rust-tests.result != 'success' }}
+        run: exit 1
 
   lint:
     name: Check lint and rustfmt
