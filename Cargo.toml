@@ -11,7 +11,7 @@ readme = "./README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-trustfall_core = "0.1.1"
+trustfall = "0.3.4"
 rustdoc-types = "0.19.0"
 
 [dev-dependencies]
