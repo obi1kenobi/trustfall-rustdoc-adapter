@@ -478,9 +478,9 @@ dependencies = [
 
 [[package]]
 name = "trustfall"
-version = "0.3.4"
+version = "0.4.0-beta.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d08b46bc8870b30f46d288a48cce399f30d08a39b36ab50489eacb851bb81c85"
+checksum = "cbca5cde4e5f80224282cff66037c68100f874f72c28452728b2eaeb0e04b3c1"
 dependencies = [
  "anyhow",
  "trustfall_core",
@@ -503,9 +503,9 @@ dependencies = [
 
 [[package]]
 name = "trustfall_core"
-version = "0.3.3"
+version = "0.4.0-beta.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7af71d1100b656a92610b4286ed59d06a1ec175f0933cbe208929456fb7854cb"
+checksum = "20be4c037e871b44c4b584fb4876cc5490e250fcec45f049903dda1a04ae4cd1"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
