@@ -7,8 +7,8 @@ use rustdoc_types::{
 use trustfall::{
     provider::{
         resolve_coercion_with, resolve_neighbors_with, resolve_property_with, Adapter,
-        ContextIterator, ContextOutcomeIterator, EdgeParameters, QueryInfo, Typename,
-        VertexIterator,
+        ContextIterator, ContextOutcomeIterator, EdgeParameters, ResolveEdgeInfo, ResolveInfo,
+        Typename, VertexIterator,
     },
     FieldValue, Schema,
 };
@@ -541,7 +541,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         &mut self,
         edge_name: &Arc<str>,
         _parameters: &EdgeParameters,
-        _query_info: &QueryInfo,
+        _query_info: &ResolveInfo,
     ) -> VertexIterator<'a, Self::Vertex> {
         match edge_name.as_ref() {
             "Crate" => Box::new(std::iter::once(Vertex::new_crate(
@@ -564,7 +564,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         contexts: ContextIterator<'a, Self::Vertex>,
         type_name: &Arc<str>,
         property_name: &Arc<str>,
-        _query_info: &QueryInfo,
+        _query_info: &ResolveInfo,
     ) -> ContextOutcomeIterator<'a, Self::Vertex, FieldValue> {
         if property_name.as_ref() == "__typename" {
             Box::new(contexts.map(|ctx| match ctx.active_vertex() {
@@ -654,7 +654,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         type_name: &Arc<str>,
         edge_name: &Arc<str>,
         parameters: &EdgeParameters,
-        _query_info: &QueryInfo,
+        _query_info: &ResolveEdgeInfo,
     ) -> ContextOutcomeIterator<'a, Self::Vertex, VertexIterator<'a, Self::Vertex>> {
         match type_name.as_ref() {
             "CrateDiff" => match edge_name.as_ref() {
@@ -1122,7 +1122,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         contexts: ContextIterator<'a, Self::Vertex>,
         type_name: &Arc<str>,
         coerce_to_type: &Arc<str>,
-        _query_info: &QueryInfo,
+        _query_info: &ResolveInfo,
     ) -> ContextOutcomeIterator<'a, Self::Vertex, bool> {
         let coerce_to_type = coerce_to_type.clone();
         match type_name.as_ref() {
