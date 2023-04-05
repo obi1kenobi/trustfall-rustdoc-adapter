@@ -212,16 +212,16 @@ impl<'a> Vertex<'a> {
         }
     }
 
-    fn as_struct_item(&self) -> Option<(&'a Item, &'a Struct)> {
+    fn as_struct(&self) -> Option<&'a Struct> {
         self.as_item().and_then(|item| match &item.inner {
-            rustdoc_types::ItemEnum::Struct(s) => Some((item, s)),
+            rustdoc_types::ItemEnum::Struct(s) => Some(s),
             _ => None,
         })
     }
 
-    fn as_struct_field_item(&self) -> Option<(&'a Item, &'a Type)> {
+    fn as_struct_field(&self) -> Option<&'a Type> {
         self.as_item().and_then(|item| match &item.inner {
-            rustdoc_types::ItemEnum::StructField(s) => Some((item, s)),
+            rustdoc_types::ItemEnum::StructField(s) => Some(s),
             _ => None,
         })
     }
@@ -386,24 +386,30 @@ fn resolve_item_property<'a>(
     }
 }
 
-fn get_struct_property(item_vertex: &Vertex, field_name: &str) -> FieldValue {
-    let (_, struct_item) = item_vertex
-        .as_struct_item()
-        .expect("vertex was not a Struct");
-    match field_name {
-        "struct_type" => match struct_item.kind {
-            rustdoc_types::StructKind::Plain { .. } => "plain",
-            rustdoc_types::StructKind::Tuple(..) => "tuple",
-            rustdoc_types::StructKind::Unit => "unit",
-        }
-        .into(),
-        "fields_stripped" => match struct_item.kind {
-            rustdoc_types::StructKind::Plain {
-                fields_stripped, ..
-            } => fields_stripped.into(),
-            _ => FieldValue::Null,
-        },
-        _ => unreachable!("Struct property {field_name}"),
+fn resolve_struct_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "struct_type" => resolve_property_with(contexts, |vertex| {
+            let struct_vertex = vertex.as_struct().expect("not a struct");
+            match struct_vertex.kind {
+                rustdoc_types::StructKind::Plain { .. } => "plain",
+                rustdoc_types::StructKind::Tuple(..) => "tuple",
+                rustdoc_types::StructKind::Unit => "unit",
+            }
+            .into()
+        }),
+        "fields_stripped" => resolve_property_with(contexts, |vertex| {
+            let struct_vertex = vertex.as_struct().expect("not a struct");
+            match struct_vertex.kind {
+                rustdoc_types::StructKind::Plain {
+                    fields_stripped, ..
+                } => fields_stripped.into(),
+                _ => FieldValue::Null,
+            }
+        }),
+        _ => unreachable!("Struct property {property_name}"),
     }
 }
 
@@ -586,13 +592,18 @@ fn resolve_trait_property<'a>(
     }
 }
 
-fn get_implemented_trait_property(vertex: &Vertex, field_name: &str) -> FieldValue {
-    let (path, _) = vertex
-        .as_implemented_trait()
-        .expect("vertex was not a ImplementedTrait");
-    match field_name {
-        "name" => (&path.name).into(),
-        _ => unreachable!("ImplementedTrait property {field_name}"),
+fn resolve_implemented_trait_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "name" => resolve_property_with(contexts, |vertex| {
+            let (path, _) = vertex
+                .as_implemented_trait()
+                .expect("not an ImplementedTrait");
+            path.name.clone().into()
+        }),
+        _ => unreachable!("Trait property {property_name}"),
     }
 }
 
@@ -637,10 +648,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 None => (ctx, FieldValue::Null),
             }))
         } else {
-            let property_name = property_name.clone();
             match type_name.as_ref() {
-                "Crate" => resolve_crate_property(contexts, &property_name),
-                "Item" => resolve_item_property(contexts, &property_name),
+                "Crate" => resolve_crate_property(contexts, property_name),
+                "Item" => resolve_item_property(contexts, property_name),
                 "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant" | "PlainVariant"
                 | "TupleVariant" | "StructVariant" | "Trait" | "Function" | "Method" | "Impl"
                     if matches!(
@@ -649,37 +659,31 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     ) =>
                 {
                     // properties inherited from Item, accesssed on Item subtypes
-                    resolve_item_property(contexts, &property_name)
+                    resolve_item_property(contexts, property_name)
                 }
-                "Struct" => resolve_property_with(contexts, move |vertex| {
-                    get_struct_property(vertex, property_name.as_ref())
-                }),
-                "Enum" => resolve_enum_property(contexts, &property_name),
-                "Span" => resolve_span_property(contexts, &property_name),
-                "Path" => resolve_path_property(contexts, &property_name),
-                "ImportablePath" => resolve_importable_path_property(contexts, &property_name),
+                "Struct" => resolve_struct_property(contexts, property_name),
+                "Enum" => resolve_enum_property(contexts, property_name),
+                "Span" => resolve_span_property(contexts, property_name),
+                "Path" => resolve_path_property(contexts, property_name),
+                "ImportablePath" => resolve_importable_path_property(contexts, property_name),
                 "FunctionLike" | "Function" | "Method"
                     if matches!(property_name.as_ref(), "const" | "unsafe" | "async") =>
                 {
-                    resolve_function_like_property(contexts, &property_name)
+                    resolve_function_like_property(contexts, property_name)
                 }
-                "FunctionParameter" => {
-                    resolve_function_parameter_property(contexts, &property_name)
-                }
-                "Impl" => resolve_impl_property(contexts, &property_name),
-                "Attribute" => resolve_attribute_property(contexts, &property_name),
+                "FunctionParameter" => resolve_function_parameter_property(contexts, property_name),
+                "Impl" => resolve_impl_property(contexts, property_name),
+                "Attribute" => resolve_attribute_property(contexts, property_name),
                 "AttributeMetaItem" => {
-                    resolve_attribute_meta_item_property(contexts, &property_name)
+                    resolve_attribute_meta_item_property(contexts, property_name)
                 }
-                "Trait" => resolve_trait_property(contexts, &property_name),
-                "ImplementedTrait" => resolve_property_with(contexts, move |vertex| {
-                    get_implemented_trait_property(vertex, property_name.as_ref())
-                }),
+                "Trait" => resolve_trait_property(contexts, property_name),
+                "ImplementedTrait" => resolve_implemented_trait_property(contexts, property_name),
                 "RawType" | "ResolvedPathType" | "PrimitiveType"
                     if matches!(property_name.as_ref(), "name") =>
                 {
                     // fields from "RawType"
-                    resolve_raw_type_property(contexts, &property_name)
+                    resolve_raw_type_property(contexts, property_name)
                 }
                 _ => unreachable!("resolve_property {type_name} {property_name}"),
             }
@@ -842,8 +846,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     // Relies on the fact that only structs and enums can have impls,
                     // so we know that the vertex must represent either a struct or an enum.
                     let impl_ids = vertex
-                        .as_struct_item()
-                        .map(|(_, s)| &s.impls)
+                        .as_struct()
+                        .map(|s| &s.impls)
                         .or_else(|| vertex.as_enum().map(|e| &e.impls))
                         .expect("vertex was neither a struct nor an enum");
 
@@ -883,8 +887,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     let previous_crate = self.previous_crate;
                     resolve_neighbors_with(contexts, move |vertex| {
                         let origin = vertex.origin;
-                        let (_, struct_item) =
-                            vertex.as_struct_item().expect("vertex was not a Struct");
+                        let struct_item = vertex.as_struct().expect("vertex was not a Struct");
 
                         let item_index = match origin {
                             Origin::CurrentCrate => &current_crate.inner.index,
@@ -990,9 +993,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             "StructField" => match edge_name.as_ref() {
                 "raw_type" => resolve_neighbors_with(contexts, move |vertex| {
                     let origin = vertex.origin;
-                    let (_, field_type) = vertex
-                        .as_struct_field_item()
-                        .expect("not a StructField vertex");
+                    let field_type = vertex.as_struct_field().expect("not a StructField vertex");
                     Box::new(std::iter::once(origin.make_raw_type_vertex(field_type)))
                 }),
                 _ => {
