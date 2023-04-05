@@ -6,9 +6,9 @@ use rustdoc_types::{
 };
 use trustfall::{
     provider::{
-        resolve_coercion_with, resolve_neighbors_with, resolve_property_with, Adapter,
-        ContextIterator, ContextOutcomeIterator, EdgeParameters, ResolveEdgeInfo, ResolveInfo,
-        Typename, VertexIterator,
+        accessor_property, field_property, resolve_coercion_with, resolve_neighbors_with,
+        resolve_property_with, Adapter, ContextIterator, ContextOutcomeIterator, EdgeParameters,
+        ResolveEdgeInfo, ResolveInfo, Typename, VertexIterator,
     },
     FieldValue, Schema,
 };
@@ -212,16 +212,16 @@ impl<'a> Vertex<'a> {
         }
     }
 
-    fn as_struct_item(&self) -> Option<(&'a Item, &'a Struct)> {
+    fn as_struct(&self) -> Option<&'a Struct> {
         self.as_item().and_then(|item| match &item.inner {
-            rustdoc_types::ItemEnum::Struct(s) => Some((item, s)),
+            rustdoc_types::ItemEnum::Struct(s) => Some(s),
             _ => None,
         })
     }
 
-    fn as_struct_field_item(&self) -> Option<(&'a Item, &'a Type)> {
+    fn as_struct_field(&self) -> Option<&'a Type> {
         self.as_item().and_then(|item| match &item.inner {
-            rustdoc_types::ItemEnum::StructField(s) => Some((item, s)),
+            rustdoc_types::ItemEnum::StructField(s) => Some(s),
             _ => None,
         })
     }
@@ -336,185 +336,274 @@ impl<'a> From<&'a Span> for VertexKind<'a> {
     }
 }
 
-fn get_crate_property(crate_vertex: &Vertex, field_name: &str) -> FieldValue {
-    let crate_item = crate_vertex.as_crate().expect("vertex was not a Crate");
-    match field_name {
-        "root" => crate_item.root.0.clone().into(),
-        "crate_version" => crate_item.crate_version.clone().into(),
-        "includes_private" => crate_item.includes_private.into(),
-        "format_version" => crate_item.format_version.into(),
-        _ => unreachable!("Crate property {field_name}"),
-    }
-}
-
-fn get_item_property(item_vertex: &Vertex, field_name: &str) -> FieldValue {
-    let item = item_vertex.as_item().expect("vertex was not an Item");
-    match field_name {
-        "id" => item.id.0.clone().into(),
-        "crate_id" => item.crate_id.into(),
-        "name" => item.name.clone().into(),
-        "docs" => item.docs.clone().into(),
-        "attrs" => item.attrs.clone().into(),
-        "visibility_limit" => match &item.visibility {
-            rustdoc_types::Visibility::Public => "public".into(),
-            rustdoc_types::Visibility::Default => "default".into(),
-            rustdoc_types::Visibility::Crate => "crate".into(),
-            rustdoc_types::Visibility::Restricted { parent: _, path } => {
-                format!("restricted ({path})").into()
-            }
-        },
-        _ => unreachable!("Item property {field_name}"),
-    }
-}
-
-fn get_struct_property(item_vertex: &Vertex, field_name: &str) -> FieldValue {
-    let (_, struct_item) = item_vertex
-        .as_struct_item()
-        .expect("vertex was not a Struct");
-    match field_name {
-        "struct_type" => match struct_item.kind {
-            rustdoc_types::StructKind::Plain { .. } => "plain",
-            rustdoc_types::StructKind::Tuple(..) => "tuple",
-            rustdoc_types::StructKind::Unit => "unit",
+fn resolve_crate_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "root" => resolve_property_with(
+            contexts,
+            field_property!(as_crate, root, { root.0.clone().into() }),
+        ),
+        "crate_version" => {
+            resolve_property_with(contexts, field_property!(as_crate, crate_version))
         }
-        .into(),
-        "fields_stripped" => match struct_item.kind {
-            rustdoc_types::StructKind::Plain {
-                fields_stripped, ..
-            } => fields_stripped.into(),
-            _ => FieldValue::Null,
-        },
-        _ => unreachable!("Struct property {field_name}"),
+        "includes_private" => {
+            resolve_property_with(contexts, field_property!(as_crate, includes_private))
+        }
+        "format_version" => {
+            resolve_property_with(contexts, field_property!(as_crate, format_version))
+        }
+        _ => unreachable!("Crate property {property_name}"),
     }
 }
 
-fn get_span_property(item_vertex: &Vertex, field_name: &str) -> FieldValue {
-    let span = item_vertex.as_span().expect("vertex was not a Span");
-    match field_name {
-        "filename" => span
-            .filename
-            .to_str()
-            .expect("non-representable path")
-            .into(),
-        "begin_line" => (span.begin.0 as u64).into(),
-        "begin_column" => (span.begin.1 as u64).into(),
-        "end_line" => (span.end.0 as u64).into(),
-        "end_column" => (span.end.1 as u64).into(),
-        _ => unreachable!("Span property {field_name}"),
+fn resolve_item_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "id" => resolve_property_with(
+            contexts,
+            field_property!(as_item, id, { id.0.clone().into() }),
+        ),
+        "crate_id" => resolve_property_with(contexts, field_property!(as_item, crate_id)),
+        "name" => resolve_property_with(contexts, field_property!(as_item, name)),
+        "docs" => resolve_property_with(contexts, field_property!(as_item, docs)),
+        "attrs" => resolve_property_with(contexts, field_property!(as_item, attrs)),
+        "visibility_limit" => resolve_property_with(contexts, |vertex| {
+            let item = vertex.as_item().expect("not an item");
+            match &item.visibility {
+                rustdoc_types::Visibility::Public => "public".into(),
+                rustdoc_types::Visibility::Default => "default".into(),
+                rustdoc_types::Visibility::Crate => "crate".into(),
+                rustdoc_types::Visibility::Restricted { parent: _, path } => {
+                    format!("restricted ({path})").into()
+                }
+            }
+        }),
+        _ => unreachable!("Item property {property_name}"),
     }
 }
 
-fn get_enum_property(item_vertex: &Vertex, field_name: &str) -> FieldValue {
-    let enum_item = item_vertex.as_enum().expect("vertex was not an Enum");
-    match field_name {
-        "variants_stripped" => enum_item.variants_stripped.into(),
-        _ => unreachable!("Enum property {field_name}"),
+fn resolve_struct_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "struct_type" => resolve_property_with(contexts, |vertex| {
+            let struct_vertex = vertex.as_struct().expect("not a struct");
+            match struct_vertex.kind {
+                rustdoc_types::StructKind::Plain { .. } => "plain",
+                rustdoc_types::StructKind::Tuple(..) => "tuple",
+                rustdoc_types::StructKind::Unit => "unit",
+            }
+            .into()
+        }),
+        "fields_stripped" => resolve_property_with(contexts, |vertex| {
+            let struct_vertex = vertex.as_struct().expect("not a struct");
+            match struct_vertex.kind {
+                rustdoc_types::StructKind::Plain {
+                    fields_stripped, ..
+                } => fields_stripped.into(),
+                _ => FieldValue::Null,
+            }
+        }),
+        _ => unreachable!("Struct property {property_name}"),
     }
 }
 
-fn get_path_property(vertex: &Vertex, field_name: &str) -> FieldValue {
-    let path_vertex = vertex.as_path().expect("vertex was not a Path");
-    match field_name {
-        "path" => path_vertex.into(),
-        _ => unreachable!("Path property {field_name}"),
+fn resolve_span_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "filename" => resolve_property_with(
+            contexts,
+            field_property!(as_span, filename, {
+                filename.to_str().expect("non-representable path").into()
+            }),
+        ),
+        "begin_line" => resolve_property_with(
+            contexts,
+            field_property!(as_span, begin, { (begin.0 as u64).into() }),
+        ),
+        "begin_column" => resolve_property_with(
+            contexts,
+            field_property!(as_span, begin, { (begin.1 as u64).into() }),
+        ),
+        "end_line" => resolve_property_with(
+            contexts,
+            field_property!(as_span, end, { (end.0 as u64).into() }),
+        ),
+        "end_column" => resolve_property_with(
+            contexts,
+            field_property!(as_span, end, { (end.1 as u64).into() }),
+        ),
+        _ => unreachable!("Span property {property_name}"),
     }
 }
 
-fn get_importable_path_property(vertex: &Vertex, field_name: &str) -> FieldValue {
-    let path_vertex = vertex
-        .as_importable_path()
-        .expect("vertex was not an ImportablePath");
-    match field_name {
-        "path" => path_vertex
-            .iter()
-            .map(|x| x.to_string())
-            .collect::<Vec<_>>()
-            .into(),
-        "visibility_limit" => "public".into(),
-        _ => unreachable!("ImportablePath property {field_name}"),
+fn resolve_enum_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "variants_stripped" => {
+            resolve_property_with(contexts, field_property!(as_enum, variants_stripped))
+        }
+        _ => unreachable!("Enum property {property_name}"),
     }
 }
 
-fn get_function_like_property(vertex: &Vertex, field_name: &str) -> FieldValue {
-    let function = vertex.as_function().expect("not a function");
-
-    match field_name {
-        "const" => function.header.const_.into(),
-        "async" => function.header.async_.into(),
-        "unsafe" => function.header.unsafe_.into(),
-        _ => unreachable!("FunctionLike property {field_name}"),
+fn resolve_path_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "path" => resolve_property_with(contexts, |vertex| {
+            vertex.as_path().expect("not a path").into()
+        }),
+        _ => unreachable!("Path property {property_name}"),
     }
 }
 
-fn get_function_parameter_property(vertex: &Vertex, field_name: &str) -> FieldValue {
-    let function_parameter_vertex = vertex
-        .as_function_parameter()
-        .expect("vertex was not a FunctionParameter");
-
-    match field_name {
-        "name" => function_parameter_vertex.into(),
-        _ => unreachable!("FunctionParameter property {field_name}"),
+fn resolve_importable_path_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "path" => resolve_property_with(contexts, |vertex| {
+            vertex
+                .as_importable_path()
+                .expect("not an importable path")
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .into()
+        }),
+        "visibility_limit" => resolve_property_with(contexts, |_| "public".into()),
+        _ => unreachable!("ImportablePath property {property_name}"),
     }
 }
 
-fn get_impl_property(vertex: &Vertex, field_name: &str) -> FieldValue {
-    let impl_vertex = vertex.as_impl().expect("vertex was not an Impl");
-    match field_name {
-        "unsafe" => impl_vertex.is_unsafe.into(),
-        "negative" => impl_vertex.negative.into(),
-        "synthetic" => impl_vertex.synthetic.into(),
-        _ => unreachable!("Impl property {field_name}"),
+fn resolve_function_like_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "const" => resolve_property_with(
+            contexts,
+            field_property!(as_function, header, { header.const_.into() }),
+        ),
+        "async" => resolve_property_with(
+            contexts,
+            field_property!(as_function, header, { header.async_.into() }),
+        ),
+        "unsafe" => resolve_property_with(
+            contexts,
+            field_property!(as_function, header, { header.unsafe_.into() }),
+        ),
+        _ => unreachable!("FunctionLike property {property_name}"),
     }
 }
 
-fn get_attribute_property(vertex: &Vertex, field_name: &str) -> FieldValue {
-    let attribute = vertex.as_attribute().expect("vertex was not an Attribute");
-    match field_name {
-        "raw_attribute" => attribute.raw_attribute().into(),
-        "is_inner" => attribute.is_inner.into(),
-        _ => unreachable!("Attribute property {field_name}"),
+fn resolve_function_parameter_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "name" => resolve_property_with(contexts, |vertex| {
+            vertex
+                .as_function_parameter()
+                .expect("not a function parameter")
+                .into()
+        }),
+        _ => unreachable!("FunctionParameter property {property_name}"),
     }
 }
 
-fn get_attribute_meta_item_property(vertex: &Vertex, field_name: &str) -> FieldValue {
-    let meta_item = vertex
-        .as_attribute_meta_item()
-        .expect("vertex was not an AttributeMetaItem");
-    match field_name {
-        "raw_item" => meta_item.raw_item.into(),
-        "base" => meta_item.base.into(),
-        "assigned_item" => meta_item.assigned_item.into(),
-        _ => unreachable!("Attribute property {field_name}"),
+fn resolve_impl_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "unsafe" => resolve_property_with(contexts, field_property!(as_impl, is_unsafe)),
+        "negative" => resolve_property_with(contexts, field_property!(as_impl, negative)),
+        "synthetic" => resolve_property_with(contexts, field_property!(as_impl, synthetic)),
+        _ => unreachable!("Impl property {property_name}"),
     }
 }
 
-fn get_raw_type_property(vertex: &Vertex, field_name: &str) -> FieldValue {
-    let type_vertex = vertex.as_raw_type().expect("vertex was not a RawType");
-    match field_name {
-        "name" => match type_vertex {
-            rustdoc_types::Type::ResolvedPath(path) => (&path.name).into(),
-            rustdoc_types::Type::Primitive(name) => name.into(),
-            _ => unreachable!("unexpected RawType vertex content: {type_vertex:?}"),
-        },
-        _ => unreachable!("RawType property {field_name}"),
+fn resolve_attribute_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "raw_attribute" => {
+            resolve_property_with(contexts, accessor_property!(as_attribute, raw_attribute))
+        }
+        "is_inner" => resolve_property_with(contexts, field_property!(as_attribute, is_inner)),
+        _ => unreachable!("Attribute property {property_name}"),
     }
 }
 
-fn get_trait_property(vertex: &Vertex, field_name: &str) -> FieldValue {
-    let trait_vertex = vertex.as_trait().expect("vertex was not a Trait");
-    match field_name {
-        "unsafe" => trait_vertex.is_unsafe.into(),
-        _ => unreachable!("Trait property {field_name}"),
+fn resolve_attribute_meta_item_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "raw_item" => {
+            resolve_property_with(contexts, field_property!(as_attribute_meta_item, raw_item))
+        }
+        "base" => resolve_property_with(contexts, field_property!(as_attribute_meta_item, base)),
+        "assigned_item" => resolve_property_with(
+            contexts,
+            field_property!(as_attribute_meta_item, assigned_item),
+        ),
+        _ => unreachable!("AttributeMetaItem property {property_name}"),
     }
 }
 
-fn get_implemented_trait_property(vertex: &Vertex, field_name: &str) -> FieldValue {
-    let (path, _) = vertex
-        .as_implemented_trait()
-        .expect("vertex was not a ImplementedTrait");
-    match field_name {
-        "name" => (&path.name).into(),
-        _ => unreachable!("ImplementedTrait property {field_name}"),
+fn resolve_raw_type_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "name" => resolve_property_with(contexts, |vertex| {
+            let type_vertex = vertex.as_raw_type().expect("not a RawType");
+            match type_vertex {
+                rustdoc_types::Type::ResolvedPath(path) => path.name.clone().into(),
+                rustdoc_types::Type::Primitive(name) => name.clone().into(),
+                _ => unreachable!("unexpected RawType vertex content: {type_vertex:?}"),
+            }
+        }),
+        _ => unreachable!("RawType property {property_name}"),
+    }
+}
+
+fn resolve_trait_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "unsafe" => resolve_property_with(contexts, field_property!(as_trait, is_unsafe)),
+        _ => unreachable!("Trait property {property_name}"),
+    }
+}
+
+fn resolve_implemented_trait_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "name" => resolve_property_with(contexts, |vertex| {
+            let (path, _) = vertex
+                .as_implemented_trait()
+                .expect("not an ImplementedTrait");
+            path.name.clone().into()
+        }),
+        _ => unreachable!("Trait property {property_name}"),
     }
 }
 
@@ -525,7 +614,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         &mut self,
         edge_name: &Arc<str>,
         _parameters: &EdgeParameters,
-        _query_info: &ResolveInfo,
+        _resolve_info: &ResolveInfo,
     ) -> VertexIterator<'a, Self::Vertex> {
         match edge_name.as_ref() {
             "Crate" => Box::new(std::iter::once(Vertex::new_crate(
@@ -548,7 +637,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         contexts: ContextIterator<'a, Self::Vertex>,
         type_name: &Arc<str>,
         property_name: &Arc<str>,
-        _query_info: &ResolveInfo,
+        _resolve_info: &ResolveInfo,
     ) -> ContextOutcomeIterator<'a, Self::Vertex, FieldValue> {
         if property_name.as_ref() == "__typename" {
             Box::new(contexts.map(|ctx| match ctx.active_vertex() {
@@ -559,14 +648,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 None => (ctx, FieldValue::Null),
             }))
         } else {
-            let property_name = property_name.clone();
             match type_name.as_ref() {
-                "Crate" => resolve_property_with(contexts, move |vertex| {
-                    get_crate_property(vertex, property_name.as_ref())
-                }),
-                "Item" => resolve_property_with(contexts, move |vertex| {
-                    get_item_property(vertex, property_name.as_ref())
-                }),
+                "Crate" => resolve_crate_property(contexts, property_name),
+                "Item" => resolve_item_property(contexts, property_name),
                 "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant" | "PlainVariant"
                 | "TupleVariant" | "StructVariant" | "Trait" | "Function" | "Method" | "Impl"
                     if matches!(
@@ -575,57 +659,31 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     ) =>
                 {
                     // properties inherited from Item, accesssed on Item subtypes
-                    resolve_property_with(contexts, move |vertex| {
-                        get_item_property(vertex, property_name.as_ref())
-                    })
+                    resolve_item_property(contexts, property_name)
                 }
-                "Struct" => resolve_property_with(contexts, move |vertex| {
-                    get_struct_property(vertex, property_name.as_ref())
-                }),
-                "Enum" => resolve_property_with(contexts, move |vertex| {
-                    get_enum_property(vertex, property_name.as_ref())
-                }),
-                "Span" => resolve_property_with(contexts, move |vertex| {
-                    get_span_property(vertex, property_name.as_ref())
-                }),
-                "Path" => resolve_property_with(contexts, move |vertex| {
-                    get_path_property(vertex, property_name.as_ref())
-                }),
-                "ImportablePath" => resolve_property_with(contexts, move |vertex| {
-                    get_importable_path_property(vertex, property_name.as_ref())
-                }),
+                "Struct" => resolve_struct_property(contexts, property_name),
+                "Enum" => resolve_enum_property(contexts, property_name),
+                "Span" => resolve_span_property(contexts, property_name),
+                "Path" => resolve_path_property(contexts, property_name),
+                "ImportablePath" => resolve_importable_path_property(contexts, property_name),
                 "FunctionLike" | "Function" | "Method"
                     if matches!(property_name.as_ref(), "const" | "unsafe" | "async") =>
                 {
-                    resolve_property_with(contexts, move |vertex| {
-                        get_function_like_property(vertex, property_name.as_ref())
-                    })
+                    resolve_function_like_property(contexts, property_name)
                 }
-                "FunctionParameter" => resolve_property_with(contexts, move |vertex| {
-                    get_function_parameter_property(vertex, property_name.as_ref())
-                }),
-                "Impl" => resolve_property_with(contexts, move |vertex| {
-                    get_impl_property(vertex, property_name.as_ref())
-                }),
-                "Attribute" => resolve_property_with(contexts, move |vertex| {
-                    get_attribute_property(vertex, property_name.as_ref())
-                }),
-                "AttributeMetaItem" => resolve_property_with(contexts, move |vertex| {
-                    get_attribute_meta_item_property(vertex, property_name.as_ref())
-                }),
-                "Trait" => resolve_property_with(contexts, move |vertex| {
-                    get_trait_property(vertex, property_name.as_ref())
-                }),
-                "ImplementedTrait" => resolve_property_with(contexts, move |vertex| {
-                    get_implemented_trait_property(vertex, property_name.as_ref())
-                }),
+                "FunctionParameter" => resolve_function_parameter_property(contexts, property_name),
+                "Impl" => resolve_impl_property(contexts, property_name),
+                "Attribute" => resolve_attribute_property(contexts, property_name),
+                "AttributeMetaItem" => {
+                    resolve_attribute_meta_item_property(contexts, property_name)
+                }
+                "Trait" => resolve_trait_property(contexts, property_name),
+                "ImplementedTrait" => resolve_implemented_trait_property(contexts, property_name),
                 "RawType" | "ResolvedPathType" | "PrimitiveType"
                     if matches!(property_name.as_ref(), "name") =>
                 {
                     // fields from "RawType"
-                    resolve_property_with(contexts, move |vertex| {
-                        get_raw_type_property(vertex, property_name.as_ref())
-                    })
+                    resolve_raw_type_property(contexts, property_name)
                 }
                 _ => unreachable!("resolve_property {type_name} {property_name}"),
             }
@@ -638,7 +696,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         type_name: &Arc<str>,
         edge_name: &Arc<str>,
         parameters: &EdgeParameters,
-        _query_info: &ResolveEdgeInfo,
+        _resolve_info: &ResolveEdgeInfo,
     ) -> ContextOutcomeIterator<'a, Self::Vertex, VertexIterator<'a, Self::Vertex>> {
         match type_name.as_ref() {
             "CrateDiff" => match edge_name.as_ref() {
@@ -788,8 +846,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     // Relies on the fact that only structs and enums can have impls,
                     // so we know that the vertex must represent either a struct or an enum.
                     let impl_ids = vertex
-                        .as_struct_item()
-                        .map(|(_, s)| &s.impls)
+                        .as_struct()
+                        .map(|s| &s.impls)
                         .or_else(|| vertex.as_enum().map(|e| &e.impls))
                         .expect("vertex was neither a struct nor an enum");
 
@@ -829,8 +887,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     let previous_crate = self.previous_crate;
                     resolve_neighbors_with(contexts, move |vertex| {
                         let origin = vertex.origin;
-                        let (_, struct_item) =
-                            vertex.as_struct_item().expect("vertex was not a Struct");
+                        let struct_item = vertex.as_struct().expect("vertex was not a Struct");
 
                         let item_index = match origin {
                             Origin::CurrentCrate => &current_crate.inner.index,
@@ -936,9 +993,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             "StructField" => match edge_name.as_ref() {
                 "raw_type" => resolve_neighbors_with(contexts, move |vertex| {
                     let origin = vertex.origin;
-                    let (_, field_type) = vertex
-                        .as_struct_field_item()
-                        .expect("not a StructField vertex");
+                    let field_type = vertex.as_struct_field().expect("not a StructField vertex");
                     Box::new(std::iter::once(origin.make_raw_type_vertex(field_type)))
                 }),
                 _ => {
@@ -1128,7 +1183,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         contexts: ContextIterator<'a, Self::Vertex>,
         type_name: &Arc<str>,
         coerce_to_type: &Arc<str>,
-        _query_info: &ResolveInfo,
+        _resolve_info: &ResolveInfo,
     ) -> ContextOutcomeIterator<'a, Self::Vertex, bool> {
         let coerce_to_type = coerce_to_type.clone();
         match type_name.as_ref() {
