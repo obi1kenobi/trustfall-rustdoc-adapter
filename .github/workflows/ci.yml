@@ -18,8 +18,22 @@ jobs:
     needs:
       - lint
       - rust-tests
+    if: ${{ success() || failure() }}  # Run this job even if a dependency has failed.
     steps:
-      - run: exit 0
+      - name: Job outcomes
+        run: |
+          echo "lint: ${{ needs.lint.result }}"
+          echo "rust-tests: ${{ needs.rust-tests.result }}"
+
+      # Fail this required job if any of its dependent jobs have failed.
+      #
+      # Do not attempt to consolidate these steps into one step, it won't work.
+      # Multi-line `if` clauses are not evaluated properly: see the intermediate commits in
+      # https://github.com/obi1kenobi/cargo-semver-checks/pull/405
+      - if: ${{ needs.lint.result != 'success' }}
+        run: exit 1
+      - if: ${{ needs.rust-tests.result != 'success' }}
+        run: exit 1
 
   lint:
     name: Check lint and rustfmt
@@ -31,33 +45,31 @@ jobs:
           persist-credentials: false
 
       - name: Install rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: rustfmt, clippy
-          profile: minimal
-          override: true
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: r7kamura/rust-problem-matchers@v1
+
       - name: cargo clippy
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --workspace --all-features --all-targets -- -D warnings --allow deprecated
+        run: cargo clippy --workspace --all-features --all-targets -- -D warnings -Dclippy::print_stdout -Dclippy::print_stderr -Dclippy::dbg_macro --allow deprecated
 
       - name: cargo fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: -- --check
+        run: cargo fmt -- --check
+
+      - name: cargo doc
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --all-features --no-deps --document-private-items
 
   rust-tests:
     name: Run tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toolchain: ["beta", "nightly"]
+        toolchain: ["1.68", "beta", "nightly"]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -65,11 +77,9 @@ jobs:
           persist-credentials: false
 
       - name: Install rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
-          profile: minimal
-          override: true
 
       - uses: Swatinem/rust-cache@v2
 
@@ -95,6 +105,8 @@ jobs:
         uses: actions/checkout@v3
         with:
           persist-credentials: true
+
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: Tag the version
         run: |
@@ -126,9 +138,9 @@ jobs:
           export EXIT_CODE="$?"
           set -e
           if [[ "$EXIT_CODE" == "7" ]]; then
-            echo '::set-output name=is_new_version::no'
+            echo "is_new_version=no" >> $GITHUB_OUTPUT
           elif [[ "$EXIT_CODE" == "0" ]]; then
-            echo '::set-output name=is_new_version::yes'
+            echo "is_new_version=yes" >> $GITHUB_OUTPUT
           else
             # Unexpected outcome, indicates a bug.
             exit "$EXIT_CODE"

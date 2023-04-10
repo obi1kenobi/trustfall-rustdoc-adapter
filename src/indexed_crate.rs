@@ -26,7 +26,7 @@ pub struct IndexedCrate<'a> {
     /// Rust's built-in traits like `Debug, Send, Eq` etc.
     ///
     /// This change is approximately as of rustdoc v23,
-    /// in https://github.com/rust-lang/rust/pull/105182
+    /// in <https://github.com/rust-lang/rust/pull/105182>
     ///
     /// As a temporary workaround, we manually create the trait items
     /// for the most common Rust built-in traits and link to those items
@@ -832,6 +832,54 @@ mod tests {
             }
         }
 
+        /// Allows testing for items with overlapping names, such as a function and a type
+        /// with the same name (which Rust considers in separate namespaces).
+        fn assert_duplicated_exported_items_match(
+            test_crate: &str,
+            expected_items_and_counts: &BTreeMap<&str, (usize, BTreeSet<&str>)>,
+        ) {
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            for (&expected_item_name, (expected_count, expected_importable_paths)) in
+                expected_items_and_counts
+            {
+                assert!(
+                    !expected_item_name.contains(':'),
+                    "only direct item names can be checked at the moment: {expected_item_name}"
+                );
+
+                let item_id_candidates = rustdoc
+                    .index
+                    .iter()
+                    .filter_map(|(id, item)| {
+                        (item.name.as_deref() == Some(expected_item_name)).then_some(id)
+                    })
+                    .collect_vec();
+                if item_id_candidates.len() != *expected_count {
+                    panic!(
+                        "Expected to find exactly {expected_count} items with name \
+                        {expected_item_name}, but found these matching IDs: {item_id_candidates:?}"
+                    );
+                }
+                for item_id in item_id_candidates {
+                    let actual_items: Vec<_> = indexed_crate
+                        .publicly_importable_names(item_id)
+                        .into_iter()
+                        .map(|components| components.into_iter().join("::"))
+                        .collect();
+                    let deduplicated_actual_items: BTreeSet<_> =
+                        actual_items.iter().map(|x| x.as_str()).collect();
+                    assert_eq!(
+                        actual_items.len(),
+                        deduplicated_actual_items.len(),
+                        "duplicates found: {actual_items:?}"
+                    );
+                    assert_eq!(expected_importable_paths, &deduplicated_actual_items);
+                }
+            }
+        }
+
         #[test]
         fn pub_inside_pub_crate_mod() {
             let test_crate = "pub_inside_pub_crate_mod";
@@ -886,6 +934,20 @@ mod tests {
                 "foo" => btreeset![
                     "renaming_reexport::bar",
                     "renaming_reexport::inner::foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn renaming_reexport_of_reexport() {
+            let test_crate = "renaming_reexport_of_reexport";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    "renaming_reexport_of_reexport::bar",
+                    "renaming_reexport_of_reexport::foo",
+                    "renaming_reexport_of_reexport::inner::foo",
                 ],
             };
 
@@ -1326,59 +1388,40 @@ mod tests {
         fn type_and_value_with_matching_names() {
             let test_crate = "type_and_value_with_matching_names";
             let expected_items = btreemap! {
-                "Foo" => btreeset![
+                "Foo" => (2, btreeset![
                     "type_and_value_with_matching_names::Foo",
                     "type_and_value_with_matching_names::nested::Foo",
-                ],
-                "Bar" => btreeset![
+                ]),
+                "Bar" => (2, btreeset![
                     "type_and_value_with_matching_names::Bar",
                     "type_and_value_with_matching_names::nested::Bar",
-                ],
+                ]),
             };
 
-            let rustdoc = load_pregenerated_rustdoc(test_crate);
-            let indexed_crate = IndexedCrate::new(&rustdoc);
+            assert_duplicated_exported_items_match(test_crate, &expected_items);
+        }
 
-            // We can't use the `assert_exported_items_match()` helper function,
-            // since it assumes that names are unique.
-            // This test case *specifically* tests the situation where a type and a value
-            // happen to have the same name.
-            //
-            // Instead, we implement the needed test logic directly.
-            for (&expected_item_name, expected_importable_paths) in &expected_items {
-                assert!(
-                    !expected_item_name.contains(':'),
-                    "only direct item names can be checked at the moment: {expected_item_name}"
-                );
+        #[test]
+        fn explicit_reexport_of_matching_names() {
+            if version_check::is_min_version("1.69.0").unwrap_or(true) {
+                let test_crate = "explicit_reexport_of_matching_names";
+                let expected_items = btreemap! {
+                    "Foo" => (2, btreeset![
+                        "explicit_reexport_of_matching_names::Bar",
+                        "explicit_reexport_of_matching_names::Foo",
+                        "explicit_reexport_of_matching_names::nested::Foo",
+                    ]),
+                };
 
-                let item_id_candidates = rustdoc
-                    .index
-                    .iter()
-                    .filter_map(|(id, item)| {
-                        (item.name.as_deref() == Some(expected_item_name)).then_some(id)
-                    })
-                    .collect_vec();
-                if item_id_candidates.len() != 2 {
-                    panic!(
-                        "Expected to find exactly two items with name {expected_item_name}, \
-                        but found these matching IDs: {item_id_candidates:?}"
-                    );
-                }
-                for item_id in item_id_candidates {
-                    let actual_items: Vec<_> = indexed_crate
-                        .publicly_importable_names(item_id)
-                        .into_iter()
-                        .map(|components| components.into_iter().join("::"))
-                        .collect();
-                    let deduplicated_actual_items: BTreeSet<_> =
-                        actual_items.iter().map(|x| x.as_str()).collect();
-                    assert_eq!(
-                        actual_items.len(),
-                        deduplicated_actual_items.len(),
-                        "duplicates found: {actual_items:?}"
-                    );
-                    assert_eq!(expected_importable_paths, &deduplicated_actual_items);
-                }
+                assert_duplicated_exported_items_match(test_crate, &expected_items);
+            } else {
+                use std::io::Write;
+                writeln!(
+                    std::io::stderr(),
+                    "skipping 'explicit_reexport_of_matching_names' test due to Rust {:?}",
+                    version_check::Version::read(),
+                )
+                .expect("write failed");
             }
         }
     }
