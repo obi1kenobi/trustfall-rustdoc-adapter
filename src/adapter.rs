@@ -1217,51 +1217,22 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
-    use std::io::Read;
-    use std::path::Path;
-
-    use rustdoc_types::Crate;
-    use serde::Deserialize;
-
-    #[derive(Deserialize)]
-    struct RustdocFormatVersion {
-        format_version: u32,
-    }
-
-    fn load_rustdoc_from_file(path: &Path) -> Crate {
-        // Parsing JSON after fully reading a file into memory is much faster than
-        // parsing directly from a file, even if buffered:
-        // https://github.com/serde-rs/json/issues/160
-        let mut s = String::new();
-        File::open(path)
-            .expect("couldn't open file")
-            .read_to_string(&mut s)
-            .expect("couldn't read file");
-
-        match serde_json::from_str(&s) {
-            Ok(c) => c,
-            Err(e) => {
-                let version = serde_json::from_str::<RustdocFormatVersion>(&s)
-                    .expect("unrecognized rustdoc format");
-
-                assert_ne!(rustdoc_types::FORMAT_VERSION, version.format_version, "The format versions matched but the file failed to parse. Perhaps it is corrupted?");
-                panic!(
-                    "Expected to find rustdoc v{} but got v{} instead.\n\nUnderlying error:\n{e}",
-                    rustdoc_types::FORMAT_VERSION,
-                    version.format_version
-                );
-            }
-        }
-    }
+    use anyhow::Context;
 
     #[test]
     fn rustdoc_json_format_version() {
-        let _version = rustdoc_types::FORMAT_VERSION;
-        let current_crate = load_rustdoc_from_file(Path::new(
-            &"./localdata/test_data/reexport/rustdoc.json".to_string(),
-        ));
+        let path = "./localdata/test_data/reexport/rustdoc.json";
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+            .expect("failed to load rustdoc");
 
-        assert_eq!(current_crate.format_version, rustdoc_types::FORMAT_VERSION);
+        let expected_version = rustdoc_types::FORMAT_VERSION;
+        let actual_version = crate::test_util::detect_rustdoc_format_version(&content)
+            .expect("unrecognized rustdoc format");
+
+        assert_eq!(
+            expected_version, actual_version,
+            "Expected to find rustdoc v{expected_version} but got v{actual_version} instead.",
+        );
     }
 }
