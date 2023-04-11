@@ -1110,6 +1110,42 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 _ => {
                     unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}")
                 }
+            }
+            "Trait" => match edge_name.as_ref() {
+                "method" => {
+                    let current_crate = self.current_crate;
+                    let previous_crate = self.previous_crate;
+                    resolve_neighbors_with(contexts, move |vertex| {
+                        let origin = vertex.origin;
+                        let item_index = match origin {
+                            Origin::CurrentCrate => &current_crate.inner.index,
+                            Origin::PreviousCrate => {
+                                &previous_crate
+                                    .expect("no previous crate provided")
+                                    .inner
+                                    .index
+                            }
+                        };
+
+                        let trait_vertex = vertex.as_trait().expect("not a Trait vertex");
+                        Box::new(trait_vertex.items.iter().filter_map(move |item_id| {
+                            let next_item = &item_index.get(item_id);
+                            if let Some(next_item) = next_item {
+                                match &next_item.inner {
+                                    rustdoc_types::ItemEnum::Function(..) => {
+                                        Some(origin.make_item_vertex(next_item))
+                                    }
+                                    _ => None,
+                                }
+                            } else {
+                                None
+                            }
+                        }))
+                    })
+                }
+                _ => {
+                    unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}")
+                }
             },
             "ImplementedTrait" => match edge_name.as_ref() {
                 "trait" => resolve_neighbors_with(contexts, move |vertex| {
