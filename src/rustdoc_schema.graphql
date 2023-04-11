@@ -267,7 +267,7 @@ type StructVariant implements Item & Variant {
   # edges from Item
   span: Span
   attribute: [Attribute!]
-  
+
   # edges from Variant
   field: [StructField!]
 }
@@ -407,6 +407,12 @@ type Trait implements Item & Importable {
   # edges from Importable
   importable_path: [ImportablePath!]
   canonical_path: Path
+
+  # own edges
+  """
+  Methods defined in this trait.
+  """
+  method: [Method!]
 }
 
 """
