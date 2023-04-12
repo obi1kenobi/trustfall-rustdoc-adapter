@@ -1110,7 +1110,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 _ => {
                     unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}")
                 }
-            }
+            },
             "Trait" => match edge_name.as_ref() {
                 "method" => {
                     let current_crate = self.current_crate;
