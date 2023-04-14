@@ -7,14 +7,17 @@ use rustdoc_types::{
 use trustfall::{
     provider::{
         accessor_property, field_property, resolve_coercion_with, resolve_neighbors_with,
-        resolve_property_with, Adapter, CandidateValue, ContextIterator, ContextOutcomeIterator, EdgeParameters,
-        ResolveEdgeInfo, ResolveInfo, Typename, VertexIterator, VertexInfo,
+        resolve_property_with, Adapter, CandidateValue, ContextIterator, ContextOutcomeIterator,
+        EdgeParameters, ResolveEdgeInfo, ResolveInfo, Typename, VertexInfo, VertexIterator,
     },
     FieldValue, Schema,
 };
 
-use crate::attributes::{Attribute, AttributeMetaItem};
 use crate::indexed_crate::IndexedCrate;
+use crate::{
+    attributes::{Attribute, AttributeMetaItem},
+    item_optimization::resolve_crate_items,
+};
 
 #[non_exhaustive]
 pub struct RustdocAdapter<'a> {
@@ -46,49 +49,52 @@ pub enum Origin {
 }
 
 impl Origin {
-    fn make_item_vertex<'a>(&self, item: &'a Item) -> Vertex<'a> {
+    pub(crate) fn make_item_vertex<'a>(&self, item: &'a Item) -> Vertex<'a> {
         Vertex {
             origin: *self,
             kind: item.into(),
         }
     }
 
-    fn make_span_vertex<'a>(&self, span: &'a Span) -> Vertex<'a> {
+    pub(crate) fn make_span_vertex<'a>(&self, span: &'a Span) -> Vertex<'a> {
         Vertex {
             origin: *self,
             kind: span.into(),
         }
     }
 
-    fn make_path_vertex<'a>(&self, path: &'a [String]) -> Vertex<'a> {
+    pub(crate) fn make_path_vertex<'a>(&self, path: &'a [String]) -> Vertex<'a> {
         Vertex {
             origin: *self,
             kind: VertexKind::Path(path),
         }
     }
 
-    fn make_importable_path_vertex<'a>(&self, importable_path: Vec<&'a str>) -> Vertex<'a> {
+    pub(crate) fn make_importable_path_vertex<'a>(
+        &self,
+        importable_path: Vec<&'a str>,
+    ) -> Vertex<'a> {
         Vertex {
             origin: *self,
             kind: VertexKind::ImportablePath(importable_path),
         }
     }
 
-    fn make_raw_type_vertex<'a>(&self, raw_type: &'a rustdoc_types::Type) -> Vertex<'a> {
+    pub(crate) fn make_raw_type_vertex<'a>(&self, raw_type: &'a rustdoc_types::Type) -> Vertex<'a> {
         Vertex {
             origin: *self,
             kind: VertexKind::RawType(raw_type),
         }
     }
 
-    fn make_attribute_vertex<'a>(&self, attr: Attribute<'a>) -> Vertex<'a> {
+    pub(crate) fn make_attribute_vertex<'a>(&self, attr: Attribute<'a>) -> Vertex<'a> {
         Vertex {
             origin: *self,
             kind: VertexKind::Attribute(attr),
         }
     }
 
-    fn make_attribute_meta_item_vertex<'a>(
+    pub(crate) fn make_attribute_meta_item_vertex<'a>(
         &self,
         meta_item: Rc<AttributeMetaItem<'a>>,
     ) -> Vertex<'a> {
@@ -98,7 +104,7 @@ impl Origin {
         }
     }
 
-    fn make_implemented_trait_vertex<'a>(
+    pub(crate) fn make_implemented_trait_vertex<'a>(
         &self,
         path: &'a rustdoc_types::Path,
         trait_def: &'a Item,
@@ -109,7 +115,7 @@ impl Origin {
         }
     }
 
-    fn make_function_parameter_vertex<'a>(&self, name: &'a str) -> Vertex<'a> {
+    pub(crate) fn make_function_parameter_vertex<'a>(&self, name: &'a str) -> Vertex<'a> {
         Vertex {
             origin: *self,
             kind: VertexKind::FunctionParameter(name),
@@ -120,7 +126,7 @@ impl Origin {
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct Vertex<'a> {
-    origin: Origin,
+    pub(crate) origin: Origin,
     kind: VertexKind<'a>,
 }
 
@@ -187,130 +193,130 @@ impl<'a> Vertex<'a> {
         }
     }
 
-    fn as_crate_diff(&self) -> Option<(&'a IndexedCrate<'a>, &'a IndexedCrate<'a>)> {
+    pub(crate) fn as_crate_diff(&self) -> Option<(&'a IndexedCrate<'a>, &'a IndexedCrate<'a>)> {
         match &self.kind {
             VertexKind::CrateDiff(tuple) => Some(*tuple),
             _ => None,
         }
     }
 
-    fn as_indexed_crate(&self) -> Option<&'a IndexedCrate<'a>> {
+    pub(crate) fn as_indexed_crate(&self) -> Option<&'a IndexedCrate<'a>> {
         match self.kind {
             VertexKind::Crate(c) => Some(c),
             _ => None,
         }
     }
 
-    fn as_crate(&self) -> Option<&'a Crate> {
+    pub(crate) fn as_crate(&self) -> Option<&'a Crate> {
         self.as_indexed_crate().map(|c| c.inner)
     }
 
-    fn as_item(&self) -> Option<&'a Item> {
+    pub(crate) fn as_item(&self) -> Option<&'a Item> {
         match self.kind {
             VertexKind::Item(item) => Some(item),
             _ => None,
         }
     }
 
-    fn as_struct(&self) -> Option<&'a Struct> {
+    pub(crate) fn as_struct(&self) -> Option<&'a Struct> {
         self.as_item().and_then(|item| match &item.inner {
             rustdoc_types::ItemEnum::Struct(s) => Some(s),
             _ => None,
         })
     }
 
-    fn as_struct_field(&self) -> Option<&'a Type> {
+    pub(crate) fn as_struct_field(&self) -> Option<&'a Type> {
         self.as_item().and_then(|item| match &item.inner {
             rustdoc_types::ItemEnum::StructField(s) => Some(s),
             _ => None,
         })
     }
 
-    fn as_span(&self) -> Option<&'a Span> {
+    pub(crate) fn as_span(&self) -> Option<&'a Span> {
         match self.kind {
             VertexKind::Span(s) => Some(s),
             _ => None,
         }
     }
 
-    fn as_enum(&self) -> Option<&'a Enum> {
+    pub(crate) fn as_enum(&self) -> Option<&'a Enum> {
         self.as_item().and_then(|item| match &item.inner {
             rustdoc_types::ItemEnum::Enum(e) => Some(e),
             _ => None,
         })
     }
 
-    fn as_trait(&self) -> Option<&'a Trait> {
+    pub(crate) fn as_trait(&self) -> Option<&'a Trait> {
         self.as_item().and_then(|item| match &item.inner {
             rustdoc_types::ItemEnum::Trait(t) => Some(t),
             _ => None,
         })
     }
 
-    fn as_variant(&self) -> Option<&'a Variant> {
+    pub(crate) fn as_variant(&self) -> Option<&'a Variant> {
         self.as_item().and_then(|item| match &item.inner {
             rustdoc_types::ItemEnum::Variant(v) => Some(v),
             _ => None,
         })
     }
 
-    fn as_path(&self) -> Option<&'a [String]> {
+    pub(crate) fn as_path(&self) -> Option<&'a [String]> {
         match &self.kind {
             VertexKind::Path(path) => Some(*path),
             _ => None,
         }
     }
 
-    fn as_importable_path(&self) -> Option<&'_ Vec<&'a str>> {
+    pub(crate) fn as_importable_path(&self) -> Option<&'_ Vec<&'a str>> {
         match &self.kind {
             VertexKind::ImportablePath(path) => Some(path),
             _ => None,
         }
     }
 
-    fn as_function(&self) -> Option<&'a Function> {
+    pub(crate) fn as_function(&self) -> Option<&'a Function> {
         self.as_item().and_then(|item| match &item.inner {
             rustdoc_types::ItemEnum::Function(func) => Some(func),
             _ => None,
         })
     }
 
-    fn as_function_parameter(&self) -> Option<&'a str> {
+    pub(crate) fn as_function_parameter(&self) -> Option<&'a str> {
         match &self.kind {
             VertexKind::FunctionParameter(name) => Some(name),
             _ => None,
         }
     }
 
-    fn as_impl(&self) -> Option<&'a Impl> {
+    pub(crate) fn as_impl(&self) -> Option<&'a Impl> {
         self.as_item().and_then(|item| match &item.inner {
             rustdoc_types::ItemEnum::Impl(x) => Some(x),
             _ => None,
         })
     }
 
-    fn as_attribute(&self) -> Option<&'_ Attribute<'a>> {
+    pub(crate) fn as_attribute(&self) -> Option<&'_ Attribute<'a>> {
         match &self.kind {
             VertexKind::Attribute(attr) => Some(attr),
             _ => None,
         }
     }
 
-    fn as_attribute_meta_item(&self) -> Option<&'_ AttributeMetaItem<'a>> {
+    pub(crate) fn as_attribute_meta_item(&self) -> Option<&'_ AttributeMetaItem<'a>> {
         match &self.kind {
             VertexKind::AttributeMetaItem(meta_item) => Some(meta_item),
             _ => None,
         }
     }
 
-    fn as_raw_type(&self) -> Option<&'a rustdoc_types::Type> {
+    pub(crate) fn as_raw_type(&self) -> Option<&'a rustdoc_types::Type> {
         match &self.kind {
             VertexKind::RawType(ty) => Some(*ty),
             _ => None,
         }
     }
 
-    fn as_implemented_trait(&self) -> Option<(&'a rustdoc_types::Path, &'a Item)> {
+    pub(crate) fn as_implemented_trait(&self) -> Option<(&'a rustdoc_types::Path, &'a Item)> {
         match &self.kind {
             VertexKind::ImplementedTrait(path, trait_item) => Some((*path, *trait_item)),
             _ => None,
@@ -714,114 +720,10 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}")
                 }
             },
-            "Crate" => {
-                match edge_name.as_ref() {
-                    "item" => {
-                        // "item" => resolve_neighbors_with(contexts, |vertex| {
-                        // let origin = vertex.origin;
-                        // let crate_vertex =
-                        //     vertex.as_indexed_crate().expect("vertex was not a Crate");
-
-                        if let Some(resolver) = resolve_info
-                            .destination()
-                            .first_edge("importable_path")
-                            .as_ref()
-                            .and_then(|x| x.destination().dynamically_known_property("path"))
-                        {
-                            // `first_edge("importable_path")` is *technically wrong* here,
-                            // but not in a way that any of our lints can notice.
-                            // If the edge were marked `@optional` but contained a filter,
-                            // the filter would discard non-matching result sets entirely
-                            // but the logic here would make it look like the edge didn't exist
-                            // in the first place.
-                            //
-                            // No lints include `importable_path @optional`.
-                            // Use of `@fold` is not affected.
-                            //
-                            // TODO: fix this upstream, `dynamically_known_property()` should return `None` here.
-                            Box::new(resolver.resolve(self, contexts).map(move |(ctx, candidates)| {
-                                let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> = match ctx.active_vertex() {
-                                    None => Box::new(std::iter::empty()),
-                                    Some(vertex) => {
-                                        let origin = vertex.origin;
-                                        let crate_vertex = vertex
-                                            .as_indexed_crate()
-                                            .expect("vertex was not a Crate");
-                                        match candidates {
-                                            CandidateValue::Impossible => Box::new(std::iter::empty()),
-                                            CandidateValue::Single(value) => {
-                                                let path_components: Vec<&str> = value.as_slice().expect("ImportablePath.path was not a list").iter().map(|x| x.as_str().unwrap()).collect();
-                                                if let Some(items) = crate_vertex.imports_index.as_ref().unwrap().get(&path_components).cloned() {
-                                                    Box::new(items.into_iter().filter(|item| {
-                                                        // Filter out item types that are not currently supported.
-                                                        matches!(
-                                                            item.inner,
-                                                            rustdoc_types::ItemEnum::Struct(..)
-                                                                | rustdoc_types::ItemEnum::StructField(
-                                                                    ..
-                                                                )
-                                                                | rustdoc_types::ItemEnum::Enum(..)
-                                                                | rustdoc_types::ItemEnum::Variant(..)
-                                                                | rustdoc_types::ItemEnum::Function(..)
-                                                                | rustdoc_types::ItemEnum::Impl(..)
-                                                                | rustdoc_types::ItemEnum::Trait(..)
-                                                        )
-                                                    }).map(move |value| origin.make_item_vertex(value)))
-                                                } else {
-                                                    Box::new(std::iter::empty())
-                                                }
-                                            },
-                                            _ => todo!(),
-                                        }
-                                    }
-                                };
-
-                                (ctx, neighbors)
-                            }))
-                        } else {
-                            Box::new(contexts.map(move |ctx| {
-                                let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
-                                    match ctx.active_vertex() {
-                                        None => Box::new(std::iter::empty()),
-                                        Some(token) => {
-                                            let origin = token.origin;
-                                            let crate_token = token
-                                                .as_indexed_crate()
-                                                .expect("token was not a Crate");
-
-                                            let iter = crate_token
-                                                .inner
-                                                .index
-                                                .values()
-                                                .filter(|item| {
-                                                    // Filter out item types that are not currently supported.
-                                                    matches!(
-                                                        item.inner,
-                                                        rustdoc_types::ItemEnum::Struct(..)
-                                                            | rustdoc_types::ItemEnum::StructField(
-                                                                ..
-                                                            )
-                                                            | rustdoc_types::ItemEnum::Enum(..)
-                                                            | rustdoc_types::ItemEnum::Variant(..)
-                                                            | rustdoc_types::ItemEnum::Function(..)
-                                                            | rustdoc_types::ItemEnum::Impl(..)
-                                                            | rustdoc_types::ItemEnum::Trait(..)
-                                                    )
-                                                })
-                                                .map(move |value| origin.make_item_vertex(value));
-                                            Box::new(iter)
-                                        }
-                                    };
-
-                                (ctx, neighbors)
-                            }))
-                        }
-                    }
-                    _ => unreachable!(
-                        "project_neighbors {type_name} {edge_name} {parameters:?}"
-                    ),
-                }
-            }
+            "Crate" => match edge_name.as_ref() {
+                "item" => resolve_crate_items(self, contexts, resolve_info),
+                _ => unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}"),
+            },
             "Importable" | "ImplOwner" | "Struct" | "Enum" | "Trait" | "Function"
                 if matches!(edge_name.as_ref(), "importable_path" | "canonical_path") =>
             {
@@ -1203,7 +1105,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                                             Box::new(
                                                                 method_ids.clone().into_iter().map(
                                                                     move |(_, item)| {
-                                                                        origin.make_item_vertex(item)
+                                                                        origin
+                                                                            .make_item_vertex(item)
                                                                     },
                                                                 ),
                                                             )
