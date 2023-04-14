@@ -498,18 +498,33 @@ fn resolve_function_like_property<'a>(
     property_name: &str,
 ) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
     match property_name {
-        "const" => resolve_property_with(
-            contexts,
-            field_property!(as_function, header, { header.const_.into() }),
-        ),
-        "async" => resolve_property_with(
-            contexts,
-            field_property!(as_function, header, { header.async_.into() }),
-        ),
-        "unsafe" => resolve_property_with(
-            contexts,
-            field_property!(as_function, header, { header.unsafe_.into() }),
-        ),
+        "const" => resolve_property_with(contexts, |vertex| {
+            let header = vertex.as_function().map(|f| &f.header).unwrap_or_else(|| {
+                vertex
+                    .as_method()
+                    .map(|m| &m.header)
+                    .expect("vertex was neither a Function nor a Method")
+            });
+            header.const_.into()
+        }),
+        "async" => resolve_property_with(contexts, |vertex| {
+            let header = vertex.as_function().map(|f| &f.header).unwrap_or_else(|| {
+                vertex
+                    .as_method()
+                    .map(|m| &m.header)
+                    .expect("vertex was neither a Function nor a Method")
+            });
+            header.async_.into()
+        }),
+        "unsafe" => resolve_property_with(contexts, |vertex| {
+            let header = vertex.as_function().map(|f| &f.header).unwrap_or_else(|| {
+                vertex
+                    .as_method()
+                    .map(|m| &m.header)
+                    .expect("vertex was neither a Function nor a Method")
+            });
+            header.unsafe_.into()
+        }),
         _ => unreachable!("FunctionLike property {property_name}"),
     }
 }
