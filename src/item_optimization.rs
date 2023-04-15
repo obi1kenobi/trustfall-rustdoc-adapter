@@ -34,21 +34,11 @@ pub(crate) fn resolve_crate_items<'a>(
                 resolve_items_by_importable_path(crate_vertex, origin, path_value.clone())
             });
         } else if let Some(dynamic_value) = neighbor_info.dynamically_known_property("path") {
-            return Box::new(dynamic_value.resolve(adapter, contexts).map(
-                move |(ctx, candidates)| {
-                    let neighbors: VertexIterator<'a, Vertex<'a>> =
-                        match ctx.active_vertex().as_ref() {
-                            None => Box::new(std::iter::empty()),
-                            Some(vertex) => {
-                                let crate_vertex =
-                                    vertex.as_indexed_crate().expect("vertex was not a Crate");
-                                let origin = vertex.origin;
-                                resolve_items_by_importable_path(crate_vertex, origin, candidates)
-                            }
-                        };
-                    (ctx, neighbors)
-                },
-            ));
+            return dynamic_value.resolve_with(adapter, contexts, |vertex, candidate| {
+                let crate_vertex = vertex.as_indexed_crate().expect("vertex was not a Crate");
+                let origin = vertex.origin;
+                resolve_items_by_importable_path(crate_vertex, origin, candidate)
+            });
         }
     }
 
