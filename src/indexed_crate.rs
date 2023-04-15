@@ -1,4 +1,7 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::{
+    borrow::Borrow,
+    collections::{BTreeSet, HashMap, HashSet},
+};
 
 use rustdoc_types::{Crate, GenericArgs, Id, Item, Typedef, Visibility};
 
@@ -15,7 +18,7 @@ pub struct IndexedCrate<'a> {
     pub(crate) visibility_forest: HashMap<&'a Id, Vec<&'a Id>>,
 
     // index: importable name (in any namespace) -> list of items under that name
-    pub(crate) imports_index: Option<HashMap<Vec<&'a str>, Vec<&'a Item>>>,
+    pub(crate) imports_index: Option<HashMap<ImportablePath<'a>, Vec<&'a Item>>>,
 
     // index: (item id, impl content name) -> list of (impl id, item by that name (e.g. function))
     #[allow(clippy::type_complexity)]
@@ -55,7 +58,7 @@ impl<'a> IndexedCrate<'a> {
             impl_index: None,
         };
 
-        let mut imports_index: HashMap<Vec<&str>, Vec<&Item>> =
+        let mut imports_index: HashMap<ImportablePath, Vec<&Item>> =
             HashMap::with_capacity(crate_.index.len());
         for item in crate_.index.values().filter_map(|item| {
             matches!(
@@ -71,7 +74,10 @@ impl<'a> IndexedCrate<'a> {
             .then_some(item)
         }) {
             for importable_path in value.publicly_importable_names(&item.id) {
-                imports_index.entry(importable_path).or_default().push(item);
+                imports_index
+                    .entry(ImportablePath::new(importable_path))
+                    .or_default()
+                    .push(item);
             }
         }
         let index_size = imports_index.len();
@@ -254,6 +260,23 @@ impl<'a> IndexedCrate<'a> {
                 );
             }
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct ImportablePath<'a> {
+    pub(crate) components: Vec<&'a str>,
+}
+
+impl<'a> ImportablePath<'a> {
+    fn new(components: Vec<&'a str>) -> Self {
+        Self { components }
+    }
+}
+
+impl<'a: 'b, 'b> Borrow<[&'b str]> for ImportablePath<'a> {
+    fn borrow(&self) -> &[&'b str] {
+        &self.components
     }
 }
 
