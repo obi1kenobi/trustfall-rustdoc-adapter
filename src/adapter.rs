@@ -1,8 +1,7 @@
 use std::{rc::Rc, sync::Arc};
 
 use rustdoc_types::{
-    Crate, Enum, Function, Id, Impl, Item, Path, Span, Struct, Trait, Type, Variant,
-    VariantKind,
+    Crate, Enum, Function, Id, Impl, Item, Path, Span, Struct, Trait, Type, Variant, VariantKind,
 };
 use trustfall::{
     provider::{
@@ -15,14 +14,15 @@ use trustfall::{
 
 use crate::{
     attributes::{Attribute, AttributeMetaItem},
+    indexed_crate::IndexedCrate,
     item_optimization::resolve_crate_items,
+    method_lookup_optimization::resolve_impl_methods,
 };
-use crate::{indexed_crate::IndexedCrate, method_lookup_optimization::resolve_methods_slow_path};
 
 #[non_exhaustive]
 pub struct RustdocAdapter<'a> {
-    current_crate: &'a IndexedCrate<'a>,
-    previous_crate: Option<&'a IndexedCrate<'a>>,
+    pub(crate) current_crate: &'a IndexedCrate<'a>,
+    pub(crate) previous_crate: Option<&'a IndexedCrate<'a>>,
 }
 
 impl<'a> RustdocAdapter<'a> {
@@ -1056,90 +1056,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             },
             "Impl" => {
                 match edge_name.as_ref() {
-                    "method" => {
-                        let current_crate = self.current_crate;
-                        let previous_crate = self.previous_crate;
-                        if let Some(resolver) = resolve_info
-                            .destination()
-                            .dynamically_known_property("name")
-                        {
-                            Box::new(resolver.resolve(self, contexts).map(
-                                move |(ctx, method_name)| {
-                                    let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> =
-                                        match ctx.active_vertex() {
-                                            None => Box::new(std::iter::empty()),
-                                            Some(vertex) => {
-                                                let origin = vertex.origin;
-                                                let impl_index = match origin {
-                                                    Origin::CurrentCrate => current_crate
-                                                        .impl_index
-                                                        .as_ref()
-                                                        .expect("no impl index present"),
-                                                    Origin::PreviousCrate => previous_crate
-                                                        .expect("no previous crate provided")
-                                                        .impl_index
-                                                        .as_ref()
-                                                        .expect("no impl index provided"),
-                                                };
-
-                                                let impl_vertex =
-                                                    vertex.as_impl().expect("not an Impl vertex");
-                                                let impl_owner_id = match &impl_vertex.for_ {
-                                                    Type::ResolvedPath(path) => &path.id,
-                                                    _ => unreachable!(
-                                                        "unexpected 'for_' value: {impl_vertex:?}"
-                                                    ),
-                                                };
-
-                                                match method_name {
-                                                    CandidateValue::Impossible => {
-                                                        Box::new(std::iter::empty())
-                                                    }
-                                                    CandidateValue::Single(value) => {
-                                                        let method_name = value
-                                                            .as_str()
-                                                            .expect("method name was not a string");
-                                                        if let Some(method_ids) = impl_index
-                                                            .get(&(impl_owner_id, method_name))
-                                                        {
-                                                            Box::new(
-                                                                method_ids.clone().into_iter().map(
-                                                                    move |(_, item)| {
-                                                                        origin
-                                                                            .make_item_vertex(item)
-                                                                    },
-                                                                ),
-                                                            )
-                                                        } else {
-                                                            Box::new(std::iter::empty())
-                                                        }
-                                                    }
-                                                    _ => todo!(),
-                                                }
-                                            }
-                                        };
-
-                                    (ctx, neighbors)
-                                },
-                            ))
-                        } else {
-                            resolve_neighbors_with(contexts, move |vertex| {
-                                let origin = vertex.origin;
-                                let item_index = match origin {
-                                    Origin::CurrentCrate => &current_crate.inner.index,
-                                    Origin::PreviousCrate => {
-                                        &previous_crate
-                                            .expect("no previous crate provided")
-                                            .inner
-                                            .index
-                                    }
-                                };
-
-                                let impl_vertex = vertex.as_impl().expect("not an Impl vertex");
-                                resolve_methods_slow_path(impl_vertex, origin, item_index)
-                            })
-                        }
-                    }
+                    "method" => resolve_impl_methods(self, contexts, resolve_info),
                     "implemented_trait" => {
                         let current_crate = self.current_crate;
                         let previous_crate = self.previous_crate;

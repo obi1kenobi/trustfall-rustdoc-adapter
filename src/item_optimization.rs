@@ -26,18 +26,22 @@ pub(crate) fn resolve_crate_items<'a>(
     {
         // Is the `path` value within that edge known, either statically or dynamically?
         // If so, we can use an index to look up a specific item directly.
-        if let Some(path_value) = neighbor_info.statically_known_property("path") {
+        //
+        // There's no advantage in our implementation between knowing values
+        // statically vs dynamically, so we check the dynamic case first since
+        // it might be more specific.
+        if let Some(dynamic_value) = neighbor_info.dynamically_known_property("path") {
+            return dynamic_value.resolve_with(adapter, contexts, |vertex, candidate| {
+                let crate_vertex = vertex.as_indexed_crate().expect("vertex was not a Crate");
+                let origin = vertex.origin;
+                resolve_items_by_importable_path(crate_vertex, origin, candidate)
+            });
+        } else if let Some(path_value) = neighbor_info.statically_known_property("path") {
             let path_value = path_value.cloned();
             return resolve_neighbors_with(contexts, move |vertex| {
                 let crate_vertex = vertex.as_indexed_crate().expect("vertex was not a Crate");
                 let origin = vertex.origin;
                 resolve_items_by_importable_path(crate_vertex, origin, path_value.clone())
-            });
-        } else if let Some(dynamic_value) = neighbor_info.dynamically_known_property("path") {
-            return dynamic_value.resolve_with(adapter, contexts, |vertex, candidate| {
-                let crate_vertex = vertex.as_indexed_crate().expect("vertex was not a Crate");
-                let origin = vertex.origin;
-                resolve_items_by_importable_path(crate_vertex, origin, candidate)
             });
         }
     }
