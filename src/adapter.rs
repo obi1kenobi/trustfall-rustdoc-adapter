@@ -1,7 +1,7 @@
-use std::{collections::BTreeSet, rc::Rc, sync::Arc};
+use std::{rc::Rc, sync::Arc};
 
 use rustdoc_types::{
-    Crate, Enum, Function, Id, Impl, Item, ItemEnum, Path, Span, Struct, Trait, Type, Variant,
+    Crate, Enum, Function, Id, Impl, Item, Path, Span, Struct, Trait, Type, Variant,
     VariantKind,
 };
 use trustfall::{
@@ -13,11 +13,11 @@ use trustfall::{
     FieldValue, Schema,
 };
 
-use crate::indexed_crate::IndexedCrate;
 use crate::{
     attributes::{Attribute, AttributeMetaItem},
     item_optimization::resolve_crate_items,
 };
+use crate::{indexed_crate::IndexedCrate, method_lookup_optimization::resolve_methods_slow_path};
 
 #[non_exhaustive]
 pub struct RustdocAdapter<'a> {
@@ -1123,64 +1123,21 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                                 },
                             ))
                         } else {
-                            Box::new(contexts.map(move |ctx| {
-                                let neighbors: Box<dyn Iterator<Item = Self::Vertex> + 'a> = match &ctx
-                                    .active_vertex()
-                                {
-                                    None => Box::new(std::iter::empty()),
-                                    Some(vertex) => {
-                                        let origin = vertex.origin;
-                                        let item_index = match origin {
-                                            Origin::CurrentCrate => &current_crate.inner.index,
-                                            Origin::PreviousCrate => {
-                                                &previous_crate.expect("no previous crate provided").inner.index
-                                            }
-                                        };
-
-                                        let impl_vertex = vertex.as_impl().expect("not an Impl vertex");
-                                        let provided_methods: Box<dyn Iterator<Item = &Id>> = if impl_vertex.provided_trait_methods.is_empty() {
-                                            Box::new(std::iter::empty())
-                                        } else {
-                                            let method_names: BTreeSet<&str> = impl_vertex.provided_trait_methods.iter().map(|x| x.as_str()).collect();
-
-                                            let trait_path = impl_vertex.trait_.as_ref().expect("no trait but provided_trait_methods was non-empty");
-                                            let trait_item = item_index.get(&trait_path.id);
-
-                                            if let Some(trait_item) = trait_item {
-                                                if let ItemEnum::Trait(trait_item) = &trait_item.inner {
-                                                    Box::new(trait_item.items.iter().filter(move |item_id| {
-                                                        let next_item = &item_index.get(item_id);
-                                                        if let Some(name) = next_item.and_then(|x| x.name.as_deref()) {
-                                                            method_names.contains(name)
-                                                        } else {
-                                                            false
-                                                        }
-                                                    }))
-                                                } else {
-                                                    unreachable!("found a non-trait type {trait_item:?}");
-                                                }
-                                            } else {
-                                                Box::new(std::iter::empty())
-                                            }
-                                        };
-                                        Box::new(provided_methods.chain(impl_vertex.items.iter()).filter_map(move |item_id| {
-                                            let next_item = &item_index.get(item_id);
-                                            if let Some(next_item) = next_item {
-                                                match &next_item.inner {
-                                                    rustdoc_types::ItemEnum::Function(..) => {
-                                                        Some(origin.make_item_vertex(next_item))
-                                                    }
-                                                    _ => None,
-                                                }
-                                            } else {
-                                                None
-                                            }
-                                        }))
+                            resolve_neighbors_with(contexts, move |vertex| {
+                                let origin = vertex.origin;
+                                let item_index = match origin {
+                                    Origin::CurrentCrate => &current_crate.inner.index,
+                                    Origin::PreviousCrate => {
+                                        &previous_crate
+                                            .expect("no previous crate provided")
+                                            .inner
+                                            .index
                                     }
                                 };
 
-                                (ctx, neighbors)
-                            }))
+                                let impl_vertex = vertex.as_impl().expect("not an Impl vertex");
+                                resolve_methods_slow_path(impl_vertex, origin, item_index)
+                            })
                         }
                     }
                     "implemented_trait" => {
