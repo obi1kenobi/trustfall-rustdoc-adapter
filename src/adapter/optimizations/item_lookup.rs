@@ -7,10 +7,9 @@ use trustfall::{
     FieldValue,
 };
 
-use crate::{
-    adapter::{Origin, Vertex},
-    IndexedCrate, RustdocAdapter,
-};
+use super::super::{origin::Origin, vertex::Vertex, RustdocAdapter};
+
+use crate::IndexedCrate;
 
 pub(crate) fn resolve_crate_items<'a>(
     adapter: &RustdocAdapter<'a>,

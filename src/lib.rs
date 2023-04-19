@@ -1,9 +1,7 @@
 mod adapter;
 mod attributes;
 mod indexed_crate;
-mod item_optimization;
 
-mod method_lookup_optimization;
 #[cfg(test)]
 pub(crate) mod test_util;
 
