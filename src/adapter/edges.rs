@@ -1,13 +1,12 @@
-use std::collections::BTreeSet;
-
-use rustdoc_types::{Id, ItemEnum, Variant};
+use rustdoc_types::{Id, Variant};
 use trustfall::provider::{
-    resolve_neighbors_with, ContextIterator, ContextOutcomeIterator, VertexIterator,
+    resolve_neighbors_with, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
+    VertexIterator,
 };
 
 use crate::{attributes::Attribute, IndexedCrate};
 
-use super::{origin::Origin, vertex::Vertex};
+use super::{optimizations, origin::Origin, vertex::Vertex, RustdocAdapter};
 
 pub(super) fn resolve_crate_diff_edge<'a>(
     contexts: ContextIterator<'a, Vertex<'a>>,
@@ -29,34 +28,13 @@ pub(super) fn resolve_crate_diff_edge<'a>(
 }
 
 pub(super) fn resolve_crate_edge<'a>(
+    adapter: &RustdocAdapter<'a>,
     contexts: ContextIterator<'a, Vertex<'a>>,
     edge_name: &str,
+    resolve_info: &ResolveEdgeInfo,
 ) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
-        "item" => resolve_neighbors_with(contexts, |vertex| {
-            let origin = vertex.origin;
-            let crate_vertex = vertex.as_indexed_crate().expect("vertex was not a Crate");
-
-            let iter = crate_vertex
-                .inner
-                .index
-                .values()
-                .filter(|item| {
-                    // Filter out item types that are not currently supported.
-                    matches!(
-                        item.inner,
-                        rustdoc_types::ItemEnum::Struct(..)
-                            | rustdoc_types::ItemEnum::StructField(..)
-                            | rustdoc_types::ItemEnum::Enum(..)
-                            | rustdoc_types::ItemEnum::Variant(..)
-                            | rustdoc_types::ItemEnum::Function(..)
-                            | rustdoc_types::ItemEnum::Impl(..)
-                            | rustdoc_types::ItemEnum::Trait(..)
-                    )
-                })
-                .map(move |value| origin.make_item_vertex(value));
-            Box::new(iter)
-        }),
+        "item" => optimizations::item_lookup::resolve_crate_items(adapter, contexts, resolve_info),
         _ => unreachable!("resolve_crate_edge {edge_name}"),
     }
 }
@@ -136,50 +114,18 @@ pub(super) fn resolve_item_edge<'a>(
 }
 
 pub(super) fn resolve_impl_owner_edge<'a>(
+    adapter: &RustdocAdapter<'a>,
     contexts: ContextIterator<'a, Vertex<'a>>,
     edge_name: &str,
-    current_crate: &'a IndexedCrate<'a>,
-    previous_crate: Option<&'a IndexedCrate<'a>>,
+    resolve_info: &ResolveEdgeInfo,
 ) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
-        "impl" | "inherent_impl" => {
-            let inherent_impls_only = edge_name == "inherent_impl";
-            resolve_neighbors_with(contexts, move |vertex| {
-                let origin = vertex.origin;
-                let item_index = match origin {
-                    Origin::CurrentCrate => &current_crate.inner.index,
-                    Origin::PreviousCrate => {
-                        &previous_crate
-                            .expect("no previous crate provided")
-                            .inner
-                            .index
-                    }
-                };
-
-                // Get the IDs of all the impl blocks.
-                // Relies on the fact that only structs and enums can have impls,
-                // so we know that the vertex must represent either a struct or an enum.
-                let impl_ids = vertex
-                    .as_struct()
-                    .map(|s| &s.impls)
-                    .or_else(|| vertex.as_enum().map(|e| &e.impls))
-                    .expect("vertex was neither a struct nor an enum");
-
-                Box::new(impl_ids.iter().filter_map(move |item_id| {
-                    let next_item = item_index.get(item_id);
-                    next_item.and_then(|next_item| match &next_item.inner {
-                        rustdoc_types::ItemEnum::Impl(imp) => {
-                            if !inherent_impls_only || imp.trait_.is_none() {
-                                Some(origin.make_item_vertex(next_item))
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    })
-                }))
-            })
-        }
+        "impl" | "inherent_impl" => optimizations::impl_lookup::resolve_owner_impl(
+            adapter,
+            contexts,
+            edge_name,
+            resolve_info,
+        ),
         _ => unreachable!("resolve_impl_owner_edge {edge_name}"),
     }
 }
@@ -329,75 +275,16 @@ pub(super) fn resolve_struct_field_edge<'a>(
 }
 
 pub(super) fn resolve_impl_edge<'a>(
+    adapter: &RustdocAdapter<'a>,
     contexts: ContextIterator<'a, Vertex<'a>>,
     edge_name: &str,
-    current_crate: &'a IndexedCrate<'a>,
-    previous_crate: Option<&'a IndexedCrate<'a>>,
+    resolve_info: &ResolveEdgeInfo,
 ) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+    let current_crate = adapter.current_crate;
+    let previous_crate = adapter.previous_crate;
     match edge_name {
         "method" => {
-            resolve_neighbors_with(contexts, move |vertex| {
-                let origin = vertex.origin;
-                let item_index = match origin {
-                    Origin::CurrentCrate => &current_crate.inner.index,
-                    Origin::PreviousCrate => {
-                        &previous_crate
-                            .expect("no previous crate provided")
-                            .inner
-                            .index
-                    }
-                };
-
-                let impl_vertex = vertex.as_impl().expect("not an Impl vertex");
-                let provided_methods: Box<dyn Iterator<Item = &Id>> =
-                    if impl_vertex.provided_trait_methods.is_empty() {
-                        Box::new(std::iter::empty())
-                    } else {
-                        let method_names: BTreeSet<&str> = impl_vertex
-                            .provided_trait_methods
-                            .iter()
-                            .map(|x| x.as_str())
-                            .collect();
-
-                        let trait_path = impl_vertex
-                            .trait_
-                            .as_ref()
-                            .expect("no trait but provided_trait_methods was non-empty");
-                        let trait_item = item_index.get(&trait_path.id);
-
-                        if let Some(trait_item) = trait_item {
-                            if let ItemEnum::Trait(trait_item) = &trait_item.inner {
-                                Box::new(trait_item.items.iter().filter(move |item_id| {
-                                    let next_item = &item_index.get(item_id);
-                                    if let Some(name) = next_item.and_then(|x| x.name.as_deref()) {
-                                        method_names.contains(name)
-                                    } else {
-                                        false
-                                    }
-                                }))
-                            } else {
-                                unreachable!("found a non-trait type {trait_item:?}");
-                            }
-                        } else {
-                            Box::new(std::iter::empty())
-                        }
-                    };
-                Box::new(provided_methods.chain(impl_vertex.items.iter()).filter_map(
-                    move |item_id| {
-                        let next_item = &item_index.get(item_id);
-                        if let Some(next_item) = next_item {
-                            match &next_item.inner {
-                                rustdoc_types::ItemEnum::Function(..) => {
-                                    Some(origin.make_item_vertex(next_item))
-                                }
-                                _ => None,
-                            }
-                        } else {
-                            None
-                        }
-                    },
-                ))
-            })
+            optimizations::method_lookup::resolve_impl_methods(adapter, contexts, resolve_info)
         }
         "implemented_trait" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;

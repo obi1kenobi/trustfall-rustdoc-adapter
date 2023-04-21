@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    borrow::Borrow,
+    collections::{BTreeSet, HashMap, HashSet},
+};
 
 use rustdoc_types::{Crate, GenericArgs, Id, Item, Typedef, Visibility};
 
@@ -11,8 +14,14 @@ use rustdoc_types::{Crate, GenericArgs, Id, Item, Typedef, Visibility};
 pub struct IndexedCrate<'a> {
     pub(crate) inner: &'a Crate,
 
-    // For an Id, give the list of item Ids under which it is publicly visible.
+    /// For an Id, give the list of item Ids under which it is publicly visible.
     pub(crate) visibility_forest: HashMap<&'a Id, Vec<&'a Id>>,
+
+    /// index: importable name (in any namespace) -> list of items under that name
+    pub(crate) imports_index: Option<HashMap<ImportablePath<'a>, Vec<&'a Item>>>,
+
+    /// index: impl owner + impl'd item name -> list of (impl itself, the named item))
+    pub(crate) impl_index: Option<HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>>,
 
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
     /// even if they are implemented by a type in that crate. This also includes
@@ -32,7 +41,7 @@ pub struct IndexedCrate<'a> {
 
 impl<'a> IndexedCrate<'a> {
     pub fn new(crate_: &'a Crate) -> Self {
-        Self {
+        let mut value = Self {
             inner: crate_,
             visibility_forest: compute_parent_ids_for_public_items(crate_)
                 .into_iter()
@@ -44,7 +53,107 @@ impl<'a> IndexedCrate<'a> {
                 })
                 .collect(),
             manually_inlined_builtin_traits: create_manually_inlined_builtin_traits(crate_),
+            imports_index: None,
+            impl_index: None,
+        };
+
+        let mut imports_index: HashMap<ImportablePath, Vec<&Item>> =
+            HashMap::with_capacity(crate_.index.len());
+        for item in crate_.index.values().filter_map(|item| {
+            matches!(
+                item.inner,
+                rustdoc_types::ItemEnum::Struct(..)
+                    | rustdoc_types::ItemEnum::StructField(..)
+                    | rustdoc_types::ItemEnum::Enum(..)
+                    | rustdoc_types::ItemEnum::Variant(..)
+                    | rustdoc_types::ItemEnum::Function(..)
+                    | rustdoc_types::ItemEnum::Impl(..)
+                    | rustdoc_types::ItemEnum::Trait(..)
+            )
+            .then_some(item)
+        }) {
+            for importable_path in value.publicly_importable_names(&item.id) {
+                imports_index
+                    .entry(ImportablePath::new(importable_path))
+                    .or_default()
+                    .push(item);
+            }
         }
+        let index_size = imports_index.len();
+        value.imports_index = Some(imports_index);
+
+        let mut impl_index: HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>> =
+            HashMap::with_capacity(index_size);
+        for (id, impl_items) in crate_.index.iter().filter_map(|(id, item)| {
+            let impls = match &item.inner {
+                rustdoc_types::ItemEnum::Struct(s) => &s.impls,
+                rustdoc_types::ItemEnum::Enum(e) => &e.impls,
+                rustdoc_types::ItemEnum::Union(u) => &u.impls,
+                _ => return None,
+            };
+
+            let impl_items = impls.iter().filter_map(|impl_id| crate_.index.get(impl_id));
+
+            Some((id, impl_items))
+        }) {
+            for impl_item in impl_items {
+                let impl_inner = match &impl_item.inner {
+                    rustdoc_types::ItemEnum::Impl(impl_inner) => impl_inner,
+                    _ => unreachable!("expected impl but got another item type: {impl_item:?}"),
+                };
+                let trait_provided_methods: BTreeSet<_> = impl_inner
+                    .provided_trait_methods
+                    .iter()
+                    .map(|x| x.as_str())
+                    .collect();
+                if let Some(trait_item) = impl_inner
+                    .trait_
+                    .as_ref()
+                    .and_then(|trait_path| crate_.index.get(&trait_path.id))
+                {
+                    if let rustdoc_types::ItemEnum::Trait(trait_item) = &trait_item.inner {
+                        for provided_item in trait_item
+                            .items
+                            .iter()
+                            .filter_map(|id| crate_.index.get(id))
+                            .filter(|item| {
+                                item.name
+                                    .as_deref()
+                                    .map(|name| trait_provided_methods.contains(name))
+                                    .unwrap_or_default()
+                            })
+                        {
+                            impl_index
+                                .entry(ImplEntry::new(
+                                    id,
+                                    provided_item
+                                        .name
+                                        .as_deref()
+                                        .expect("item should have had a name"),
+                                ))
+                                .or_default()
+                                .push((impl_item, provided_item));
+                        }
+                    }
+                }
+
+                for contained_item in impl_inner
+                    .items
+                    .iter()
+                    .filter_map(|item_id| crate_.index.get(item_id))
+                {
+                    if let Some(contained_item_name) = contained_item.name.as_deref() {
+                        impl_index
+                            .entry(ImplEntry::new(id, contained_item_name))
+                            .or_default()
+                            .push((impl_item, contained_item));
+                    }
+                }
+            }
+        }
+        value.impl_index = Some(impl_index);
+
+        value
     }
 
     /// Return all the paths (as Vec<&'a str> of component names, joinable with "::")
@@ -151,6 +260,60 @@ impl<'a> IndexedCrate<'a> {
                 );
             }
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct ImportablePath<'a> {
+    pub(crate) components: Vec<&'a str>,
+}
+
+impl<'a> ImportablePath<'a> {
+    fn new(components: Vec<&'a str>) -> Self {
+        Self { components }
+    }
+}
+
+impl<'a: 'b, 'b> Borrow<[&'b str]> for ImportablePath<'a> {
+    fn borrow(&self) -> &[&'b str] {
+        &self.components
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct ImplEntry<'a> {
+    /// Tuple of:
+    /// - the Id of the struct/enum/union that owns the item,
+    /// - the name of the item in the owner's `impl` block.
+    ///
+    /// Stored as a tuple to make the `Borrow` impl work.
+    pub(crate) data: (&'a Id, &'a str),
+}
+
+impl<'a> ImplEntry<'a> {
+    #[inline]
+    fn new(owner_id: &'a Id, item_name: &'a str) -> Self {
+        Self {
+            data: (owner_id, item_name),
+        }
+    }
+
+    #[allow(dead_code)]
+    #[inline]
+    pub(crate) fn owner_id(&self) -> &'a Id {
+        self.data.0
+    }
+
+    #[allow(dead_code)]
+    #[inline]
+    pub(crate) fn item_name(&self) -> &'a str {
+        self.data.1
+    }
+}
+
+impl<'a: 'b, 'b> Borrow<(&'b Id, &'b str)> for ImplEntry<'a> {
+    fn borrow(&self) -> &(&'b Id, &'b str) {
+        &(self.data)
     }
 }
 
