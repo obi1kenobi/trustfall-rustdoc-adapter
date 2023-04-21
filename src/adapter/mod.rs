@@ -16,6 +16,7 @@ use self::{
 };
 
 mod edges;
+mod optimizations;
 mod origin;
 mod properties;
 mod vertex;
@@ -140,11 +141,11 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         type_name: &Arc<str>,
         edge_name: &Arc<str>,
         parameters: &EdgeParameters,
-        _resolve_info: &ResolveEdgeInfo,
+        resolve_info: &ResolveEdgeInfo,
     ) -> ContextOutcomeIterator<'a, Self::Vertex, VertexIterator<'a, Self::Vertex>> {
         match type_name.as_ref() {
             "CrateDiff" => edges::resolve_crate_diff_edge(contexts, edge_name),
-            "Crate" => edges::resolve_crate_edge(contexts, edge_name),
+            "Crate" => edges::resolve_crate_edge(self, contexts, edge_name, resolve_info),
             "Importable" | "ImplOwner" | "Struct" | "Enum" | "Trait" | "Function"
                 if matches!(edge_name.as_ref(), "importable_path" | "canonical_path") =>
             {
@@ -165,12 +166,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             "ImplOwner" | "Struct" | "Enum"
                 if matches!(edge_name.as_ref(), "impl" | "inherent_impl") =>
             {
-                edges::resolve_impl_owner_edge(
-                    contexts,
-                    edge_name,
-                    self.current_crate,
-                    self.previous_crate,
-                )
+                edges::resolve_impl_owner_edge(self, contexts, edge_name, resolve_info)
             }
             "Function" | "Method" | "FunctionLike" if matches!(edge_name.as_ref(), "parameter") => {
                 edges::resolve_function_like_edge(contexts, edge_name)
@@ -196,12 +192,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 self.previous_crate,
             ),
             "StructField" => edges::resolve_struct_field_edge(contexts, edge_name),
-            "Impl" => edges::resolve_impl_edge(
-                contexts,
-                edge_name,
-                self.current_crate,
-                self.previous_crate,
-            ),
+            "Impl" => edges::resolve_impl_edge(self, contexts, edge_name, resolve_info),
             "Trait" => edges::resolve_trait_edge(
                 contexts,
                 edge_name,
