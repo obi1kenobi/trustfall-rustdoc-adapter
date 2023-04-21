@@ -30,11 +30,11 @@ pub(crate) fn resolve_impl_methods<'a>(
     // There's no advantage in our implementation between knowing values
     // statically vs dynamically, so we check the dynamic case first since
     // it might be more specific.
-    if let Some(resolver) = neighbor_info.dynamically_known_property("name") {
+    if let Some(resolver) = neighbor_info.dynamically_required_property("name") {
         resolver.resolve_with(adapter, contexts, move |vertex, candidate| {
             resolve_method_from_candidate_value(current_crate, previous_crate, vertex, candidate)
         })
-    } else if let Some(candidate) = neighbor_info.statically_known_property("name") {
+    } else if let Some(candidate) = neighbor_info.statically_required_property("name") {
         let candidate = candidate.cloned();
         return resolve_neighbors_with(contexts, move |vertex| {
             resolve_method_from_candidate_value(

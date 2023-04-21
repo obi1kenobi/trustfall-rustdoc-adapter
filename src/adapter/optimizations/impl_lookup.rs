@@ -24,7 +24,7 @@ pub(crate) fn resolve_owner_impl<'a>(
         .destination()
         .first_edge("method")
         .as_ref()
-        .and_then(|y| y.destination().dynamically_known_property("name"))
+        .and_then(|y| y.destination().dynamically_required_property("name"))
     {
         Box::new(
             resolver
