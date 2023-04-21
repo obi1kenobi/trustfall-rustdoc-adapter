@@ -3,7 +3,7 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet},
 };
 
-use rustdoc_types::{Crate, GenericArgs, Id, Item, Typedef, Visibility};
+use rustdoc_types::{Crate, GenericArgs, Id, Item, ItemEnum, Typedef, Visibility};
 
 /// The rustdoc for a crate, together with associated indexed data to speed up common operations.
 ///
@@ -188,6 +188,22 @@ impl<'a> IndexedCrate<'a> {
         }
 
         let item = &self.inner.index[next_id];
+        if !stack.is_empty()
+            && matches!(
+                item.inner,
+                ItemEnum::Impl(..) | ItemEnum::Struct(..) | ItemEnum::Union(..)
+            )
+        {
+            // Structs, unions, and impl blocks are not modules.
+            // They *themselves* can be imported, but the items they contain cannot be imported.
+            // Since the stack is non-empty, we must be trying to determine importable names
+            // for a descendant item of a struct / union / impl. There are none.
+            //
+            // We explicitly do *not* want to check for Enum here,
+            // since enum variants *are* importable.
+            return;
+        }
+
         let (push_name, popped_name) = match &item.inner {
             rustdoc_types::ItemEnum::Import(import_item) => {
                 if import_item.glob {
@@ -308,7 +324,21 @@ fn visit_root_reachable_public_items<'a>(
     parent_id: Option<&'a Id>,
 ) {
     match item.visibility {
-        Visibility::Crate | Visibility::Restricted { .. } => {
+        Visibility::Crate => {
+            if matches!(item.inner, ItemEnum::Impl(_)) {
+                // A bug in rustdoc of Rust 1.69 and older causes `impl` items
+                // to be given `crate` visibility instead of the correct `default` visibility.
+                // Rust does not support `pub(crate) impl` or other visibility modifiers,
+                // so if we're in this block, we're affected by the bug.
+                //
+                // The fix has shipped in 1.70 beta, but that still uses rustdoc v24.
+                // TODO: Remove this in rustdoc v25+ since the fix should be present there.
+            } else {
+                // This item is not public, so we don't need to process it.
+                return;
+            }
+        }
+        Visibility::Restricted { .. } => {
             // This item is not public, so we don't need to process it.
             return;
         }
@@ -411,6 +441,22 @@ fn visit_root_reachable_public_items<'a>(
                 .variants
                 .iter()
                 .chain(enum_.impls.iter())
+                .filter_map(|id| crate_.index.get(id))
+            {
+                visit_root_reachable_public_items(
+                    crate_,
+                    parents,
+                    currently_visited_items,
+                    inner,
+                    next_parent_id,
+                );
+            }
+        }
+        rustdoc_types::ItemEnum::Union(union_) => {
+            for inner in union_
+                .fields
+                .iter()
+                .chain(union_.impls.iter())
                 .filter_map(|id| crate_.index.get(id))
             {
                 visit_root_reachable_public_items(
@@ -758,6 +804,159 @@ fn create_manually_inlined_builtin_traits(crate_: &Crate) -> HashMap<Id, Item> {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+    use rustdoc_types::{Crate, Id};
+
+    use crate::{test_util::load_pregenerated_rustdoc, IndexedCrate};
+
+    fn find_item_id<'a>(crate_: &'a Crate, name: &str) -> &'a Id {
+        crate_
+            .index
+            .iter()
+            .filter_map(|(id, item)| (item.name.as_deref() == Some(name)).then_some(id))
+            .exactly_one()
+            .expect("exactly one matching name")
+    }
+
+    /// Ensure that methods, consts, and fields within structs are not importable.
+    #[test]
+    fn structs_are_not_modules() {
+        let rustdoc = load_pregenerated_rustdoc("structs_are_not_modules");
+        let indexed_crate = IndexedCrate::new(&rustdoc);
+
+        let top_level_function = find_item_id(&rustdoc, "top_level_function");
+        let method = find_item_id(&rustdoc, "method");
+        let associated_fn = find_item_id(&rustdoc, "associated_fn");
+        let field = find_item_id(&rustdoc, "field");
+        let const_item = find_item_id(&rustdoc, "THE_ANSWER");
+
+        // All the items are public.
+        assert!(indexed_crate
+            .visibility_forest
+            .contains_key(top_level_function));
+        assert!(indexed_crate.visibility_forest.contains_key(method));
+        assert!(indexed_crate.visibility_forest.contains_key(associated_fn));
+        assert!(indexed_crate.visibility_forest.contains_key(field));
+        assert!(indexed_crate.visibility_forest.contains_key(const_item));
+
+        // But only `top_level_function` is importable.
+        assert_eq!(
+            vec![vec!["structs_are_not_modules", "top_level_function"]],
+            indexed_crate.publicly_importable_names(top_level_function)
+        );
+        assert_eq!(
+            Vec::<Vec<&str>>::new(),
+            indexed_crate.publicly_importable_names(method)
+        );
+        assert_eq!(
+            Vec::<Vec<&str>>::new(),
+            indexed_crate.publicly_importable_names(associated_fn)
+        );
+        assert_eq!(
+            Vec::<Vec<&str>>::new(),
+            indexed_crate.publicly_importable_names(field)
+        );
+        assert_eq!(
+            Vec::<Vec<&str>>::new(),
+            indexed_crate.publicly_importable_names(const_item)
+        );
+    }
+
+    /// Ensure that methods and consts within enums are not importable.
+    /// However, enum variants are the exception: they are importable!
+    #[test]
+    fn enums_are_not_modules() {
+        let rustdoc = load_pregenerated_rustdoc("enums_are_not_modules");
+        let indexed_crate = IndexedCrate::new(&rustdoc);
+
+        let top_level_function = find_item_id(&rustdoc, "top_level_function");
+        let variant = find_item_id(&rustdoc, "Variant");
+        let method = find_item_id(&rustdoc, "method");
+        let associated_fn = find_item_id(&rustdoc, "associated_fn");
+        let const_item = find_item_id(&rustdoc, "THE_ANSWER");
+
+        // All the items are public.
+        assert!(indexed_crate
+            .visibility_forest
+            .contains_key(top_level_function));
+        assert!(indexed_crate.visibility_forest.contains_key(variant));
+        assert!(indexed_crate.visibility_forest.contains_key(method));
+        assert!(indexed_crate.visibility_forest.contains_key(associated_fn));
+        assert!(indexed_crate.visibility_forest.contains_key(const_item));
+
+        // But only `top_level_function` and `Foo::variant` is importable.
+        assert_eq!(
+            vec![vec!["enums_are_not_modules", "top_level_function"]],
+            indexed_crate.publicly_importable_names(top_level_function)
+        );
+        assert_eq!(
+            vec![vec!["enums_are_not_modules", "Foo", "Variant"]],
+            indexed_crate.publicly_importable_names(variant)
+        );
+        assert_eq!(
+            Vec::<Vec<&str>>::new(),
+            indexed_crate.publicly_importable_names(method)
+        );
+        assert_eq!(
+            Vec::<Vec<&str>>::new(),
+            indexed_crate.publicly_importable_names(associated_fn)
+        );
+        assert_eq!(
+            Vec::<Vec<&str>>::new(),
+            indexed_crate.publicly_importable_names(const_item)
+        );
+    }
+
+    /// Ensure that methods, consts, and fields within unions are not importable.
+    #[test]
+    fn unions_are_not_modules() {
+        let rustdoc = load_pregenerated_rustdoc("unions_are_not_modules");
+        let indexed_crate = IndexedCrate::new(&rustdoc);
+
+        let top_level_function = find_item_id(&rustdoc, "top_level_function");
+        let method = find_item_id(&rustdoc, "method");
+        let associated_fn = find_item_id(&rustdoc, "associated_fn");
+        let left_field = find_item_id(&rustdoc, "left");
+        let right_field = find_item_id(&rustdoc, "right");
+        let const_item = find_item_id(&rustdoc, "THE_ANSWER");
+
+        // All the items are public.
+        assert!(indexed_crate
+            .visibility_forest
+            .contains_key(top_level_function));
+        assert!(indexed_crate.visibility_forest.contains_key(method));
+        assert!(indexed_crate.visibility_forest.contains_key(associated_fn));
+        assert!(indexed_crate.visibility_forest.contains_key(left_field));
+        assert!(indexed_crate.visibility_forest.contains_key(right_field));
+        assert!(indexed_crate.visibility_forest.contains_key(const_item));
+
+        // But only `top_level_function` is importable.
+        assert_eq!(
+            vec![vec!["unions_are_not_modules", "top_level_function"]],
+            indexed_crate.publicly_importable_names(top_level_function)
+        );
+        assert_eq!(
+            Vec::<Vec<&str>>::new(),
+            indexed_crate.publicly_importable_names(method)
+        );
+        assert_eq!(
+            Vec::<Vec<&str>>::new(),
+            indexed_crate.publicly_importable_names(associated_fn)
+        );
+        assert_eq!(
+            Vec::<Vec<&str>>::new(),
+            indexed_crate.publicly_importable_names(left_field)
+        );
+        assert_eq!(
+            Vec::<Vec<&str>>::new(),
+            indexed_crate.publicly_importable_names(right_field)
+        );
+        assert_eq!(
+            Vec::<Vec<&str>>::new(),
+            indexed_crate.publicly_importable_names(const_item)
+        );
+    }
+
     mod reexports {
         use std::collections::{BTreeMap, BTreeSet};
 
