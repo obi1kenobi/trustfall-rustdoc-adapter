@@ -41,7 +41,7 @@ pub(crate) fn resolve_impl_methods<'a>(
                 current_crate,
                 previous_crate,
                 vertex,
-                candidate.clone(), // TODO: avoid this clone
+                candidate.clone(),
             )
         });
     } else {
