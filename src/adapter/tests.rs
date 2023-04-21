@@ -1,10 +1,10 @@
-use std::{sync::Arc, rc::Rc};
+use std::{rc::Rc, sync::Arc};
 
 use anyhow::Context;
 use maplit::btreemap;
-use trustfall::{Schema, FieldValue};
+use trustfall::{FieldValue, Schema};
 
-use crate::{RustdocAdapter, IndexedCrate};
+use crate::{IndexedCrate, RustdocAdapter};
 
 #[test]
 fn rustdoc_json_format_version() {
@@ -57,12 +57,16 @@ fn impl_for_ref() {
         "method" => "eq",
     };
 
-    let schema = Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
-    let results: Vec<_> = trustfall::execute_query(&schema, Rc::new(adapter), query, variables).expect("failed to run query").collect();
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+    let results: Vec<_> = trustfall::execute_query(&schema, Rc::new(adapter), query, variables)
+        .expect("failed to run query")
+        .collect();
 
-    assert_eq!(vec![
-        btreemap! {
+    assert_eq!(
+        vec![btreemap! {
             Arc::from("matching_methods") => FieldValue::Uint64(3),
-        }
-    ], results);
+        }],
+        results
+    );
 }
