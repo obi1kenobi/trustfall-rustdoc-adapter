@@ -204,7 +204,7 @@ fn resolve_methods_slow_path<'a>(
                 let next_item = &item_index.get(item_id);
                 if let Some(next_item) = next_item {
                     match &next_item.inner {
-                        rustdoc_types::ItemEnum::Function(..) => {
+                        rustdoc_types::ItemEnum::Method(..) => {
                             Some(origin.make_item_vertex(next_item))
                         }
                         _ => None,
