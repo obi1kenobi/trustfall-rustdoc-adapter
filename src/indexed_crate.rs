@@ -1638,5 +1638,203 @@ mod tests {
                 .expect("write failed");
             }
         }
+
+        #[test]
+        fn overlapping_glob_and_local_item() {
+            let test_crate = "overlapping_glob_and_local_item";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            let mut all_importable_paths = Vec::new();
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|components| components.into_iter().join("::"))
+                    .collect();
+                let deduplicated_actual_items: BTreeSet<_> =
+                    actual_items.iter().map(|x| x.as_str()).collect();
+                assert_eq!(
+                    actual_items.len(),
+                    deduplicated_actual_items.len(),
+                    "duplicates found: {actual_items:?}"
+                );
+
+                if deduplicated_actual_items
+                    .first()
+                    .expect("no names")
+                    .ends_with("::Foo")
+                {
+                    assert_eq!(
+                        deduplicated_actual_items.len(),
+                        1,
+                        "\
+expected exactly one importable path for `Foo` items in this crate but got: {actual_items:?}"
+                    );
+                } else {
+                    assert_eq!(
+                        deduplicated_actual_items,
+                        btreeset! {
+                            "overlapping_glob_and_local_item::Bar",
+                            "overlapping_glob_and_local_item::inner::Bar",
+                        }
+                    );
+                }
+
+                all_importable_paths.extend(actual_items.into_iter());
+            }
+
+            all_importable_paths.sort_unstable();
+            assert_eq!(
+                vec![
+                    "overlapping_glob_and_local_item::Bar",
+                    "overlapping_glob_and_local_item::Foo",
+                    "overlapping_glob_and_local_item::inner::Bar",
+                    "overlapping_glob_and_local_item::inner::Foo",
+                ],
+                all_importable_paths,
+            );
+        }
+
+        #[test]
+        fn nested_overlapping_glob_and_local_item() {
+            let test_crate = "nested_overlapping_glob_and_local_item";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            let mut all_importable_paths = Vec::new();
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|components| components.into_iter().join("::"))
+                    .collect();
+                let deduplicated_actual_items: BTreeSet<_> =
+                    actual_items.iter().map(|x| x.as_str()).collect();
+
+                assert_eq!(
+                    actual_items.len(),
+                    deduplicated_actual_items.len(),
+                    "duplicates found: {actual_items:?}"
+                );
+
+                match deduplicated_actual_items.len() {
+                    1 => assert_eq!(
+                        deduplicated_actual_items,
+                        btreeset! { "nested_overlapping_glob_and_local_item::Foo" },
+                    ),
+                    2 => assert_eq!(
+                        deduplicated_actual_items,
+                        btreeset! {
+                            "nested_overlapping_glob_and_local_item::inner::Foo",
+                            "nested_overlapping_glob_and_local_item::inner::nested::Foo",
+                        }
+                    ),
+                    _ => unreachable!("unexpected value for {deduplicated_actual_items:?}"),
+                };
+
+                all_importable_paths.extend(actual_items.into_iter());
+            }
+
+            all_importable_paths.sort_unstable();
+            assert_eq!(
+                vec![
+                    "nested_overlapping_glob_and_local_item::Foo",
+                    "nested_overlapping_glob_and_local_item::inner::Foo",
+                    "nested_overlapping_glob_and_local_item::inner::nested::Foo",
+                ],
+                all_importable_paths,
+            );
+        }
+
+        #[test]
+        fn cyclic_overlapping_glob_and_local_item() {
+            let test_crate = "cyclic_overlapping_glob_and_local_item";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            let mut all_importable_paths = Vec::new();
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|components| components.into_iter().join("::"))
+                    .collect();
+                let deduplicated_actual_items: BTreeSet<_> =
+                    actual_items.iter().map(|x| x.as_str()).collect();
+
+                assert_eq!(
+                    actual_items.len(),
+                    deduplicated_actual_items.len(),
+                    "duplicates found: {actual_items:?}"
+                );
+
+                match deduplicated_actual_items.len() {
+                    1 => assert_eq!(
+                        deduplicated_actual_items,
+                        btreeset! { "cyclic_overlapping_glob_and_local_item::Foo" },
+                    ),
+                    2 => assert_eq!(
+                        deduplicated_actual_items,
+                        btreeset! {
+                            "cyclic_overlapping_glob_and_local_item::inner::Foo",
+                            "cyclic_overlapping_glob_and_local_item::inner::nested::Foo",
+                        }
+                    ),
+                    _ => unreachable!("unexpected value for {deduplicated_actual_items:?}"),
+                };
+
+                all_importable_paths.extend(actual_items.into_iter());
+            }
+
+            all_importable_paths.sort_unstable();
+            assert_eq!(
+                vec![
+                    "cyclic_overlapping_glob_and_local_item::Foo",
+                    "cyclic_overlapping_glob_and_local_item::inner::Foo",
+                    "cyclic_overlapping_glob_and_local_item::inner::nested::Foo",
+                ],
+                all_importable_paths,
+            );
+        }
     }
 }
