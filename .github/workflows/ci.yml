@@ -155,4 +155,4 @@ jobs:
           persist-credentials: false
 
       - name: Check semver
-        uses: obi1kenobi/cargo-semver-checks-action@v1
+        uses: obi1kenobi/cargo-semver-checks-action@v2
