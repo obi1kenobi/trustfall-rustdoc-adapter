@@ -1599,6 +1599,25 @@ mod tests {
         }
 
         #[test]
+        fn swapping_names() {
+            let test_crate = "swapping_names";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "swapping_names::Foo",
+                    "swapping_names::inner::Bar",
+                    "swapping_names::inner::nested::Foo",
+                ],
+                "Bar" => btreeset![
+                    "swapping_names::Bar",
+                    "swapping_names::inner::Foo",
+                    "swapping_names::inner::nested::Bar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
         fn type_and_value_with_matching_names() {
             let test_crate = "type_and_value_with_matching_names";
             let expected_items = btreemap! {
@@ -1609,6 +1628,19 @@ mod tests {
                 "Bar" => (2, btreeset![
                     "type_and_value_with_matching_names::Bar",
                     "type_and_value_with_matching_names::nested::Bar",
+                ]),
+            };
+
+            assert_duplicated_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn no_shadowing_across_namespaces() {
+            let test_crate = "no_shadowing_across_namespaces";
+            let expected_items = btreemap! {
+                "Foo" => (2, btreeset![
+                    "no_shadowing_across_namespaces::Foo",
+                    "no_shadowing_across_namespaces::nested::Foo",
                 ]),
             };
 

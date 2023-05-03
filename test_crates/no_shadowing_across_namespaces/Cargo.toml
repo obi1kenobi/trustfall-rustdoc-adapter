@@ -1,6 +1,6 @@
 [package]
 publish = false
-name = "nested_overlapping_glob_and_local_item"
+name = "no_shadowing_across_namespaces"
 version = "0.1.0"
 edition = "2021"
 
