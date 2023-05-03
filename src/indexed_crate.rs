@@ -1618,6 +1618,36 @@ mod tests {
         }
 
         #[test]
+        fn overlapping_glob_and_local_module() {
+            let test_crate = "overlapping_glob_and_local_module";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "overlapping_glob_and_local_module::sibling::duplicated::Foo",
+                ],
+                "Bar" => btreeset![
+                    "overlapping_glob_and_local_module::inner::duplicated::Bar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn overlapping_glob_and_renamed_module() {
+            let test_crate = "overlapping_glob_and_renamed_module";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "overlapping_glob_and_renamed_module::sibling::duplicated::Foo",
+                ],
+                "Bar" => btreeset![
+                    "overlapping_glob_and_renamed_module::inner::duplicated::Bar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
         fn type_and_value_with_matching_names() {
             let test_crate = "type_and_value_with_matching_names";
             let expected_items = btreemap! {
