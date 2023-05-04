@@ -164,7 +164,7 @@ impl<'a> IndexedCrate<'a> {
         if self.inner.index.contains_key(id) {
             let mut already_visited_ids = Default::default();
             self.collect_publicly_importable_names(
-                id,
+                &self.inner.index[id],
                 &mut already_visited_ids,
                 &mut vec![],
                 &mut result,
@@ -176,18 +176,18 @@ impl<'a> IndexedCrate<'a> {
 
     fn collect_publicly_importable_names(
         &self,
-        next_id: &'a Id,
+        item: &'a Item,
         already_visited_ids: &mut HashSet<&'a Id>,
         stack: &mut Vec<&'a str>,
         output: &mut Vec<Vec<&'a str>>,
     ) {
+        let next_id = &item.id;
         if !already_visited_ids.insert(next_id) {
             // We found a cycle, and we've already processed this item.
             // Nothing more to do here.
             return;
         }
 
-        let item = &self.inner.index[next_id];
         if !stack.is_empty()
             && matches!(
                 item.inner,
@@ -240,7 +240,7 @@ impl<'a> IndexedCrate<'a> {
             stack.push(pushed_name);
         }
 
-        self.collect_publicly_importable_names_inner(next_id, already_visited_ids, stack, output);
+        self.collect_publicly_importable_names_inner(item, already_visited_ids, stack, output);
 
         // Undo any changes made to the stack, returning it to its pre-recursion state.
         if let Some(pushed_name) = push_name {
@@ -258,22 +258,60 @@ impl<'a> IndexedCrate<'a> {
 
     fn collect_publicly_importable_names_inner(
         &self,
-        next_id: &'a Id,
+        next_item: &'a Item,
         already_visited_ids: &mut HashSet<&'a Id>,
         stack: &mut Vec<&'a str>,
         output: &mut Vec<Vec<&'a str>>,
     ) {
-        if next_id == &self.inner.root {
+        if next_item.id == self.inner.root {
             let final_name = stack.iter().rev().copied().collect();
             output.push(final_name);
-        } else if let Some(visible_parents) = self.visibility_forest.get(next_id) {
+        } else if let Some(visible_parents) = self.visibility_forest.get(&next_item.id) {
+            println!("{:?} {:?}", next_item.name, next_item.inner);
+            println!("{:?} => {visible_parents:#?}", next_item.id);
+            let is_glob_import = matches!(&next_item.inner, ItemEnum::Import(imp) if imp.glob);
+            if is_glob_import {
+                println!("found glob: {:#?}", next_item.inner);
+            }
             for parent_id in visible_parents.iter().copied() {
-                self.collect_publicly_importable_names(
-                    parent_id,
-                    already_visited_ids,
-                    stack,
-                    output,
-                );
+                let parent_item = &self.inner.index[parent_id];
+
+                let recurse_into_item = !is_glob_import || 'recurse_into: {
+                    // Check if the current leaf name conflicts with any explicitly-defined
+                    // items in the parent scope.
+                    let current_leaf_name = *stack.last().expect("found an empty stack");
+
+                    dbg!((&next_item.name, &parent_item.name));
+                    dbg!(current_leaf_name);
+                    match &parent_item.inner {
+                        ItemEnum::Module(m) => {
+                            for contained_id in &m.items {
+                                if contained_id != &next_item.id {
+                                    let contained_item = &self.inner.index[contained_id];
+                                    if contained_item.name.as_deref() == Some(current_leaf_name) {
+                                        break 'recurse_into false;
+                                    }
+                                }
+                            }
+                        }
+                        ItemEnum::Enum(e) => {
+                            // TODO: test for enum variants glob imports not importing a variant
+                            //       and test for it importing a variant in the presence of the same name in another namespace
+                        }
+                        _ => {}
+                    }
+
+                    true
+                };
+
+                if recurse_into_item {
+                    self.collect_publicly_importable_names(
+                        parent_item,
+                        already_visited_ids,
+                        stack,
+                        output,
+                    );
+                }
             }
         }
     }
@@ -430,12 +468,12 @@ fn visit_root_reachable_public_items<'a>(
                         ),
                     };
                     for inner_id in inner_ids {
-                        if let Some(item) = crate_.index.get(inner_id) {
+                        if let Some(inner_item) = crate_.index.get(inner_id) {
                             visit_root_reachable_public_items(
                                 crate_,
                                 parents,
                                 currently_visited_items,
-                                item,
+                                inner_item,
                                 next_parent_id,
                             );
                         }
