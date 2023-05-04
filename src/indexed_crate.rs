@@ -999,6 +999,7 @@ mod tests {
 
         use itertools::Itertools;
         use maplit::{btreemap, btreeset};
+        use rustdoc_types::ItemEnum;
 
         use crate::{test_util::load_pregenerated_rustdoc, IndexedCrate};
 
@@ -1897,6 +1898,76 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                 ],
                 all_importable_paths,
             );
+        }
+
+        #[test]
+        fn overlapping_glob_of_enum_with_local_item() {
+            let test_crate = "overlapping_glob_of_enum_with_local_item";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "overlapping_glob_of_enum_with_local_item::Foo",
+                ],
+                "First" => btreeset![
+                    "overlapping_glob_of_enum_with_local_item::inner::First",
+                ],
+                "Second" => btreeset![
+                    "overlapping_glob_of_enum_with_local_item::inner::Second",
+                ],
+            };
+
+            // This is necessary but not sufficient to confirm our implementation works.
+            // For example: the `First` that's found might be the variant, not the new struct!
+            assert_exported_items_match(test_crate, &expected_items);
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let items_named_first: Vec<_> = indexed_crate
+                .inner
+                .index
+                .values()
+                .filter_map(|item| (item.name.as_deref() == Some("First")).then_some(item))
+                .collect();
+            assert_eq!(2, items_named_first.len());
+            let variant_item = items_named_first
+                .iter()
+                .copied()
+                .find(|item| matches!(item.inner, ItemEnum::Variant(..)))
+                .expect("no variant item found");
+            let struct_item = items_named_first
+                .iter()
+                .copied()
+                .find(|item| matches!(item.inner, ItemEnum::Struct(..)))
+                .expect("no struct item found");
+
+            assert_eq!(
+                Vec::<Vec<&str>>::new(),
+                indexed_crate.publicly_importable_names(&variant_item.id),
+            );
+            assert_eq!(
+                vec![vec![
+                    "overlapping_glob_of_enum_with_local_item",
+                    "inner",
+                    "First"
+                ]],
+                indexed_crate.publicly_importable_names(&struct_item.id),
+            )
+        }
+
+        #[test]
+        fn glob_of_enum_does_not_shadow_local_fn() {
+            let test_crate = "glob_of_enum_does_not_shadow_local_fn";
+            let expected_items = btreemap! {
+                "Foo" => (1, btreeset![
+                    "glob_of_enum_does_not_shadow_local_fn::Foo",
+                ]),
+                "First" => (2, btreeset![
+                    "glob_of_enum_does_not_shadow_local_fn::inner::First",
+                    "glob_of_enum_does_not_shadow_local_fn::inner::First",
+                ]),
+            };
+
+            assert_duplicated_exported_items_match(test_crate, &expected_items);
         }
     }
 }
