@@ -276,33 +276,35 @@ impl<'a> IndexedCrate<'a> {
             for parent_id in visible_parents.iter().copied() {
                 let parent_item = &self.inner.index[parent_id];
 
-                let recurse_into_item = !is_glob_import || 'recurse_into: {
-                    // Check if the current leaf name conflicts with any explicitly-defined
-                    // items in the parent scope.
-                    let current_leaf_name = *stack.last().expect("found an empty stack");
+                let recurse_into_item = !is_glob_import
+                    || 'recurse_into: {
+                        // Check if the current leaf name conflicts with any explicitly-defined
+                        // items in the parent scope.
+                        let current_leaf_name = *stack.last().expect("found an empty stack");
 
-                    dbg!((&next_item.name, &parent_item.name));
-                    dbg!(current_leaf_name);
-                    match &parent_item.inner {
-                        ItemEnum::Module(m) => {
-                            for contained_id in &m.items {
-                                if contained_id != &next_item.id {
-                                    let contained_item = &self.inner.index[contained_id];
-                                    if contained_item.name.as_deref() == Some(current_leaf_name) {
-                                        break 'recurse_into false;
+                        dbg!((&next_item.name, &parent_item.name));
+                        dbg!(current_leaf_name);
+                        match &parent_item.inner {
+                            ItemEnum::Module(m) => {
+                                for contained_id in &m.items {
+                                    if contained_id != &next_item.id {
+                                        let contained_item = &self.inner.index[contained_id];
+                                        if contained_item.name.as_deref() == Some(current_leaf_name)
+                                        {
+                                            break 'recurse_into false;
+                                        }
                                     }
                                 }
                             }
+                            ItemEnum::Enum(e) => {
+                                // TODO: test for enum variants glob imports not importing a variant
+                                //       and test for it importing a variant in the presence of the same name in another namespace
+                            }
+                            _ => {}
                         }
-                        ItemEnum::Enum(e) => {
-                            // TODO: test for enum variants glob imports not importing a variant
-                            //       and test for it importing a variant in the presence of the same name in another namespace
-                        }
-                        _ => {}
-                    }
 
-                    true
-                };
+                        true
+                    };
 
                 if recurse_into_item {
                     self.collect_publicly_importable_names(
@@ -2006,6 +2008,39 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
             };
 
             assert_duplicated_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn overlapping_glob_and_private_import() {
+            let test_crate = "overlapping_glob_and_private_import";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|components| components.into_iter().join("::"))
+                    .collect();
+
+                assert!(
+                    actual_items.is_empty(),
+                    "expected no importable item names but found {actual_items:?}"
+                );
+            }
         }
     }
 }
