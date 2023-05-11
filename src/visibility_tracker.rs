@@ -305,7 +305,16 @@ fn populate_initial_state(crate_: &Crate) -> TraversalState<'_> {
                             .names_defined_in_module
                             .entry(&item.id)
                             .or_default()
-                            .insert(name, (&target.id, target.visibility == Visibility::Public));
+                            .insert(
+                                name,
+                                (
+                                    inner_id,
+                                    matches!(
+                                        target.visibility,
+                                        Visibility::Public | Visibility::Default
+                                    ),
+                                ),
+                            );
                     }
                 }
             } else {
@@ -316,7 +325,13 @@ fn populate_initial_state(crate_: &Crate) -> TraversalState<'_> {
                         .or_default()
                         .insert(
                             name,
-                            (&inner_item.id, inner_item.visibility == Visibility::Public),
+                            (
+                                &inner_item.id,
+                                matches!(
+                                    inner_item.visibility,
+                                    Visibility::Public | Visibility::Default
+                                ),
+                            ),
                         );
                 }
             }

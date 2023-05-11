@@ -11,7 +11,12 @@
 // - `pub struct Foo` as [`Foo`, `nested::Foo`]
 // - `pub fn Foo()` as [`Foo`, `nested::Foo`]
 
-pub struct Foo;
+// This cannot be a unit or empty tuple struct, since they both
+// would add their names to the "values" namespace as well as the "types" namespace.
+// Unit types register their value, and tuple structs their implicit constructor.
+//
+// Plain structs don't add their names to the "values" namespace.
+pub struct Foo {}
 
 pub mod nested {
     #[allow(non_snake_case)]

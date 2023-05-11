@@ -20,6 +20,6 @@ pub mod inner {
     pub mod nested {
         pub struct Bar;
 
-        pub use super::*;
+        pub use super::super::*;
     }
 }
