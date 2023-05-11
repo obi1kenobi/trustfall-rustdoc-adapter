@@ -152,14 +152,13 @@ impl<'a> IndexedCrate<'a> {
 
     /// Return all the paths (as Vec<&'a str> of component names, joinable with "::")
     /// with which the given item can be imported from this crate.
-    #[inline]
     pub fn publicly_importable_names(&self, id: &'a Id) -> Vec<Vec<&'a str>> {
         let mut result = vec![];
 
         if self.inner.index.contains_key(id) {
             let mut already_visited_ids = Default::default();
             self.visibility_tracker.collect_publicly_importable_names(
-                &self.inner.index[id],
+                id,
                 &mut already_visited_ids,
                 &mut vec![],
                 &mut result,
@@ -1276,15 +1275,29 @@ mod tests {
             let rustdoc = load_pregenerated_rustdoc(test_crate);
             let indexed_crate = IndexedCrate::new(&rustdoc);
 
-            let item_id_candidates = rustdoc
+            let foo_ids = rustdoc
                 .index
                 .iter()
                 .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
                 .collect_vec();
-            if item_id_candidates.len() != 2 {
+            if foo_ids.len() != 2 {
                 panic!(
                     "Expected to find exactly 2 items with name \
-                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                    Foo, but found these matching IDs: {foo_ids:?}"
+                );
+            }
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| {
+                    (matches!(item.name.as_deref(), Some("Foo" | "Bar"))).then_some(id)
+                })
+                .collect_vec();
+            if item_id_candidates.len() != 3 {
+                panic!(
+                    "Expected to find exactly 3 items named Foo or Bar, \
+                    but found these matching IDs: {item_id_candidates:?}"
                 );
             }
 
@@ -1470,21 +1483,20 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
         #[test]
         fn overlapping_glob_of_enum_with_local_item() {
             let test_crate = "overlapping_glob_of_enum_with_local_item";
-            let expected_items = btreemap! {
+            let easy_expected_items = btreemap! {
                 "Foo" => btreeset![
                     "overlapping_glob_of_enum_with_local_item::Foo",
                 ],
-                "First" => btreeset![
-                    "overlapping_glob_of_enum_with_local_item::inner::First",
-                ],
                 "Second" => btreeset![
+                    "overlapping_glob_of_enum_with_local_item::Foo::Second",
                     "overlapping_glob_of_enum_with_local_item::inner::Second",
                 ],
             };
 
-            // This is necessary but not sufficient to confirm our implementation works.
-            // For example: the `First` that's found might be the variant, not the new struct!
-            assert_exported_items_match(test_crate, &expected_items);
+            // Check the "easy" cases: `Foo` and `Second`.
+            // This is necessary but not sufficient to confirm our implementation works,
+            // since it doesn't check anything about `First` which is the point of this test case.
+            assert_exported_items_match(test_crate, &easy_expected_items);
 
             let rustdoc = load_pregenerated_rustdoc(test_crate);
             let indexed_crate = IndexedCrate::new(&rustdoc);
@@ -1495,7 +1507,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                 .values()
                 .filter_map(|item| (item.name.as_deref() == Some("First")).then_some(item))
                 .collect();
-            assert_eq!(2, items_named_first.len());
+            assert_eq!(2, items_named_first.len(), "{items_named_first:?}");
             let variant_item = items_named_first
                 .iter()
                 .copied()
@@ -1508,17 +1520,22 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                 .expect("no struct item found");
 
             assert_eq!(
-                Vec::<Vec<&str>>::new(),
+                vec![vec![
+                    "overlapping_glob_of_enum_with_local_item",
+                    "Foo",
+                    "First"
+                ],],
                 indexed_crate.publicly_importable_names(&variant_item.id),
             );
             assert_eq!(
+                // The struct definition overrides the glob-imported variant here.
                 vec![vec![
                     "overlapping_glob_of_enum_with_local_item",
                     "inner",
                     "First"
                 ]],
                 indexed_crate.publicly_importable_names(&struct_item.id),
-            )
+            );
         }
 
         #[test]
@@ -1568,6 +1585,50 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                     "expected no importable item names but found {actual_items:?}"
                 );
             }
+        }
+
+        #[test]
+        fn glob_vs_glob_shadowing() {
+            let test_crate = "glob_vs_glob_shadowing";
+
+            let expected_items = btreemap! {
+                "Foo" => (2, btreeset![]),
+                "Bar" => (1, btreeset![
+                    "glob_vs_glob_shadowing::Bar",
+                ]),
+                "Baz" => (1, btreeset![
+                    "glob_vs_glob_shadowing::Baz",
+                ]),
+            };
+
+            assert_duplicated_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_vs_glob_shadowing_downstream() {
+            let test_crate = "glob_vs_glob_shadowing_downstream";
+
+            let expected_items = btreemap! {
+                "Foo" => (3, btreeset![]),
+                "Bar" => (1, btreeset![
+                    "glob_vs_glob_shadowing_downstream::second::Bar",
+                ]),
+            };
+
+            assert_duplicated_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_vs_glob_no_shadowing_for_same_item() {
+            let test_crate = "glob_vs_glob_no_shadowing_for_same_item";
+
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "glob_vs_glob_no_shadowing_for_same_item::Foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
         }
     }
 }

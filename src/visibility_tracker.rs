@@ -2,6 +2,23 @@ use std::collections::{HashMap, HashSet};
 
 use rustdoc_types::{Crate, GenericArgs, Id, Item, ItemEnum, Typedef, Visibility};
 
+/// A Rust item name, together with the namespace the name is in.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum NamespacedName<'a> {
+    Values(&'a str),
+    Types(&'a str),
+}
+
+impl<'a> NamespacedName<'a> {
+    fn rename(&self, new_name: &'a str) -> Self {
+        match self {
+            NamespacedName::Values(_) => NamespacedName::Values(new_name),
+            NamespacedName::Types(_) => NamespacedName::Types(new_name),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct VisibilityTracker<'a> {
     // The crate this represents.
@@ -31,18 +48,18 @@ impl<'a> VisibilityTracker<'a> {
 
     pub(crate) fn collect_publicly_importable_names(
         &self,
-        item: &'a Item,
+        next_id: &'a Id,
         already_visited_ids: &mut HashSet<&'a Id>,
         stack: &mut Vec<&'a str>,
         output: &mut Vec<Vec<&'a str>>,
     ) {
-        let next_id = &item.id;
         if !already_visited_ids.insert(next_id) {
             // We found a cycle, and we've already processed this item.
             // Nothing more to do here.
             return;
         }
 
+        let item = &self.inner.index[next_id];
         if !stack.is_empty()
             && matches!(
                 item.inner,
@@ -95,7 +112,7 @@ impl<'a> VisibilityTracker<'a> {
             stack.push(pushed_name);
         }
 
-        self.collect_publicly_importable_names_inner(item, already_visited_ids, stack, output);
+        self.collect_publicly_importable_names_inner(next_id, already_visited_ids, stack, output);
 
         // Undo any changes made to the stack, returning it to its pre-recursion state.
         if let Some(pushed_name) = push_name {
@@ -113,62 +130,22 @@ impl<'a> VisibilityTracker<'a> {
 
     fn collect_publicly_importable_names_inner(
         &self,
-        next_item: &'a Item,
+        next_id: &'a Id,
         already_visited_ids: &mut HashSet<&'a Id>,
         stack: &mut Vec<&'a str>,
         output: &mut Vec<Vec<&'a str>>,
     ) {
-        if next_item.id == self.inner.root {
+        if next_id == &self.inner.root {
             let final_name = stack.iter().rev().copied().collect();
             output.push(final_name);
-        } else if let Some(visible_parents) = self.visible_parent_ids.get(&next_item.id) {
-            println!("{:?} {:?}", next_item.name, next_item.inner);
-            println!("{:?} => {visible_parents:#?}", next_item.id);
-            let is_glob_import = matches!(&next_item.inner, ItemEnum::Import(imp) if imp.glob);
-            if is_glob_import {
-                println!("found glob: {:#?}", next_item.inner);
-            }
+        } else if let Some(visible_parents) = self.visible_parent_ids.get(next_id) {
             for parent_id in visible_parents.iter().copied() {
-                let parent_item = &self.inner.index[parent_id];
-
-                let recurse_into_item = !is_glob_import
-                    || 'recurse_into: {
-                        // Check if the current leaf name conflicts with any explicitly-defined
-                        // items in the parent scope.
-                        let current_leaf_name = *stack.last().expect("found an empty stack");
-
-                        dbg!((&next_item.name, &parent_item.name));
-                        dbg!(current_leaf_name);
-                        match &parent_item.inner {
-                            ItemEnum::Module(m) => {
-                                for contained_id in &m.items {
-                                    if contained_id != &next_item.id {
-                                        let contained_item = &self.inner.index[contained_id];
-                                        if contained_item.name.as_deref() == Some(current_leaf_name)
-                                        {
-                                            break 'recurse_into false;
-                                        }
-                                    }
-                                }
-                            }
-                            ItemEnum::Enum(e) => {
-                                // TODO: test for enum variants glob imports not importing a variant
-                                //       and test for it importing a variant in the presence of the same name in another namespace
-                            }
-                            _ => {}
-                        }
-
-                        true
-                    };
-
-                if recurse_into_item {
-                    self.collect_publicly_importable_names(
-                        parent_item,
-                        already_visited_ids,
-                        stack,
-                        output,
-                    );
-                }
+                self.collect_publicly_importable_names(
+                    parent_id,
+                    already_visited_ids,
+                    stack,
+                    output,
+                );
             }
         }
     }
@@ -179,15 +156,43 @@ impl<'a> VisibilityTracker<'a> {
     }
 }
 
+#[derive(Debug, Default)]
+struct TraversalState<'a> {
+    // Module Id -> { name -> (id, is_public) } for items directly defined in that module.
+    // Not just public names, since private names can shadow pub glob-exported names.
+    names_defined_in_module: HashMap<&'a Id, HashMap<NamespacedName<'a>, (&'a Id, bool)>>,
+
+    // Modules and the glob imports they contain.
+    modules_with_glob_imports: HashMap<&'a Id, HashSet<&'a Id>>,
+
+    // Names that were glob-imported and re-exported into a module, together with
+    // the item Id to which they refer. This is because glob-glob name shadowing doesn't apply
+    // if both names point to the same item.
+    glob_imported_names_in_module: HashMap<&'a Id, HashMap<NamespacedName<'a>, &'a Id>>,
+
+    // Names in a module that were glob-imported more than once, and are therefore unusable.
+    duplicated_glob_names_in_module: HashMap<&'a Id, HashSet<NamespacedName<'a>>>,
+}
+
+// TODO: some imports pull in more than one name:
+// - importing a tuple struct with only pub fields includes the type name and a constructor fn
+// - importing a unit struct includes the type name and an implicit const value with the same name
+
 fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<&Id, HashSet<&Id>> {
     let mut result = Default::default();
     let root_id = &crate_.root;
+
     if let Some(root_module) = crate_.index.get(root_id) {
         if root_module.visibility == Visibility::Public {
-            let mut currently_visited_items = Default::default();
+            let traversal_state = populate_initial_state(crate_);
+
+            // Avoid cycles by keeping track of which items we're in the middle of visiting.
+            let mut currently_visited_items: HashSet<&Id> = Default::default();
+
             visit_root_reachable_public_items(
                 crate_,
                 &mut result,
+                &traversal_state,
                 &mut currently_visited_items,
                 root_module,
                 None,
@@ -198,10 +203,282 @@ fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<&Id, HashSet<&
     result
 }
 
+fn get_names_for_item<'a>(
+    crate_: &'a Crate,
+    item: &'a Item,
+) -> impl Iterator<Item = NamespacedName<'a>> + 'a {
+    match &item.inner {
+        ItemEnum::Module(..)
+        | ItemEnum::Union(..)
+        | ItemEnum::Enum(..)
+        | ItemEnum::Trait(..)
+        | ItemEnum::Typedef(..) => {
+            let item_name = item.name.as_deref().expect("item did not have a name");
+            [Some(NamespacedName::Types(item_name)), None]
+                .into_iter()
+                .flatten()
+        }
+        ItemEnum::Struct(struct_item) => {
+            let item_name = item.name.as_deref().expect("item did not have a name");
+            match &struct_item.kind {
+                rustdoc_types::StructKind::Unit => {
+                    // Always both a type and a value (the singleton instance of the type).
+                    [
+                        Some(NamespacedName::Types(item_name)),
+                        Some(NamespacedName::Values(item_name)),
+                    ]
+                    .into_iter()
+                    .flatten()
+                }
+                rustdoc_types::StructKind::Tuple(tuple_struct) => {
+                    // Always a type name, can also be a value if all fields
+                    // are visible to the importing scope.
+                    // TODO: we only check if the fields are public, which is subtly incorrect.
+                    let nonpublic_field =
+                        tuple_struct
+                            .iter()
+                            .filter_map(|x| x.as_ref())
+                            .any(|field_id| {
+                                crate_
+                                    .index
+                                    .get(field_id)
+                                    .map(|field| field.visibility != Visibility::Public)
+                                    .unwrap_or(false)
+                            });
+                    if nonpublic_field {
+                        [Some(NamespacedName::Types(item_name)), None]
+                            .into_iter()
+                            .flatten()
+                    } else {
+                        [
+                            Some(NamespacedName::Types(item_name)),
+                            Some(NamespacedName::Values(item_name)),
+                        ]
+                        .into_iter()
+                        .flatten()
+                    }
+                }
+                rustdoc_types::StructKind::Plain { .. } => {
+                    // Only a type, never a value.
+                    [Some(NamespacedName::Types(item_name)), None]
+                        .into_iter()
+                        .flatten()
+                }
+            }
+        }
+        ItemEnum::Variant(..)
+        | ItemEnum::Function(..)
+        | ItemEnum::Constant(..)
+        | ItemEnum::Static(..) => {
+            let item_name = item.name.as_deref().expect("item did not have a name");
+            [Some(NamespacedName::Values(item_name)), None]
+                .into_iter()
+                .flatten()
+        }
+        _ => [None, None].into_iter().flatten(),
+    }
+}
+
+fn populate_initial_state(crate_: &Crate) -> TraversalState<'_> {
+    let mut result = TraversalState::default();
+
+    for item in crate_.index.values() {
+        let ItemEnum::Module(module_item) = &item.inner else { continue; };
+        for inner_id in &module_item.items {
+            let Some(inner_item) = crate_.index.get(inner_id) else { continue; };
+
+            if let ItemEnum::Import(imp) = &inner_item.inner {
+                if imp.glob {
+                    result
+                        .modules_with_glob_imports
+                        .entry(&item.id)
+                        .or_default()
+                        .insert(inner_id);
+                } else if let Some(target) = imp.id.as_ref().and_then(|id| crate_.index.get(id)) {
+                    for name in get_names_for_item(crate_, target) {
+                        // Handle renaming imports like `use some::foo as bar;`
+                        let name = name.rename(&imp.name);
+
+                        // TODO: This only handles within-crate imports. It'll need to be updated
+                        //       when we support multiple crates and cross-crate imports.
+                        result
+                            .names_defined_in_module
+                            .entry(&item.id)
+                            .or_default()
+                            .insert(name, (&target.id, target.visibility == Visibility::Public));
+                    }
+                }
+            } else {
+                for name in get_names_for_item(crate_, inner_item) {
+                    result
+                        .names_defined_in_module
+                        .entry(&item.id)
+                        .or_default()
+                        .insert(
+                            name,
+                            (&inner_item.id, inner_item.visibility == Visibility::Public),
+                        );
+                }
+            }
+        }
+    }
+
+    dbg!(&result.names_defined_in_module);
+
+    resolve_glob_imported_names(crate_, &mut result);
+
+    dbg!(&result.glob_imported_names_in_module);
+    dbg!(&result.duplicated_glob_names_in_module);
+
+    result
+}
+
+fn resolve_glob_imported_names<'a>(crate_: &'a Crate, traversal_state: &mut TraversalState<'a>) {
+    for (&module_id, globs) in &traversal_state.modules_with_glob_imports {
+        let mut visited: HashSet<&Id> = Default::default();
+        let mut names = Default::default();
+        let mut duplicated_names = Default::default();
+
+        visited.insert(module_id);
+        for &glob_id in globs {
+            recursively_compute_visited_names_for_glob(
+                crate_,
+                module_id,
+                glob_id,
+                &*traversal_state,
+                &mut visited,
+                &mut names,
+                &mut duplicated_names,
+            );
+        }
+
+        if !names.is_empty() {
+            traversal_state
+                .glob_imported_names_in_module
+                .insert(module_id, names);
+        }
+        if !duplicated_names.is_empty() {
+            traversal_state
+                .duplicated_glob_names_in_module
+                .insert(module_id, duplicated_names);
+        }
+    }
+}
+
+fn recursively_compute_visited_names_for_glob<'a>(
+    crate_: &'a Crate,
+    glob_parent_module_id: &'a Id,
+    glob_id: &'a Id,
+    traversal_state: &TraversalState<'a>,
+    visited: &mut HashSet<&'a Id>,
+    names: &mut HashMap<NamespacedName<'a>, &'a Id>,
+    duplicated_names: &mut HashSet<NamespacedName<'a>>,
+) {
+    let ItemEnum::Import(glob_import) = &crate_.index[glob_id].inner else { unreachable!("Id {glob_id:?} was not a glob: {:?}", crate_.index[glob_id]); };
+    assert!(glob_import.glob, "not a glob import: {glob_import:?}");
+
+    let module_local_items = traversal_state
+        .names_defined_in_module
+        .get(glob_parent_module_id);
+
+    // Glob imports can target both enums and modules. Figure out which one this is.
+    let target_id = glob_import
+        .id
+        .as_ref()
+        .expect("no target Id for glob import");
+
+    if let Some(ItemEnum::Enum(enum_item)) = &crate_.index.get(target_id).map(|item| &item.inner) {
+        for variant_id in &enum_item.variants {
+            if let Some(variant_item) = crate_.index.get(variant_id) {
+                let name = NamespacedName::Values(
+                    variant_item.name.as_deref().expect("no name for variant"),
+                );
+
+                // Don't add names that would be shadowed by an explicit definition
+                // in the glob's parent module.
+                // TODO: extract into fn, it's duplicated below
+                if module_local_items
+                    .map(|items| !items.contains_key(&name))
+                    .unwrap_or(true)
+                {
+                    match names.entry(name) {
+                        std::collections::hash_map::Entry::Occupied(entry) => {
+                            if *entry.get() != variant_id {
+                                // Duplicate name, remove from here and move to duplicates.
+                                entry.remove();
+                                duplicated_names.insert(name);
+                            }
+                        }
+                        std::collections::hash_map::Entry::Vacant(entry) => {
+                            if !duplicated_names.contains(&name) {
+                                entry.insert(variant_id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    let module_id = target_id;
+    if !visited.insert(module_id) {
+        // Already checked this module.
+        return;
+    }
+
+    // Process the public locally-defined items.
+    if let Some(names_in_module) = traversal_state.names_defined_in_module.get(module_id) {
+        for (local_name, data) in names_in_module {
+            let (item_id, is_public) = *data;
+            if is_public {
+                // Don't add names that would be shadowed by an explicit definition
+                // in the glob's parent module.
+                // TODO: extract into fn, it's duplicated below
+                if module_local_items
+                    .map(|items| !items.contains_key(local_name))
+                    .unwrap_or(true)
+                {
+                    match names.entry(*local_name) {
+                        std::collections::hash_map::Entry::Occupied(entry) => {
+                            if *entry.get() != item_id {
+                                // Duplicate name, remove from here and move to duplicates.
+                                entry.remove();
+                                duplicated_names.insert(*local_name);
+                            }
+                        }
+                        std::collections::hash_map::Entry::Vacant(entry) => {
+                            if !duplicated_names.contains(local_name) {
+                                entry.insert(item_id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Recurse into any glob imports defined here.
+    if let Some(globs) = traversal_state.modules_with_glob_imports.get(module_id) {
+        for &glob_id in globs {
+            recursively_compute_visited_names_for_glob(
+                crate_,
+                module_id,
+                glob_id,
+                traversal_state,
+                visited,
+                names,
+                duplicated_names,
+            );
+        }
+    }
+}
+
 /// Collect all public items that are reachable from the crate root and record their parent Ids.
 fn visit_root_reachable_public_items<'a>(
     crate_: &'a Crate,
     parents: &mut HashMap<&'a Id, HashSet<&'a Id>>,
+    traversal_state: &TraversalState<'a>,
     currently_visited_items: &mut HashSet<&'a Id>,
     item: &'a Item,
     parent_id: Option<&'a Id>,
@@ -252,44 +529,46 @@ fn visit_root_reachable_public_items<'a>(
                 visit_root_reachable_public_items(
                     crate_,
                     parents,
+                    traversal_state,
                     currently_visited_items,
                     inner,
                     next_parent_id,
                 );
+            }
+
+            // Explicitly process items imported via globs inside this module,
+            // since the logic there is not item-wise: it requires
+            // knowledge of the other names defined in the module.
+            if let Some(glob_imports) = traversal_state.glob_imported_names_in_module.get(&item.id)
+            {
+                for inner_id in glob_imports.values() {
+                    if let Some(inner_item) = crate_.index.get(*inner_id) {
+                        // Glob imports point directly to the contents of the pointed-to module.
+                        // For each glob-imported item in this module,
+                        // this module is their parent and not the glob import.
+                        visit_root_reachable_public_items(
+                            crate_,
+                            parents,
+                            traversal_state,
+                            currently_visited_items,
+                            inner_item,
+                            next_parent_id,
+                        );
+                    }
+                }
             }
         }
         rustdoc_types::ItemEnum::Import(imp) => {
             // Imports of modules, and glob imports of enums,
             // import the *contents* of the pointed-to item rather than the item itself.
             if let Some(imported_item) = imp.id.as_ref().and_then(|id| crate_.index.get(id)) {
-                if imp.glob {
-                    // Glob imports point directly to the contents of the pointed-to module.
-                    // For each item in that module, the import's parent becomes its parent as well.
-                    let next_parent_id = parent_id;
-
-                    let inner_ids = match &imported_item.inner {
-                        rustdoc_types::ItemEnum::Module(mod_item) => &mod_item.items,
-                        rustdoc_types::ItemEnum::Enum(enum_item) => &enum_item.variants,
-                        _ => unreachable!(
-                            "found a glob import of an unexpected kind of item: \
-                            {imp:?} {imported_item:?}"
-                        ),
-                    };
-                    for inner_id in inner_ids {
-                        if let Some(inner_item) = crate_.index.get(inner_id) {
-                            visit_root_reachable_public_items(
-                                crate_,
-                                parents,
-                                currently_visited_items,
-                                inner_item,
-                                next_parent_id,
-                            );
-                        }
-                    }
-                } else {
+                // Glob imports are handled at the level of the module that contains them.
+                // Here we just skip them as a no-op.
+                if !imp.glob {
                     visit_root_reachable_public_items(
                         crate_,
                         parents,
+                        traversal_state,
                         currently_visited_items,
                         imported_item,
                         next_parent_id,
@@ -313,6 +592,7 @@ fn visit_root_reachable_public_items<'a>(
                 visit_root_reachable_public_items(
                     crate_,
                     parents,
+                    traversal_state,
                     currently_visited_items,
                     inner,
                     next_parent_id,
@@ -329,6 +609,7 @@ fn visit_root_reachable_public_items<'a>(
                 visit_root_reachable_public_items(
                     crate_,
                     parents,
+                    traversal_state,
                     currently_visited_items,
                     inner,
                     next_parent_id,
@@ -345,6 +626,7 @@ fn visit_root_reachable_public_items<'a>(
                 visit_root_reachable_public_items(
                     crate_,
                     parents,
+                    traversal_state,
                     currently_visited_items,
                     inner,
                     next_parent_id,
@@ -356,6 +638,7 @@ fn visit_root_reachable_public_items<'a>(
                 visit_root_reachable_public_items(
                     crate_,
                     parents,
+                    traversal_state,
                     currently_visited_items,
                     inner,
                     next_parent_id,
@@ -367,6 +650,7 @@ fn visit_root_reachable_public_items<'a>(
                 visit_root_reachable_public_items(
                     crate_,
                     parents,
+                    traversal_state,
                     currently_visited_items,
                     inner,
                     next_parent_id,
@@ -384,6 +668,7 @@ fn visit_root_reachable_public_items<'a>(
                 visit_root_reachable_public_items(
                     crate_,
                     parents,
+                    traversal_state,
                     currently_visited_items,
                     reexport_target,
                     next_parent_id,

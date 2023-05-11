@@ -11,6 +11,7 @@ pub enum Foo {
 pub mod inner {
     pub use super::Foo::*;
 
-    // This implicitly overrides the re-export of `super::Foo::First`.
+    // This implicitly overrides the re-export of `super::Foo::First`,
+    // because as a unit struct, `First` exports both a type and a value with that name.
     pub struct First;
 }
