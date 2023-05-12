@@ -347,10 +347,7 @@ fn populate_initial_state(crate_: &Crate) -> TraversalState<'_> {
                             }
                         };
                         let Some(final_underlying_id) = final_underlying_id else { continue; };
-                        let definition = Definition::new(
-                            inner_id,
-                            final_underlying_id,
-                        );
+                        let definition = Definition::new(inner_id, final_underlying_id);
 
                         result
                             .names_defined_in_module
@@ -416,6 +413,16 @@ fn resolve_glob_imported_names<'a>(crate_: &'a Crate, traversal_state: &mut Trav
                 &mut names,
                 &mut duplicated_names,
             );
+        }
+
+        // Glob-of-glob import chains might still produce `names` and `duplicated_names` entries
+        // that would be shadowed by locally-defined names in this module. Apply the shadowing
+        // rules by removing any conflicing names from both of those collections.
+        if let Some(local_names) = traversal_state.names_defined_in_module.get(module_id) {
+            for local_name in local_names.keys() {
+                names.remove(local_name);
+                duplicated_names.remove(local_name);
+            }
         }
 
         if !names.is_empty() {

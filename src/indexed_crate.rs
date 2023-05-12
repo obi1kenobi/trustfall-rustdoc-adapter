@@ -1453,15 +1453,17 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
 
                 match deduplicated_actual_items.len() {
                     1 => assert_eq!(
-                        deduplicated_actual_items,
                         btreeset! { "cyclic_overlapping_glob_and_local_item::Foo" },
-                    ),
-                    2 => assert_eq!(
                         deduplicated_actual_items,
+                    ),
+                    4 => assert_eq!(
                         btreeset! {
                             "cyclic_overlapping_glob_and_local_item::inner::Foo",
                             "cyclic_overlapping_glob_and_local_item::inner::nested::Foo",
-                        }
+                            "cyclic_overlapping_glob_and_local_item::nested::Foo",
+                            "cyclic_overlapping_glob_and_local_item::nested::inner::Foo",
+                        },
+                        deduplicated_actual_items,
                     ),
                     _ => unreachable!("unexpected value for {deduplicated_actual_items:?}"),
                 };
@@ -1475,6 +1477,8 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                     "cyclic_overlapping_glob_and_local_item::Foo",
                     "cyclic_overlapping_glob_and_local_item::inner::Foo",
                     "cyclic_overlapping_glob_and_local_item::inner::nested::Foo",
+                    "cyclic_overlapping_glob_and_local_item::nested::Foo",
+                    "cyclic_overlapping_glob_and_local_item::nested::inner::Foo",
                 ],
                 all_importable_paths,
             );
@@ -1578,7 +1582,9 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                     ItemEnum::Function(..) => {
                         vec!["glob_of_enum_does_not_shadow_local_fn::inner::First"]
                     }
-                    other => unreachable!("item {item_id:?} had unexpected inner content: {other:?}"),
+                    other => {
+                        unreachable!("item {item_id:?} had unexpected inner content: {other:?}")
+                    }
                 };
 
                 assert_eq!(expected_items, actual_items);
