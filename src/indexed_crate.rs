@@ -565,7 +565,7 @@ mod tests {
 
         use itertools::Itertools;
         use maplit::{btreemap, btreeset};
-        use rustdoc_types::ItemEnum;
+        use rustdoc_types::{ItemEnum, Visibility};
 
         use crate::{test_util::load_pregenerated_rustdoc, IndexedCrate};
 
@@ -1591,7 +1591,11 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
             }
         }
 
+        /// There's currently no way to detect private imports that shadow glob items.
+        /// Reported as: <https://github.com/rust-lang/rust/issues/111338>
         #[test]
+        #[should_panic = "expected no importable item names but found \
+                         [\"overlapping_glob_and_private_import::inner::Foo\"]"]
         fn overlapping_glob_and_private_import() {
             let test_crate = "overlapping_glob_and_private_import";
 
@@ -1621,6 +1625,89 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                     actual_items.is_empty(),
                     "expected no importable item names but found {actual_items:?}"
                 );
+            }
+        }
+
+        /// Our logic for determining whether a tuple struct's implicit constructor is exported
+        /// is too simplistic: it assumes "yes" if all fields are pub, and "no" otherwise.
+        /// This is why this test currently fails.
+        /// TODO: fix this once rustdoc includes shadowing information
+        ///       <https://github.com/rust-lang/rust/issues/111338>
+        ///
+        /// Its sibling test `visibility_modifier_avoids_shadowing` ensures that shadowing is
+        /// not inappropriately applied when the tuple constructors do *not* shadow each other.
+        #[test]
+        #[should_panic = "expected no importable item names but found \
+                         [\"visibility_modifier_causes_shadowing::Foo\"]"]
+        fn visibility_modifier_causes_shadowing() {
+            let test_crate = "visibility_modifier_causes_shadowing";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 3 {
+                panic!(
+                    "Expected to find exactly 3 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|components| components.into_iter().join("::"))
+                    .collect();
+
+                assert!(
+                    actual_items.is_empty(),
+                    "expected no importable item names but found {actual_items:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn visibility_modifier_avoids_shadowing() {
+            let test_crate = "visibility_modifier_avoids_shadowing";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 3 {
+                panic!(
+                    "Expected to find exactly 3 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|components| components.into_iter().join("::"))
+                    .collect();
+
+                if rustdoc.index[item_id].visibility == Visibility::Public {
+                    assert_eq!(
+                        vec!["visibility_modifier_avoids_shadowing::Foo"],
+                        actual_items,
+                    );
+                } else {
+                    assert!(
+                        actual_items.is_empty(),
+                        "expected no importable item names but found {actual_items:?}"
+                    );
+                }
             }
         }
 
