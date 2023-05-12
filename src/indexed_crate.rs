@@ -1541,17 +1541,48 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
         #[test]
         fn glob_of_enum_does_not_shadow_local_fn() {
             let test_crate = "glob_of_enum_does_not_shadow_local_fn";
-            let expected_items = btreemap! {
-                "Foo" => (1, btreeset![
-                    "glob_of_enum_does_not_shadow_local_fn::Foo",
-                ]),
-                "First" => (2, btreeset![
-                    "glob_of_enum_does_not_shadow_local_fn::inner::First",
-                    "glob_of_enum_does_not_shadow_local_fn::inner::First",
-                ]),
-            };
 
-            assert_duplicated_exported_items_match(test_crate, &expected_items);
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let first_ids = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("First")).then_some(id))
+                .collect_vec();
+            if first_ids.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    First, but found these matching IDs: {first_ids:?}"
+                );
+            }
+
+            for item_id in first_ids {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|components| components.into_iter().join("::"))
+                    .collect();
+                let deduplicated_actual_items: BTreeSet<_> =
+                    actual_items.iter().map(|x| x.as_str()).collect();
+                assert_eq!(
+                    actual_items.len(),
+                    deduplicated_actual_items.len(),
+                    "duplicates found: {actual_items:?}"
+                );
+
+                let expected_items = match &rustdoc.index[item_id].inner {
+                    ItemEnum::Variant(..) => {
+                        vec!["glob_of_enum_does_not_shadow_local_fn::Foo::First"]
+                    }
+                    ItemEnum::Function(..) => {
+                        vec!["glob_of_enum_does_not_shadow_local_fn::inner::First"]
+                    }
+                    other => unreachable!("item {item_id:?} had unexpected inner content: {other:?}"),
+                };
+
+                assert_eq!(expected_items, actual_items);
+            }
         }
 
         #[test]
@@ -1625,6 +1656,32 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
             let expected_items = btreemap! {
                 "Foo" => btreeset![
                     "glob_vs_glob_no_shadowing_for_same_item::Foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_vs_glob_no_shadowing_for_same_renamed_item() {
+            let test_crate = "glob_vs_glob_no_shadowing_for_same_renamed_item";
+
+            let expected_items = btreemap! {
+                "Bar" => btreeset![
+                    "glob_vs_glob_no_shadowing_for_same_renamed_item::Foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_vs_glob_no_shadowing_for_same_multiply_renamed_item() {
+            let test_crate = "glob_vs_glob_no_shadowing_for_same_multiply_renamed_item";
+
+            let expected_items = btreemap! {
+                "Bar" => btreeset![
+                    "glob_vs_glob_no_shadowing_for_same_multiply_renamed_item::Foo",
                 ],
             };
 

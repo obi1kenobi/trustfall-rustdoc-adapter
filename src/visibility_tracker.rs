@@ -156,11 +156,41 @@ impl<'a> VisibilityTracker<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
+struct Definition<'a> {
+    /// The Id of this definition.
+    ///
+    /// When the definition is an import, the `current_id` is the Id of the import,
+    /// to account for possible renamings.
+    /// Otherwise, the `current_id` should be the same as the `underlying_id`.
+    current_id: &'a Id,
+
+    /// The actual underlying item this definition resolves to, like a struct or function.
+    /// This Id must not point to an import item.
+    final_underlying_id: &'a Id,
+}
+
+impl<'a> Definition<'a> {
+    fn new(current_id: &'a Id, final_underlying_id: &'a Id) -> Self {
+        Self {
+            current_id,
+            final_underlying_id,
+        }
+    }
+
+    fn new_direct(id: &'a Id) -> Self {
+        Self {
+            current_id: id,
+            final_underlying_id: id,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct TraversalState<'a> {
     // Module Id -> { name -> (id, is_public) } for items directly defined in that module.
     // Not just public names, since private names can shadow pub glob-exported names.
-    names_defined_in_module: HashMap<&'a Id, HashMap<NamespacedName<'a>, (&'a Id, bool)>>,
+    names_defined_in_module: HashMap<&'a Id, HashMap<NamespacedName<'a>, (Definition<'a>, bool)>>,
 
     // Modules and the glob imports they contain.
     modules_with_glob_imports: HashMap<&'a Id, HashSet<&'a Id>>,
@@ -168,7 +198,7 @@ struct TraversalState<'a> {
     // Names that were glob-imported and re-exported into a module, together with
     // the item Id to which they refer. This is because glob-glob name shadowing doesn't apply
     // if both names point to the same item.
-    glob_imported_names_in_module: HashMap<&'a Id, HashMap<NamespacedName<'a>, &'a Id>>,
+    glob_imported_names_in_module: HashMap<&'a Id, HashMap<NamespacedName<'a>, Definition<'a>>>,
 
     // Names in a module that were glob-imported more than once, and are therefore unusable.
     duplicated_glob_names_in_module: HashMap<&'a Id, HashSet<NamespacedName<'a>>>,
@@ -299,8 +329,29 @@ fn populate_initial_state(crate_: &Crate) -> TraversalState<'_> {
                         // Handle renaming imports like `use some::foo as bar;`
                         let name = name.rename(&imp.name);
 
+                        // Resolve the final item to which this import points.
+                        // This is important to ensure we don't incorrectly decide that
+                        // two glob imports shadow each other when they point to the same item.
+                        //
                         // TODO: This only handles within-crate imports. It'll need to be updated
                         //       when we support multiple crates and cross-crate imports.
+                        let mut underlying_item = target;
+                        let final_underlying_id = loop {
+                            if let ItemEnum::Import(next_import) = &underlying_item.inner {
+                                match next_import.id.as_ref().and_then(|id| crate_.index.get(id)) {
+                                    None => break None,
+                                    Some(item) => underlying_item = item,
+                                }
+                            } else {
+                                break Some(&underlying_item.id);
+                            }
+                        };
+                        let Some(final_underlying_id) = final_underlying_id else { continue; };
+                        let definition = Definition::new(
+                            inner_id,
+                            final_underlying_id,
+                        );
+
                         result
                             .names_defined_in_module
                             .entry(&item.id)
@@ -308,7 +359,7 @@ fn populate_initial_state(crate_: &Crate) -> TraversalState<'_> {
                             .insert(
                                 name,
                                 (
-                                    inner_id,
+                                    definition,
                                     matches!(
                                         target.visibility,
                                         Visibility::Public | Visibility::Default
@@ -326,7 +377,7 @@ fn populate_initial_state(crate_: &Crate) -> TraversalState<'_> {
                         .insert(
                             name,
                             (
-                                &inner_item.id,
+                                Definition::new_direct(&inner_item.id),
                                 matches!(
                                     inner_item.visibility,
                                     Visibility::Public | Visibility::Default
@@ -386,7 +437,7 @@ fn recursively_compute_visited_names_for_glob<'a>(
     glob_id: &'a Id,
     traversal_state: &TraversalState<'a>,
     visited: &mut HashSet<&'a Id>,
-    names: &mut HashMap<NamespacedName<'a>, &'a Id>,
+    names: &mut HashMap<NamespacedName<'a>, Definition<'a>>,
     duplicated_names: &mut HashSet<NamespacedName<'a>>,
 ) {
     let ItemEnum::Import(glob_import) = &crate_.index[glob_id].inner else { unreachable!("Id {glob_id:?} was not a glob: {:?}", crate_.index[glob_id]); };
@@ -418,7 +469,7 @@ fn recursively_compute_visited_names_for_glob<'a>(
                 {
                     match names.entry(name) {
                         std::collections::hash_map::Entry::Occupied(entry) => {
-                            if *entry.get() != variant_id {
+                            if entry.get().final_underlying_id != variant_id {
                                 // Duplicate name, remove from here and move to duplicates.
                                 entry.remove();
                                 duplicated_names.insert(name);
@@ -426,7 +477,7 @@ fn recursively_compute_visited_names_for_glob<'a>(
                         }
                         std::collections::hash_map::Entry::Vacant(entry) => {
                             if !duplicated_names.contains(&name) {
-                                entry.insert(variant_id);
+                                entry.insert(Definition::new_direct(variant_id));
                             }
                         }
                     }
@@ -445,8 +496,8 @@ fn recursively_compute_visited_names_for_glob<'a>(
     // Process the public locally-defined items.
     if let Some(names_in_module) = traversal_state.names_defined_in_module.get(module_id) {
         for (local_name, data) in names_in_module {
-            let (item_id, is_public) = *data;
-            if is_public {
+            let (item_defn, is_public) = data;
+            if *is_public {
                 // Don't add names that would be shadowed by an explicit definition
                 // in the glob's parent module.
                 // TODO: extract into fn, it's duplicated below
@@ -456,7 +507,7 @@ fn recursively_compute_visited_names_for_glob<'a>(
                 {
                     match names.entry(*local_name) {
                         std::collections::hash_map::Entry::Occupied(entry) => {
-                            if *entry.get() != item_id {
+                            if entry.get().final_underlying_id != item_defn.final_underlying_id {
                                 // Duplicate name, remove from here and move to duplicates.
                                 entry.remove();
                                 duplicated_names.insert(*local_name);
@@ -464,7 +515,7 @@ fn recursively_compute_visited_names_for_glob<'a>(
                         }
                         std::collections::hash_map::Entry::Vacant(entry) => {
                             if !duplicated_names.contains(local_name) {
-                                entry.insert(item_id);
+                                entry.insert(item_defn.clone());
                             }
                         }
                     }
@@ -556,8 +607,8 @@ fn visit_root_reachable_public_items<'a>(
             // knowledge of the other names defined in the module.
             if let Some(glob_imports) = traversal_state.glob_imported_names_in_module.get(&item.id)
             {
-                for inner_id in glob_imports.values() {
-                    if let Some(inner_item) = crate_.index.get(*inner_id) {
+                for inner_defn in glob_imports.values() {
+                    if let Some(inner_item) = crate_.index.get(inner_defn.current_id) {
                         // Glob imports point directly to the contents of the pointed-to module.
                         // For each glob-imported item in this module,
                         // this module is their parent and not the glob import.
