@@ -361,21 +361,7 @@ fn visit_root_reachable_public_items<'a>(
     parent_id: Option<&'a Id>,
 ) {
     match item.visibility {
-        Visibility::Crate => {
-            if matches!(item.inner, ItemEnum::Impl(_)) {
-                // A bug in rustdoc of Rust 1.69 and older causes `impl` items
-                // to be given `crate` visibility instead of the correct `default` visibility.
-                // Rust does not support `pub(crate) impl` or other visibility modifiers,
-                // so if we're in this block, we're affected by the bug.
-                //
-                // The fix has shipped in 1.70 beta, but that still uses rustdoc v24.
-                // TODO: Remove this in rustdoc v25+ since the fix should be present there.
-            } else {
-                // This item is not public, so we don't need to process it.
-                return;
-            }
-        }
-        Visibility::Restricted { .. } => {
+        Visibility::Crate | Visibility::Restricted { .. } => {
             // This item is not public, so we don't need to process it.
             return;
         }
