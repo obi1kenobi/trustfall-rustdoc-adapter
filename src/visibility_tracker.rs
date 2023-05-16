@@ -2,23 +2,6 @@ use std::collections::{HashMap, HashSet};
 
 use rustdoc_types::{Crate, GenericArgs, Id, Item, ItemEnum, Typedef, Visibility};
 
-/// A Rust item name, together with the namespace the name is in.
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum NamespacedName<'a> {
-    Values(&'a str),
-    Types(&'a str),
-}
-
-impl<'a> NamespacedName<'a> {
-    fn rename(&self, new_name: &'a str) -> Self {
-        match self {
-            NamespacedName::Values(_) => NamespacedName::Values(new_name),
-            NamespacedName::Types(_) => NamespacedName::Types(new_name),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct VisibilityTracker<'a> {
     // The crate this represents.
@@ -156,6 +139,23 @@ impl<'a> VisibilityTracker<'a> {
     }
 }
 
+/// A Rust item name, together with the namespace the name is in.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum NamespacedName<'a> {
+    Values(&'a str),
+    Types(&'a str),
+}
+
+impl<'a> NamespacedName<'a> {
+    fn rename(&self, new_name: &'a str) -> Self {
+        match self {
+            NamespacedName::Values(_) => NamespacedName::Values(new_name),
+            NamespacedName::Types(_) => NamespacedName::Types(new_name),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Definition<'a> {
     /// The Id of this definition.
@@ -186,21 +186,23 @@ impl<'a> Definition<'a> {
     }
 }
 
+/// Type showing which names are defined in which modules, where they point to,
+/// and whether they are defined directly, or imported directly or via a glob.
 #[derive(Debug, Default)]
-struct TraversalState<'a> {
-    // Module Id -> { name -> (id, is_public) } for items directly defined in that module.
-    // Not just public names, since private names can shadow pub glob-exported names.
+struct NameResolution<'a> {
+    /// Module Id -> { name -> (id, is_public) } for items directly defined in that module.
+    /// Not just public names, since private names can shadow pub glob-exported names.
     names_defined_in_module: HashMap<&'a Id, HashMap<NamespacedName<'a>, (Definition<'a>, bool)>>,
 
-    // Modules and the glob imports they contain.
+    /// Modules and the glob imports they contain.
     modules_with_glob_imports: HashMap<&'a Id, HashSet<&'a Id>>,
 
-    // Names that were glob-imported and re-exported into a module, together with
-    // the item Id to which they refer. This is because glob-glob name shadowing doesn't apply
-    // if both names point to the same item.
+    /// Names that were glob-imported and re-exported into a module, together with
+    /// the item Id to which they refer. This is because glob-glob name shadowing doesn't apply
+    /// if both names point to the same item.
     glob_imported_names_in_module: HashMap<&'a Id, HashMap<NamespacedName<'a>, Definition<'a>>>,
 
-    // Names in a module that were glob-imported more than once, and are therefore unusable.
+    /// Names in a module that were glob-imported more than once, and are therefore unusable.
     duplicated_glob_names_in_module: HashMap<&'a Id, HashSet<NamespacedName<'a>>>,
 }
 
@@ -210,7 +212,7 @@ fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<&Id, HashSet<&
 
     if let Some(root_module) = crate_.index.get(root_id) {
         if root_module.visibility == Visibility::Public {
-            let traversal_state = populate_initial_state(crate_);
+            let traversal_state = resolve_crate_names(crate_);
 
             // Avoid cycles by keeping track of which items we're in the middle of visiting.
             let mut currently_visited_items: HashSet<&Id> = Default::default();
@@ -306,8 +308,8 @@ fn get_names_for_item<'a>(
     }
 }
 
-fn populate_initial_state(crate_: &Crate) -> TraversalState<'_> {
-    let mut result = TraversalState::default();
+fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
+    let mut result = NameResolution::default();
 
     for item in crate_.index.values() {
         let ItemEnum::Module(module_item) = &item.inner else { continue; };
@@ -393,7 +395,7 @@ fn populate_initial_state(crate_: &Crate) -> TraversalState<'_> {
     result
 }
 
-fn resolve_glob_imported_names<'a>(crate_: &'a Crate, traversal_state: &mut TraversalState<'a>) {
+fn resolve_glob_imported_names<'a>(crate_: &'a Crate, traversal_state: &mut NameResolution<'a>) {
     for (&module_id, globs) in &traversal_state.modules_with_glob_imports {
         let mut visited: HashSet<&Id> = Default::default();
         let mut names = Default::default();
@@ -439,7 +441,7 @@ fn recursively_compute_visited_names_for_glob<'a>(
     crate_: &'a Crate,
     glob_parent_module_id: &'a Id,
     glob_id: &'a Id,
-    traversal_state: &TraversalState<'a>,
+    traversal_state: &NameResolution<'a>,
     visited: &mut HashSet<&'a Id>,
     names: &mut HashMap<NamespacedName<'a>, Definition<'a>>,
     duplicated_names: &mut HashSet<NamespacedName<'a>>,
@@ -548,7 +550,7 @@ fn register_name<'a>(
 fn visit_root_reachable_public_items<'a>(
     crate_: &'a Crate,
     parents: &mut HashMap<&'a Id, HashSet<&'a Id>>,
-    traversal_state: &TraversalState<'a>,
+    traversal_state: &NameResolution<'a>,
     currently_visited_items: &mut HashSet<&'a Id>,
     item: &'a Item,
     parent_id: Option<&'a Id>,
