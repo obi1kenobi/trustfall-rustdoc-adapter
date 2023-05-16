@@ -385,12 +385,7 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
         }
     }
 
-    dbg!(&result.names_defined_in_module);
-
     resolve_glob_imported_names(crate_, &mut result);
-
-    dbg!(&result.glob_imported_names_in_module);
-    dbg!(&result.duplicated_glob_names_in_module);
 
     result
 }
