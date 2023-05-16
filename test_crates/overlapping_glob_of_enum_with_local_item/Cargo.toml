@@ -1,4 +1,5 @@
 [package]
+publish = false
 name = "overlapping_glob_of_enum_with_local_item"
 version = "0.1.0"
 edition = "2021"

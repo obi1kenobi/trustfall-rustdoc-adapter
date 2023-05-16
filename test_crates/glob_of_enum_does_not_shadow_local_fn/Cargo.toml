@@ -1,4 +1,5 @@
 [package]
+publish = false
 name = "glob_of_enum_does_not_shadow_local_fn"
 version = "0.1.0"
 edition = "2021"

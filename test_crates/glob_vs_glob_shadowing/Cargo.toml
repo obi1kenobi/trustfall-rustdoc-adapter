@@ -1,4 +1,5 @@
 [package]
+publish = false
 name = "glob_vs_glob_shadowing"
 version = "0.1.0"
 edition = "2021"

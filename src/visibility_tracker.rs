@@ -441,7 +441,9 @@ fn recursively_compute_visited_names_for_glob<'a>(
     names: &mut HashMap<NamespacedName<'a>, Definition<'a>>,
     duplicated_names: &mut HashSet<NamespacedName<'a>>,
 ) {
-    let ItemEnum::Import(glob_import) = &crate_.index[glob_id].inner else { unreachable!("Id {glob_id:?} was not a glob: {:?}", crate_.index[glob_id]); };
+    let ItemEnum::Import(glob_import) = &crate_.index[glob_id].inner else {
+        unreachable!("Id {glob_id:?} was not a glob: {:?}", crate_.index[glob_id]);
+    };
     assert!(glob_import.glob, "not a glob import: {glob_import:?}");
 
     let module_local_items = traversal_state
