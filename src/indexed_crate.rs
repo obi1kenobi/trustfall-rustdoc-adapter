@@ -1,9 +1,11 @@
 use std::{
     borrow::Borrow,
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeSet, HashMap},
 };
 
-use rustdoc_types::{Crate, GenericArgs, Id, Item, ItemEnum, Typedef, Visibility};
+use rustdoc_types::{Crate, Id, Item};
+
+use crate::visibility_tracker::VisibilityTracker;
 
 /// The rustdoc for a crate, together with associated indexed data to speed up common operations.
 ///
@@ -14,8 +16,8 @@ use rustdoc_types::{Crate, GenericArgs, Id, Item, ItemEnum, Typedef, Visibility}
 pub struct IndexedCrate<'a> {
     pub(crate) inner: &'a Crate,
 
-    /// For an Id, give the list of item Ids under which it is publicly visible.
-    pub(crate) visibility_forest: HashMap<&'a Id, Vec<&'a Id>>,
+    /// Track which items are publicly visible and under which names.
+    pub(crate) visibility_tracker: VisibilityTracker<'a>,
 
     /// index: importable name (in any namespace) -> list of items under that name
     pub(crate) imports_index: Option<HashMap<ImportablePath<'a>, Vec<&'a Item>>>,
@@ -43,15 +45,7 @@ impl<'a> IndexedCrate<'a> {
     pub fn new(crate_: &'a Crate) -> Self {
         let mut value = Self {
             inner: crate_,
-            visibility_forest: compute_parent_ids_for_public_items(crate_)
-                .into_iter()
-                .map(|(key, values)| {
-                    // Ensure a consistent order, since queries can observe this order directly.
-                    let mut values: Vec<_> = values.into_iter().collect();
-                    values.sort_unstable_by_key(|x| &x.0);
-                    (key, values)
-                })
-                .collect(),
+            visibility_tracker: VisibilityTracker::from_crate(crate_),
             manually_inlined_builtin_traits: create_manually_inlined_builtin_traits(crate_),
             imports_index: None,
             impl_index: None,
@@ -163,7 +157,7 @@ impl<'a> IndexedCrate<'a> {
 
         if self.inner.index.contains_key(id) {
             let mut already_visited_ids = Default::default();
-            self.collect_publicly_importable_names(
+            self.visibility_tracker.collect_publicly_importable_names(
                 id,
                 &mut already_visited_ids,
                 &mut vec![],
@@ -172,110 +166,6 @@ impl<'a> IndexedCrate<'a> {
         }
 
         result
-    }
-
-    fn collect_publicly_importable_names(
-        &self,
-        next_id: &'a Id,
-        already_visited_ids: &mut HashSet<&'a Id>,
-        stack: &mut Vec<&'a str>,
-        output: &mut Vec<Vec<&'a str>>,
-    ) {
-        if !already_visited_ids.insert(next_id) {
-            // We found a cycle, and we've already processed this item.
-            // Nothing more to do here.
-            return;
-        }
-
-        let item = &self.inner.index[next_id];
-        if !stack.is_empty()
-            && matches!(
-                item.inner,
-                ItemEnum::Impl(..) | ItemEnum::Struct(..) | ItemEnum::Union(..)
-            )
-        {
-            // Structs, unions, and impl blocks are not modules.
-            // They *themselves* can be imported, but the items they contain cannot be imported.
-            // Since the stack is non-empty, we must be trying to determine importable names
-            // for a descendant item of a struct / union / impl. There are none.
-            //
-            // We explicitly do *not* want to check for Enum here,
-            // since enum variants *are* importable.
-            return;
-        }
-
-        let (push_name, popped_name) = match &item.inner {
-            rustdoc_types::ItemEnum::Import(import_item) => {
-                if import_item.glob {
-                    // Glob imports refer to the *contents* of the named item, not the item itself.
-                    // Rust doesn't allow glob imports to rename items, so there's no name to add.
-                    (None, None)
-                } else {
-                    // Use the name of the imported item, since it might be renaming
-                    // the item being imported.
-                    let push_name = Some(import_item.name.as_str());
-
-                    // The imported item may be renamed here, so pop it from the stack.
-                    let popped_name = Some(stack.pop().expect("no name to pop"));
-
-                    (push_name, popped_name)
-                }
-            }
-            rustdoc_types::ItemEnum::Typedef(..) => {
-                // Use the typedef name instead of the underlying item's own name,
-                // since it might be renaming the underlying item.
-                let push_name = Some(item.name.as_deref().expect("typedef had no name"));
-
-                // If there is an underlying item, pop it from the stack
-                // since it may be renamed here.
-                let popped_name = stack.pop();
-
-                (push_name, popped_name)
-            }
-            _ => (item.name.as_deref(), None),
-        };
-
-        // Push the new name onto the stack, if there is one.
-        if let Some(pushed_name) = push_name {
-            stack.push(pushed_name);
-        }
-
-        self.collect_publicly_importable_names_inner(next_id, already_visited_ids, stack, output);
-
-        // Undo any changes made to the stack, returning it to its pre-recursion state.
-        if let Some(pushed_name) = push_name {
-            let recovered_name = stack.pop().expect("there was nothing to pop");
-            assert_eq!(pushed_name, recovered_name);
-        }
-        if let Some(popped_name) = popped_name {
-            stack.push(popped_name);
-        }
-
-        // We're leaving this item. Remove it from the visited set.
-        let removed = already_visited_ids.remove(next_id);
-        assert!(removed);
-    }
-
-    fn collect_publicly_importable_names_inner(
-        &self,
-        next_id: &'a Id,
-        already_visited_ids: &mut HashSet<&'a Id>,
-        stack: &mut Vec<&'a str>,
-        output: &mut Vec<Vec<&'a str>>,
-    ) {
-        if next_id == &self.inner.root {
-            let final_name = stack.iter().rev().copied().collect();
-            output.push(final_name);
-        } else if let Some(visible_parents) = self.visibility_forest.get(next_id) {
-            for parent_id in visible_parents.iter().copied() {
-                self.collect_publicly_importable_names(
-                    parent_id,
-                    already_visited_ids,
-                    stack,
-                    output,
-                );
-            }
-        }
     }
 }
 
@@ -330,358 +220,6 @@ impl<'a> ImplEntry<'a> {
 impl<'a: 'b, 'b> Borrow<(&'b Id, &'b str)> for ImplEntry<'a> {
     fn borrow(&self) -> &(&'b Id, &'b str) {
         &(self.data)
-    }
-}
-
-fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<&Id, HashSet<&Id>> {
-    let mut result = Default::default();
-    let root_id = &crate_.root;
-    if let Some(root_module) = crate_.index.get(root_id) {
-        if root_module.visibility == Visibility::Public {
-            let mut currently_visited_items = Default::default();
-            visit_root_reachable_public_items(
-                crate_,
-                &mut result,
-                &mut currently_visited_items,
-                root_module,
-                None,
-            );
-        }
-    }
-
-    result
-}
-
-/// Collect all public items that are reachable from the crate root and record their parent Ids.
-fn visit_root_reachable_public_items<'a>(
-    crate_: &'a Crate,
-    parents: &mut HashMap<&'a Id, HashSet<&'a Id>>,
-    currently_visited_items: &mut HashSet<&'a Id>,
-    item: &'a Item,
-    parent_id: Option<&'a Id>,
-) {
-    match item.visibility {
-        Visibility::Crate | Visibility::Restricted { .. } => {
-            // This item is not public, so we don't need to process it.
-            return;
-        }
-        Visibility::Public => {} // Public item, keep going.
-        Visibility::Default => {
-            // Enum variants, and some impls and methods have default visibility:
-            // they are visible only if the type to which they belong is visible.
-            // However, we don't recurse into non-public items with this function, so
-            // reachable items with default visibility must be public.
-        }
-    }
-
-    let item_parents = parents.entry(&item.id).or_default();
-    if let Some(parent_id) = parent_id {
-        item_parents.insert(parent_id);
-    }
-
-    if !currently_visited_items.insert(&item.id) {
-        // We found a cycle in the import graph, and we've already processed this item.
-        // Nothing more to do here.
-        return;
-    }
-
-    let next_parent_id = Some(&item.id);
-    match &item.inner {
-        rustdoc_types::ItemEnum::Module(m) => {
-            for inner in m.items.iter().filter_map(|id| crate_.index.get(id)) {
-                visit_root_reachable_public_items(
-                    crate_,
-                    parents,
-                    currently_visited_items,
-                    inner,
-                    next_parent_id,
-                );
-            }
-        }
-        rustdoc_types::ItemEnum::Import(imp) => {
-            // Imports of modules, and glob imports of enums,
-            // import the *contents* of the pointed-to item rather than the item itself.
-            if let Some(imported_item) = imp.id.as_ref().and_then(|id| crate_.index.get(id)) {
-                if imp.glob {
-                    // Glob imports point directly to the contents of the pointed-to module.
-                    // For each item in that module, the import's parent becomes its parent as well.
-                    let next_parent_id = parent_id;
-
-                    let inner_ids = match &imported_item.inner {
-                        rustdoc_types::ItemEnum::Module(mod_item) => &mod_item.items,
-                        rustdoc_types::ItemEnum::Enum(enum_item) => &enum_item.variants,
-                        _ => unreachable!(
-                            "found a glob import of an unexpected kind of item: \
-                            {imp:?} {imported_item:?}"
-                        ),
-                    };
-                    for inner_id in inner_ids {
-                        if let Some(item) = crate_.index.get(inner_id) {
-                            visit_root_reachable_public_items(
-                                crate_,
-                                parents,
-                                currently_visited_items,
-                                item,
-                                next_parent_id,
-                            );
-                        }
-                    }
-                } else {
-                    visit_root_reachable_public_items(
-                        crate_,
-                        parents,
-                        currently_visited_items,
-                        imported_item,
-                        next_parent_id,
-                    );
-                }
-            }
-        }
-        rustdoc_types::ItemEnum::Struct(struct_) => {
-            let field_ids_iter: Box<dyn Iterator<Item = &Id>> = match &struct_.kind {
-                rustdoc_types::StructKind::Unit => Box::new(std::iter::empty()),
-                rustdoc_types::StructKind::Tuple(field_ids) => {
-                    Box::new(field_ids.iter().filter_map(|x| x.as_ref()))
-                }
-                rustdoc_types::StructKind::Plain { fields, .. } => Box::new(fields.iter()),
-            };
-
-            for inner in field_ids_iter
-                .chain(struct_.impls.iter())
-                .filter_map(|id| crate_.index.get(id))
-            {
-                visit_root_reachable_public_items(
-                    crate_,
-                    parents,
-                    currently_visited_items,
-                    inner,
-                    next_parent_id,
-                );
-            }
-        }
-        rustdoc_types::ItemEnum::Enum(enum_) => {
-            for inner in enum_
-                .variants
-                .iter()
-                .chain(enum_.impls.iter())
-                .filter_map(|id| crate_.index.get(id))
-            {
-                visit_root_reachable_public_items(
-                    crate_,
-                    parents,
-                    currently_visited_items,
-                    inner,
-                    next_parent_id,
-                );
-            }
-        }
-        rustdoc_types::ItemEnum::Union(union_) => {
-            for inner in union_
-                .fields
-                .iter()
-                .chain(union_.impls.iter())
-                .filter_map(|id| crate_.index.get(id))
-            {
-                visit_root_reachable_public_items(
-                    crate_,
-                    parents,
-                    currently_visited_items,
-                    inner,
-                    next_parent_id,
-                );
-            }
-        }
-        rustdoc_types::ItemEnum::Trait(trait_) => {
-            for inner in trait_.items.iter().filter_map(|id| crate_.index.get(id)) {
-                visit_root_reachable_public_items(
-                    crate_,
-                    parents,
-                    currently_visited_items,
-                    inner,
-                    next_parent_id,
-                );
-            }
-        }
-        rustdoc_types::ItemEnum::Impl(impl_) => {
-            for inner in impl_.items.iter().filter_map(|id| crate_.index.get(id)) {
-                visit_root_reachable_public_items(
-                    crate_,
-                    parents,
-                    currently_visited_items,
-                    inner,
-                    next_parent_id,
-                );
-            }
-        }
-        rustdoc_types::ItemEnum::Typedef(ty) => {
-            // We're interested in type aliases that are specifically used to rename types:
-            //   `pub type Foo = Bar`
-            // If the underlying type is generic, it's only a valid renaming if the typedef
-            // is also generic in all the same parameters.
-            //
-            // The Rust compiler ignores `where` bounds on typedefs, so we ignore them too.
-            if let Some(reexport_target) = get_typedef_equivalent_reexport_target(crate_, ty) {
-                visit_root_reachable_public_items(
-                    crate_,
-                    parents,
-                    currently_visited_items,
-                    reexport_target,
-                    next_parent_id,
-                );
-            }
-        }
-        _ => {
-            // No-op, no further items within to consider.
-        }
-    }
-
-    // We are leaving this item. Remove it from the visited set.
-    let removed = currently_visited_items.remove(&item.id);
-    assert!(removed);
-}
-
-/// Type aliases can sometimes be equivalent to a regular `pub use` re-export:
-/// `pub type Foo = crate::Bar` is an example, equivalent to `pub use crate::Bar`.
-///
-/// If the underlying type has generic parameters, the type alias must include
-/// all the same generic parameters in the same order.
-/// `pub type Foo<A, B> = crate::Bar<B, A>` is *not* equivalent to `pub use crate::Bar`.
-///
-/// If the underlying type has default values for any of its generic parameters,
-/// the same exact parameters with the same order and defaults must be present on the type alias.
-/// `pub type Foo<A> = crate::Bar<A>` is *not* equivalent to `crate::Bar<A, B = ()>`
-/// since `Foo<A, B = i64>` is not valid whereas `crate::Bar<A, B = i64>` is fine.
-fn get_typedef_equivalent_reexport_target<'a>(
-    crate_: &'a Crate,
-    ty: &'a Typedef,
-) -> Option<&'a Item> {
-    if let rustdoc_types::Type::ResolvedPath(resolved_path) = &ty.type_ {
-        let underlying = crate_.index.get(&resolved_path.id)?;
-
-        if let Some(GenericArgs::AngleBracketed { args, bindings }) = resolved_path.args.as_deref()
-        {
-            if !bindings.is_empty() {
-                // The type alias specifies some of the underlying type's generic parameters.
-                // This is not equivalent to a re-export.
-                return None;
-            }
-
-            let underlying_generics = match &underlying.inner {
-                rustdoc_types::ItemEnum::Struct(struct_) => &struct_.generics,
-                rustdoc_types::ItemEnum::Enum(enum_) => &enum_.generics,
-                rustdoc_types::ItemEnum::Trait(trait_) => &trait_.generics,
-                rustdoc_types::ItemEnum::Union(union_) => &union_.generics,
-                rustdoc_types::ItemEnum::Typedef(ty) => &ty.generics,
-                _ => unreachable!("unexpected underlying item kind: {underlying:?}"),
-            };
-
-            // For the typedef to be equivalent to a re-export, all of the following must hold:
-            // - The typedef has the same number of generic parameters as the underlying.
-            // - All underlying generic parameters are available on the typedef,
-            //   are of the same kind, in the same order, with the same defaults.
-            if ty.generics.params.len() != args.len() {
-                // The typedef takes a different number of parameters than
-                // it supplies to the underlying type. It cannot be a re-export.
-                return None;
-            }
-            if underlying_generics.params.len() != args.len() {
-                // The underlying type supports more generic parameter than the typedef supplies
-                // when using it -- the unspecified generic parameters take the default values
-                // that must have been specified on the underlying type.
-                // Nevertheless, this is not a re-export since the types are not equivalent.
-                return None;
-            }
-            for (ty_generic, (underlying_param, arg_generic)) in ty
-                .generics
-                .params
-                .iter()
-                .zip(underlying_generics.params.iter().zip(args.iter()))
-            {
-                let arg_generic_name = match arg_generic {
-                    rustdoc_types::GenericArg::Lifetime(name) => name.as_str(),
-                    rustdoc_types::GenericArg::Type(rustdoc_types::Type::Generic(t)) => t.as_str(),
-                    rustdoc_types::GenericArg::Type(_) => return None,
-                    rustdoc_types::GenericArg::Const(c) => {
-                        // Nominally, this is the const expression, not the const generic's name.
-                        // However, except for pathological edge cases, if the expression is not
-                        // simply the const generic parameter itself, then the type isn't the same.
-                        //
-                        // An example pathological case where this isn't the case is:
-                        // `pub type Foo<const N: usize> = Underlying<N + 1 - 1>;`
-                        // Detecting that this is the same expression requires that one of
-                        // rustdoc or our code do const-evaluation here.
-                        //
-                        // Const expressions like this are currently only on nightly,
-                        // so we can't test them on stable Rust at the moment.
-                        //
-                        // TODO: revisit this decision when const expressions in types are stable
-                        c.expr.as_str()
-                    }
-                    rustdoc_types::GenericArg::Infer => return None,
-                };
-                if ty_generic.name.as_str() != arg_generic_name {
-                    // The typedef params are not in the same order as the underlying type's.
-                    return None;
-                }
-
-                match (&ty_generic.kind, &underlying_param.kind) {
-                    (
-                        rustdoc_types::GenericParamDefKind::Lifetime { .. },
-                        rustdoc_types::GenericParamDefKind::Lifetime { .. },
-                    ) => {
-                        // Typedefs cannot have "outlives" relationships on their lifetimes,
-                        // so there's nothing further to compare here. So far, it's a match.
-                    }
-                    (
-                        rustdoc_types::GenericParamDefKind::Type {
-                            default: ty_default,
-                            ..
-                        },
-                        rustdoc_types::GenericParamDefKind::Type {
-                            default: underlying_default,
-                            ..
-                        },
-                    ) => {
-                        // If the typedef doesn't have the same default values for its generics,
-                        // then it isn't equivalent to the underlying and so isn't a re-export.
-                        if ty_default != underlying_default {
-                            // The defaults have changed.
-                            return None;
-                        }
-                        // We don't care about the other fields.
-                        // Generic bounds on typedefs are ignored by rustc and generate a lint.
-                    }
-                    (
-                        rustdoc_types::GenericParamDefKind::Const {
-                            type_: ty_type,
-                            default: ty_default,
-                        },
-                        rustdoc_types::GenericParamDefKind::Const {
-                            type_: underlying_type,
-                            default: underlying_default,
-                        },
-                    ) => {
-                        // If the typedef doesn't have the same default values for its generics,
-                        // then it isn't equivalent to the underlying and so isn't a re-export.
-                        //
-                        // Similarly, if it is in any way possible to change the const generic type,
-                        // that makes the typedef not a re-export anymore.
-                        if ty_default != underlying_default || ty_type != underlying_type {
-                            // The generic type or its default has changed.
-                            return None;
-                        }
-                    }
-                    _ => {
-                        // Not the same kind of generic parameter.
-                        return None;
-                    }
-                }
-            }
-        }
-
-        Some(underlying)
-    } else {
-        None
     }
 }
 
@@ -855,12 +393,25 @@ mod tests {
 
         // All the items are public.
         assert!(indexed_crate
-            .visibility_forest
+            .visibility_tracker
+            .visible_parent_ids()
             .contains_key(top_level_function));
-        assert!(indexed_crate.visibility_forest.contains_key(method));
-        assert!(indexed_crate.visibility_forest.contains_key(associated_fn));
-        assert!(indexed_crate.visibility_forest.contains_key(field));
-        assert!(indexed_crate.visibility_forest.contains_key(const_item));
+        assert!(indexed_crate
+            .visibility_tracker
+            .visible_parent_ids()
+            .contains_key(method));
+        assert!(indexed_crate
+            .visibility_tracker
+            .visible_parent_ids()
+            .contains_key(associated_fn));
+        assert!(indexed_crate
+            .visibility_tracker
+            .visible_parent_ids()
+            .contains_key(field));
+        assert!(indexed_crate
+            .visibility_tracker
+            .visible_parent_ids()
+            .contains_key(const_item));
 
         // But only `top_level_function` is importable.
         assert_eq!(
@@ -900,12 +451,25 @@ mod tests {
 
         // All the items are public.
         assert!(indexed_crate
-            .visibility_forest
+            .visibility_tracker
+            .visible_parent_ids()
             .contains_key(top_level_function));
-        assert!(indexed_crate.visibility_forest.contains_key(variant));
-        assert!(indexed_crate.visibility_forest.contains_key(method));
-        assert!(indexed_crate.visibility_forest.contains_key(associated_fn));
-        assert!(indexed_crate.visibility_forest.contains_key(const_item));
+        assert!(indexed_crate
+            .visibility_tracker
+            .visible_parent_ids()
+            .contains_key(variant));
+        assert!(indexed_crate
+            .visibility_tracker
+            .visible_parent_ids()
+            .contains_key(method));
+        assert!(indexed_crate
+            .visibility_tracker
+            .visible_parent_ids()
+            .contains_key(associated_fn));
+        assert!(indexed_crate
+            .visibility_tracker
+            .visible_parent_ids()
+            .contains_key(const_item));
 
         // But only `top_level_function` and `Foo::variant` is importable.
         assert_eq!(
@@ -945,13 +509,29 @@ mod tests {
 
         // All the items are public.
         assert!(indexed_crate
-            .visibility_forest
+            .visibility_tracker
+            .visible_parent_ids()
             .contains_key(top_level_function));
-        assert!(indexed_crate.visibility_forest.contains_key(method));
-        assert!(indexed_crate.visibility_forest.contains_key(associated_fn));
-        assert!(indexed_crate.visibility_forest.contains_key(left_field));
-        assert!(indexed_crate.visibility_forest.contains_key(right_field));
-        assert!(indexed_crate.visibility_forest.contains_key(const_item));
+        assert!(indexed_crate
+            .visibility_tracker
+            .visible_parent_ids()
+            .contains_key(method));
+        assert!(indexed_crate
+            .visibility_tracker
+            .visible_parent_ids()
+            .contains_key(associated_fn));
+        assert!(indexed_crate
+            .visibility_tracker
+            .visible_parent_ids()
+            .contains_key(left_field));
+        assert!(indexed_crate
+            .visibility_tracker
+            .visible_parent_ids()
+            .contains_key(right_field));
+        assert!(indexed_crate
+            .visibility_tracker
+            .visible_parent_ids()
+            .contains_key(const_item));
 
         // But only `top_level_function` is importable.
         assert_eq!(
@@ -985,6 +565,7 @@ mod tests {
 
         use itertools::Itertools;
         use maplit::{btreemap, btreeset};
+        use rustdoc_types::{ItemEnum, Visibility};
 
         use crate::{test_util::load_pregenerated_rustdoc, IndexedCrate};
 
@@ -1585,6 +1166,55 @@ mod tests {
         }
 
         #[test]
+        fn swapping_names() {
+            let test_crate = "swapping_names";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "swapping_names::Foo",
+                    "swapping_names::inner::Bar",
+                    "swapping_names::inner::nested::Foo",
+                ],
+                "Bar" => btreeset![
+                    "swapping_names::Bar",
+                    "swapping_names::inner::Foo",
+                    "swapping_names::inner::nested::Bar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn overlapping_glob_and_local_module() {
+            let test_crate = "overlapping_glob_and_local_module";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "overlapping_glob_and_local_module::sibling::duplicated::Foo",
+                ],
+                "Bar" => btreeset![
+                    "overlapping_glob_and_local_module::inner::duplicated::Bar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn overlapping_glob_and_renamed_module() {
+            let test_crate = "overlapping_glob_and_renamed_module";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "overlapping_glob_and_renamed_module::sibling::duplicated::Foo",
+                ],
+                "Bar" => btreeset![
+                    "overlapping_glob_and_renamed_module::inner::duplicated::Bar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
         fn type_and_value_with_matching_names() {
             let test_crate = "type_and_value_with_matching_names";
             let expected_items = btreemap! {
@@ -1595,6 +1225,19 @@ mod tests {
                 "Bar" => (2, btreeset![
                     "type_and_value_with_matching_names::Bar",
                     "type_and_value_with_matching_names::nested::Bar",
+                ]),
+            };
+
+            assert_duplicated_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn no_shadowing_across_namespaces() {
+            let test_crate = "no_shadowing_across_namespaces";
+            let expected_items = btreemap! {
+                "Foo" => (2, btreeset![
+                    "no_shadowing_across_namespaces::Foo",
+                    "no_shadowing_across_namespaces::nested::Foo",
                 ]),
             };
 
@@ -1623,6 +1266,519 @@ mod tests {
                 )
                 .expect("write failed");
             }
+        }
+
+        #[test]
+        fn overlapping_glob_and_local_item() {
+            let test_crate = "overlapping_glob_and_local_item";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let foo_ids = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if foo_ids.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    Foo, but found these matching IDs: {foo_ids:?}"
+                );
+            }
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| {
+                    (matches!(item.name.as_deref(), Some("Foo" | "Bar"))).then_some(id)
+                })
+                .collect_vec();
+            if item_id_candidates.len() != 3 {
+                panic!(
+                    "Expected to find exactly 3 items named Foo or Bar, \
+                    but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            let mut all_importable_paths = Vec::new();
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|components| components.into_iter().join("::"))
+                    .collect();
+                let deduplicated_actual_items: BTreeSet<_> =
+                    actual_items.iter().map(|x| x.as_str()).collect();
+                assert_eq!(
+                    actual_items.len(),
+                    deduplicated_actual_items.len(),
+                    "duplicates found: {actual_items:?}"
+                );
+
+                if deduplicated_actual_items
+                    .first()
+                    .expect("no names")
+                    .ends_with("::Foo")
+                {
+                    assert_eq!(
+                        deduplicated_actual_items.len(),
+                        1,
+                        "\
+expected exactly one importable path for `Foo` items in this crate but got: {actual_items:?}"
+                    );
+                } else {
+                    assert_eq!(
+                        deduplicated_actual_items,
+                        btreeset! {
+                            "overlapping_glob_and_local_item::Bar",
+                            "overlapping_glob_and_local_item::inner::Bar",
+                        }
+                    );
+                }
+
+                all_importable_paths.extend(actual_items.into_iter());
+            }
+
+            all_importable_paths.sort_unstable();
+            assert_eq!(
+                vec![
+                    "overlapping_glob_and_local_item::Bar",
+                    "overlapping_glob_and_local_item::Foo",
+                    "overlapping_glob_and_local_item::inner::Bar",
+                    "overlapping_glob_and_local_item::inner::Foo",
+                ],
+                all_importable_paths,
+            );
+        }
+
+        #[test]
+        fn nested_overlapping_glob_and_local_item() {
+            let test_crate = "nested_overlapping_glob_and_local_item";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            let mut all_importable_paths = Vec::new();
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|components| components.into_iter().join("::"))
+                    .collect();
+                let deduplicated_actual_items: BTreeSet<_> =
+                    actual_items.iter().map(|x| x.as_str()).collect();
+
+                assert_eq!(
+                    actual_items.len(),
+                    deduplicated_actual_items.len(),
+                    "duplicates found: {actual_items:?}"
+                );
+
+                match deduplicated_actual_items.len() {
+                    1 => assert_eq!(
+                        deduplicated_actual_items,
+                        btreeset! { "nested_overlapping_glob_and_local_item::Foo" },
+                    ),
+                    2 => assert_eq!(
+                        deduplicated_actual_items,
+                        btreeset! {
+                            "nested_overlapping_glob_and_local_item::inner::Foo",
+                            "nested_overlapping_glob_and_local_item::inner::nested::Foo",
+                        }
+                    ),
+                    _ => unreachable!("unexpected value for {deduplicated_actual_items:?}"),
+                };
+
+                all_importable_paths.extend(actual_items.into_iter());
+            }
+
+            all_importable_paths.sort_unstable();
+            assert_eq!(
+                vec![
+                    "nested_overlapping_glob_and_local_item::Foo",
+                    "nested_overlapping_glob_and_local_item::inner::Foo",
+                    "nested_overlapping_glob_and_local_item::inner::nested::Foo",
+                ],
+                all_importable_paths,
+            );
+        }
+
+        #[test]
+        fn cyclic_overlapping_glob_and_local_item() {
+            let test_crate = "cyclic_overlapping_glob_and_local_item";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            let mut all_importable_paths = Vec::new();
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|components| components.into_iter().join("::"))
+                    .collect();
+                let deduplicated_actual_items: BTreeSet<_> =
+                    actual_items.iter().map(|x| x.as_str()).collect();
+
+                assert_eq!(
+                    actual_items.len(),
+                    deduplicated_actual_items.len(),
+                    "duplicates found: {actual_items:?}"
+                );
+
+                match deduplicated_actual_items.len() {
+                    1 => assert_eq!(
+                        btreeset! { "cyclic_overlapping_glob_and_local_item::Foo" },
+                        deduplicated_actual_items,
+                    ),
+                    4 => assert_eq!(
+                        btreeset! {
+                            "cyclic_overlapping_glob_and_local_item::inner::Foo",
+                            "cyclic_overlapping_glob_and_local_item::inner::nested::Foo",
+                            "cyclic_overlapping_glob_and_local_item::nested::Foo",
+                            "cyclic_overlapping_glob_and_local_item::nested::inner::Foo",
+                        },
+                        deduplicated_actual_items,
+                    ),
+                    _ => unreachable!("unexpected value for {deduplicated_actual_items:?}"),
+                };
+
+                all_importable_paths.extend(actual_items.into_iter());
+            }
+
+            all_importable_paths.sort_unstable();
+            assert_eq!(
+                vec![
+                    "cyclic_overlapping_glob_and_local_item::Foo",
+                    "cyclic_overlapping_glob_and_local_item::inner::Foo",
+                    "cyclic_overlapping_glob_and_local_item::inner::nested::Foo",
+                    "cyclic_overlapping_glob_and_local_item::nested::Foo",
+                    "cyclic_overlapping_glob_and_local_item::nested::inner::Foo",
+                ],
+                all_importable_paths,
+            );
+        }
+
+        #[test]
+        fn overlapping_glob_of_enum_with_local_item() {
+            let test_crate = "overlapping_glob_of_enum_with_local_item";
+            let easy_expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "overlapping_glob_of_enum_with_local_item::Foo",
+                ],
+                "Second" => btreeset![
+                    "overlapping_glob_of_enum_with_local_item::Foo::Second",
+                    "overlapping_glob_of_enum_with_local_item::inner::Second",
+                ],
+            };
+
+            // Check the "easy" cases: `Foo` and `Second`.
+            // This is necessary but not sufficient to confirm our implementation works,
+            // since it doesn't check anything about `First` which is the point of this test case.
+            assert_exported_items_match(test_crate, &easy_expected_items);
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let items_named_first: Vec<_> = indexed_crate
+                .inner
+                .index
+                .values()
+                .filter_map(|item| (item.name.as_deref() == Some("First")).then_some(item))
+                .collect();
+            assert_eq!(2, items_named_first.len(), "{items_named_first:?}");
+            let variant_item = items_named_first
+                .iter()
+                .copied()
+                .find(|item| matches!(item.inner, ItemEnum::Variant(..)))
+                .expect("no variant item found");
+            let struct_item = items_named_first
+                .iter()
+                .copied()
+                .find(|item| matches!(item.inner, ItemEnum::Struct(..)))
+                .expect("no struct item found");
+
+            assert_eq!(
+                vec![vec![
+                    "overlapping_glob_of_enum_with_local_item",
+                    "Foo",
+                    "First"
+                ],],
+                indexed_crate.publicly_importable_names(&variant_item.id),
+            );
+            assert_eq!(
+                // The struct definition overrides the glob-imported variant here.
+                vec![vec![
+                    "overlapping_glob_of_enum_with_local_item",
+                    "inner",
+                    "First"
+                ]],
+                indexed_crate.publicly_importable_names(&struct_item.id),
+            );
+        }
+
+        #[test]
+        fn glob_of_enum_does_not_shadow_local_fn() {
+            let test_crate = "glob_of_enum_does_not_shadow_local_fn";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let first_ids = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("First")).then_some(id))
+                .collect_vec();
+            if first_ids.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    First, but found these matching IDs: {first_ids:?}"
+                );
+            }
+
+            for item_id in first_ids {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|components| components.into_iter().join("::"))
+                    .collect();
+                let deduplicated_actual_items: BTreeSet<_> =
+                    actual_items.iter().map(|x| x.as_str()).collect();
+                assert_eq!(
+                    actual_items.len(),
+                    deduplicated_actual_items.len(),
+                    "duplicates found: {actual_items:?}"
+                );
+
+                let expected_items = match &rustdoc.index[item_id].inner {
+                    ItemEnum::Variant(..) => {
+                        vec!["glob_of_enum_does_not_shadow_local_fn::Foo::First"]
+                    }
+                    ItemEnum::Function(..) => {
+                        vec!["glob_of_enum_does_not_shadow_local_fn::inner::First"]
+                    }
+                    other => {
+                        unreachable!("item {item_id:?} had unexpected inner content: {other:?}")
+                    }
+                };
+
+                assert_eq!(expected_items, actual_items);
+            }
+        }
+
+        /// There's currently no way to detect private imports that shadow glob items.
+        /// Reported as: <https://github.com/rust-lang/rust/issues/111338>
+        #[test]
+        #[should_panic = "expected no importable item names but found \
+                         [\"overlapping_glob_and_private_import::inner::Foo\"]"]
+        fn overlapping_glob_and_private_import() {
+            let test_crate = "overlapping_glob_and_private_import";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|components| components.into_iter().join("::"))
+                    .collect();
+
+                assert!(
+                    actual_items.is_empty(),
+                    "expected no importable item names but found {actual_items:?}"
+                );
+            }
+        }
+
+        /// Our logic for determining whether a tuple struct's implicit constructor is exported
+        /// is too simplistic: it assumes "yes" if all fields are pub, and "no" otherwise.
+        /// This is why this test currently fails.
+        /// TODO: fix this once rustdoc includes shadowing information
+        ///       <https://github.com/rust-lang/rust/issues/111338>
+        ///
+        /// Its sibling test `visibility_modifier_avoids_shadowing` ensures that shadowing is
+        /// not inappropriately applied when the tuple constructors do *not* shadow each other.
+        #[test]
+        #[should_panic = "expected no importable item names but found \
+                         [\"visibility_modifier_causes_shadowing::Foo\"]"]
+        fn visibility_modifier_causes_shadowing() {
+            let test_crate = "visibility_modifier_causes_shadowing";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 3 {
+                panic!(
+                    "Expected to find exactly 3 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|components| components.into_iter().join("::"))
+                    .collect();
+
+                assert!(
+                    actual_items.is_empty(),
+                    "expected no importable item names but found {actual_items:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn visibility_modifier_avoids_shadowing() {
+            let test_crate = "visibility_modifier_avoids_shadowing";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 3 {
+                panic!(
+                    "Expected to find exactly 3 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|components| components.into_iter().join("::"))
+                    .collect();
+
+                if rustdoc.index[item_id].visibility == Visibility::Public {
+                    assert_eq!(
+                        vec!["visibility_modifier_avoids_shadowing::Foo"],
+                        actual_items,
+                    );
+                } else {
+                    assert!(
+                        actual_items.is_empty(),
+                        "expected no importable item names but found {actual_items:?}"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn glob_vs_glob_shadowing() {
+            let test_crate = "glob_vs_glob_shadowing";
+
+            let expected_items = btreemap! {
+                "Foo" => (2, btreeset![]),
+                "Bar" => (1, btreeset![
+                    "glob_vs_glob_shadowing::Bar",
+                ]),
+                "Baz" => (1, btreeset![
+                    "glob_vs_glob_shadowing::Baz",
+                ]),
+            };
+
+            assert_duplicated_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_vs_glob_shadowing_downstream() {
+            let test_crate = "glob_vs_glob_shadowing_downstream";
+
+            let expected_items = btreemap! {
+                "Foo" => (3, btreeset![]),
+                "Bar" => (1, btreeset![
+                    "glob_vs_glob_shadowing_downstream::second::Bar",
+                ]),
+            };
+
+            assert_duplicated_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_vs_glob_no_shadowing_for_same_item() {
+            let test_crate = "glob_vs_glob_no_shadowing_for_same_item";
+
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "glob_vs_glob_no_shadowing_for_same_item::Foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_vs_glob_no_shadowing_for_same_renamed_item() {
+            let test_crate = "glob_vs_glob_no_shadowing_for_same_renamed_item";
+
+            let expected_items = btreemap! {
+                "Bar" => btreeset![
+                    "glob_vs_glob_no_shadowing_for_same_renamed_item::Foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_vs_glob_no_shadowing_for_same_multiply_renamed_item() {
+            let test_crate = "glob_vs_glob_no_shadowing_for_same_multiply_renamed_item";
+
+            let expected_items = btreemap! {
+                "Bar" => btreeset![
+                    "glob_vs_glob_no_shadowing_for_same_multiply_renamed_item::Foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
         }
     }
 }
