@@ -204,10 +204,6 @@ struct TraversalState<'a> {
     duplicated_glob_names_in_module: HashMap<&'a Id, HashSet<NamespacedName<'a>>>,
 }
 
-// TODO: some imports pull in more than one name:
-// - importing a tuple struct with only pub fields includes the type name and a constructor fn
-// - importing a unit struct includes the type name and an implicit const value with the same name
-
 fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<&Id, HashSet<&Id>> {
     let mut result = Default::default();
     let root_id = &crate_.root;
@@ -263,7 +259,8 @@ fn get_names_for_item<'a>(
                 rustdoc_types::StructKind::Tuple(tuple_struct) => {
                     // Always a type name, can also be a value if all fields
                     // are visible to the importing scope.
-                    // TODO: we only check if the fields are public, which is subtly incorrect.
+                    // TODO: We only check if the fields are public, which is subtly incorrect.
+                    //       We have a test crate for this: `visibility_modifier_causes_shadowing`
                     let nonpublic_field =
                         tuple_struct
                             .iter()
@@ -467,28 +464,13 @@ fn recursively_compute_visited_names_for_glob<'a>(
                     variant_item.name.as_deref().expect("no name for variant"),
                 );
 
-                // Don't add names that would be shadowed by an explicit definition
-                // in the glob's parent module.
-                // TODO: extract into fn, it's duplicated below
-                if module_local_items
-                    .map(|items| !items.contains_key(&name))
-                    .unwrap_or(true)
-                {
-                    match names.entry(name) {
-                        std::collections::hash_map::Entry::Occupied(entry) => {
-                            if entry.get().final_underlying_id != variant_id {
-                                // Duplicate name, remove from here and move to duplicates.
-                                entry.remove();
-                                duplicated_names.insert(name);
-                            }
-                        }
-                        std::collections::hash_map::Entry::Vacant(entry) => {
-                            if !duplicated_names.contains(&name) {
-                                entry.insert(Definition::new_direct(variant_id));
-                            }
-                        }
-                    }
-                }
+                register_name(
+                    module_local_items,
+                    name,
+                    Definition::new_direct(variant_id),
+                    names,
+                    duplicated_names,
+                );
             }
         }
         return;
@@ -505,28 +487,13 @@ fn recursively_compute_visited_names_for_glob<'a>(
         for (local_name, data) in names_in_module {
             let (item_defn, is_public) = data;
             if *is_public {
-                // Don't add names that would be shadowed by an explicit definition
-                // in the glob's parent module.
-                // TODO: extract into fn, it's duplicated below
-                if module_local_items
-                    .map(|items| !items.contains_key(local_name))
-                    .unwrap_or(true)
-                {
-                    match names.entry(*local_name) {
-                        std::collections::hash_map::Entry::Occupied(entry) => {
-                            if entry.get().final_underlying_id != item_defn.final_underlying_id {
-                                // Duplicate name, remove from here and move to duplicates.
-                                entry.remove();
-                                duplicated_names.insert(*local_name);
-                            }
-                        }
-                        std::collections::hash_map::Entry::Vacant(entry) => {
-                            if !duplicated_names.contains(local_name) {
-                                entry.insert(item_defn.clone());
-                            }
-                        }
-                    }
-                }
+                register_name(
+                    module_local_items,
+                    *local_name,
+                    item_defn.clone(),
+                    names,
+                    duplicated_names,
+                );
             }
         }
     }
@@ -543,6 +510,36 @@ fn recursively_compute_visited_names_for_glob<'a>(
                 names,
                 duplicated_names,
             );
+        }
+    }
+}
+
+fn register_name<'a>(
+    module_local_items: Option<&HashMap<NamespacedName, (Definition<'a>, bool)>>,
+    name: NamespacedName<'a>,
+    definition: Definition<'a>,
+    names: &mut HashMap<NamespacedName<'a>, Definition<'a>>,
+    duplicated_names: &mut HashSet<NamespacedName<'a>>,
+) {
+    // Don't add names that would be shadowed by an explicit definition
+    // in the glob's parent module.
+    if module_local_items
+        .map(|items| !items.contains_key(&name))
+        .unwrap_or(true)
+    {
+        match names.entry(name) {
+            std::collections::hash_map::Entry::Occupied(entry) => {
+                if entry.get().final_underlying_id != definition.final_underlying_id {
+                    // Duplicate name, remove from here and move to duplicates.
+                    entry.remove();
+                    duplicated_names.insert(name);
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                if !duplicated_names.contains(&name) {
+                    entry.insert(definition);
+                }
+            }
         }
     }
 }
