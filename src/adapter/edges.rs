@@ -341,7 +341,8 @@ pub(super) fn resolve_trait_edge<'a>(
                 let next_item = &item_index.get(item_id);
                 if let Some(next_item) = next_item {
                     match &next_item.inner {
-                        rustdoc_types::ItemEnum::Function(..) => {
+                        rustdoc_types::ItemEnum::Method(..)
+                        | rustdoc_types::ItemEnum::Function(..) => {
                             Some(origin.make_item_vertex(next_item))
                         }
                         _ => None,
