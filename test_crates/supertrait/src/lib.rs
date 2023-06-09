@@ -1,5 +1,5 @@
-pub trait supertrait {}
+pub trait Supertrait {}
 
-pub trait supertrait2 {}
+pub trait Supertrait2 {}
 
-pub trait base_trait : supertrait2 + supertrait {}
+pub trait BaseTrait : Supertrait2 + Supertrait {}

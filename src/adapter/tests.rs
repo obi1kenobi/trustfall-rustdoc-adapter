@@ -108,10 +108,10 @@ fn rustdoc_finds_supertrait() {
     assert_eq!(
         vec![
             btreemap! {
-                Arc::from("name") => FieldValue::String("supertrait2".to_string()),
+                Arc::from("name") => FieldValue::String("Supertrait2".to_string()),
             },
             btreemap! {
-                Arc::from("name") => FieldValue::String("supertrait".to_string()),
+                Arc::from("name") => FieldValue::String("Supertrait".to_string()),
             }
         ],
         results
