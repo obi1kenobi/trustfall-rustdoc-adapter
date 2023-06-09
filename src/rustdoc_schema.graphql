@@ -413,6 +413,8 @@ type Trait implements Item & Importable {
   Methods defined in this trait.
   """
   method: [Method!]
+
+  supertrait: [ImplementedTrait!]
 }
 
 """
