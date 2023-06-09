@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::{rc::Rc, sync::Arc};
 
 use anyhow::Context;
@@ -67,6 +68,52 @@ fn impl_for_ref() {
         vec![btreemap! {
             Arc::from("matching_methods") => FieldValue::Uint64(3),
         }],
+        results
+    );
+}
+
+#[test]
+fn rustdoc_finds_supertrait() {
+    let path = "./localdata/test_data/supertrait/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = RustdocAdapter::new(&indexed_crate, None);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                supertrait {
+                    name @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+    let results: Vec<_> = trustfall::execute_query(&schema, Rc::new(adapter), query, variables)
+        .expect("failed to run query")
+        .collect();
+
+    assert_eq!(
+        vec![
+            btreemap! {
+                Arc::from("name") => FieldValue::String("supertrait2".to_string()),
+            },
+            btreemap! {
+                Arc::from("name") => FieldValue::String("supertrait".to_string()),
+            }
+        ],
         results
     );
 }
