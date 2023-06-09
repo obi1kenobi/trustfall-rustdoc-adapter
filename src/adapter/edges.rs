@@ -1,4 +1,4 @@
-use rustdoc_types::{Id, Variant};
+use rustdoc_types::{GenericBound::TraitBound, Id, Variant};
 use trustfall::provider::{
     resolve_neighbors_with, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
     VertexIterator,
@@ -342,6 +342,30 @@ pub(super) fn resolve_trait_edge<'a>(
     previous_crate: Option<&'a IndexedCrate<'a>>,
 ) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
+        "supertrait" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let item_index = match origin {
+                Origin::CurrentCrate => &current_crate.inner.index,
+                Origin::PreviousCrate => {
+                    &previous_crate
+                        .expect("no previous crate provided")
+                        .inner
+                        .index
+                }
+            };
+
+            let trait_vertex = vertex.as_trait().expect("not a Trait vertex");
+            Box::new(trait_vertex.bounds.iter().filter_map(move |bound| {
+                if let TraitBound { trait_, .. } = bound {
+                    item_index
+                        .get(&trait_.id)
+                        .as_ref()
+                        .map(|next_item| origin.make_implemented_trait_vertex(trait_, next_item))
+                } else {
+                    None
+                }
+            }))
+        }),
         "method" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
             let item_index = match origin {
