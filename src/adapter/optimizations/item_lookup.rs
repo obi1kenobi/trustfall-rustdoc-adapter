@@ -107,21 +107,7 @@ fn resolve_item_vertices<'a>(
     origin: Origin,
     items: impl Iterator<Item = &'a Item> + 'a,
 ) -> VertexIterator<'a, Vertex<'a>> {
-    Box::new(
-        items
-            .filter(|item| {
-                // Filter out item types that are not currently supported.
-                matches!(
-                    item.inner,
-                    rustdoc_types::ItemEnum::Struct(..)
-                        | rustdoc_types::ItemEnum::StructField(..)
-                        | rustdoc_types::ItemEnum::Enum(..)
-                        | rustdoc_types::ItemEnum::Variant(..)
-                        | rustdoc_types::ItemEnum::Function(..)
-                        | rustdoc_types::ItemEnum::Impl(..)
-                        | rustdoc_types::ItemEnum::Trait(..)
-                )
-            })
-            .map(move |value| origin.make_item_vertex(value)),
-    )
+    Box::new(items.filter_map(move |value| {
+        crate::adapter::supported_item_kind(value).then(|| origin.make_item_vertex(value))
+    }))
 }
