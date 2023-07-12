@@ -127,7 +127,7 @@ fn rustdoc_finds_consts() {
 
     let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
     let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = RustdocAdapter::new(&indexed_crate, None);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
 
     let query = r#"
 {
@@ -157,7 +157,7 @@ fn rustdoc_finds_consts() {
     }
 
     let mut results: Vec<_> =
-        trustfall::execute_query(&schema, Arc::new(adapter), query, variables)
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
             .expect("failed to run query")
             .map(|row| row.try_into_struct().expect("shape mismatch"))
             .collect();
@@ -176,4 +176,131 @@ fn rustdoc_finds_consts() {
         ],
         results
     );
+
+    // Ensure that querying for GlobalValue items also retrieves all consts.
+    let global_values_query = r#"
+{
+    Crate {
+        item {
+            ... on GlobalValue {
+                name @output
+
+                importable_path {
+                    path @output
+                }
+            }
+        }
+    }
+}
+"#;
+    let mut global_values_results: Vec<_> =
+        trustfall::execute_query(&schema, adapter, global_values_query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    global_values_results.sort_unstable();
+    assert_eq!(results, global_values_results);
+}
+
+#[test]
+fn rustdoc_finds_statics() {
+    let path = "./localdata/test_data/statics/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Static {
+                name @output
+                mutable @output
+
+                importable_path {
+                    path @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        path: Vec<String>,
+        mutable: bool,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    assert_eq!(
+        vec![
+            Output {
+                name: "FIRST".into(),
+                path: vec!["statics".into(), "FIRST".into()],
+                mutable: false,
+            },
+            Output {
+                name: "MUT".into(),
+                path: vec!["statics".into(), "MUT".into()],
+                mutable: true,
+            },
+            Output {
+                name: "SECOND".into(),
+                path: vec!["statics".into(), "inner".into(), "SECOND".into()],
+                mutable: false,
+            },
+        ],
+        results
+    );
+
+    // Ensure that querying for GlobalValue items also retrieves all statics.
+    let global_values_query = r#"
+{
+    Crate {
+        item {
+            ... on GlobalValue {
+                name @output
+
+                importable_path {
+                    path @output
+                }
+            }
+        }
+    }
+}
+"#;
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct OutputWithoutMut {
+        name: String,
+        path: Vec<String>,
+    }
+
+    let mut global_values_results: Vec<OutputWithoutMut> =
+        trustfall::execute_query(&schema, adapter, global_values_query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    global_values_results.sort_unstable();
+    assert_eq!(results.len(), global_values_results.len());
+    for (expected, actual) in results.into_iter().zip(global_values_results) {
+        assert_eq!(expected.name, actual.name);
+        assert_eq!(expected.path, actual.path);
+    }
 }
