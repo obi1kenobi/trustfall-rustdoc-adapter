@@ -275,6 +275,16 @@ pub(super) fn resolve_implemented_trait_property<'a>(
                 .expect("not an ImplementedTrait");
             path.name.clone().into()
         }),
-        _ => unreachable!("Trait property {property_name}"),
+        _ => unreachable!("ImplementedTrait property {property_name}"),
+    }
+}
+
+pub(crate) fn resolve_static_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "mutable" => resolve_property_with(contexts, field_property!(as_static, mutable)),
+        _ => unreachable!("Static property {property_name}"),
     }
 }
