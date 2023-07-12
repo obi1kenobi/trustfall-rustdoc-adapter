@@ -93,7 +93,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "Item" => properties::resolve_item_property(contexts, property_name),
                 "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant" | "PlainVariant"
                 | "TupleVariant" | "StructVariant" | "Trait" | "Function" | "Method" | "Impl"
-                | "Constant"
+                | "GlobalValue" | "Constant" | "Static"
                     if matches!(
                         property_name.as_ref(),
                         "id" | "crate_id" | "name" | "docs" | "attrs" | "visibility_limit"
@@ -126,6 +126,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "ImplementedTrait" => {
                     properties::resolve_implemented_trait_property(contexts, property_name)
                 }
+                "Static" => properties::resolve_static_property(contexts, property_name),
                 "RawType" | "ResolvedPathType" | "PrimitiveType"
                     if matches!(property_name.as_ref(), "name") =>
                 {
@@ -148,7 +149,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         match type_name.as_ref() {
             "CrateDiff" => edges::resolve_crate_diff_edge(contexts, edge_name),
             "Crate" => edges::resolve_crate_edge(self, contexts, edge_name, resolve_info),
-            "Importable" | "ImplOwner" | "Struct" | "Enum" | "Trait" | "Function" | "Constant"
+            "Importable" | "ImplOwner" | "Struct" | "Enum" | "Trait" | "Function"
+            | "GlobalValue" | "Constant" | "Static"
                 if matches!(edge_name.as_ref(), "importable_path" | "canonical_path") =>
             {
                 edges::resolve_importable_edge(
@@ -160,7 +162,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             }
             "Item" | "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant"
             | "PlainVariant" | "TupleVariant" | "StructVariant" | "Trait" | "Function"
-            | "Method" | "Impl" | "Constant"
+            | "Method" | "Impl" | "GlobalValue" | "Constant" | "Static"
                 if matches!(edge_name.as_ref(), "span" | "attribute") =>
             {
                 edges::resolve_item_edge(contexts, edge_name)
@@ -218,7 +220,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         let coerce_to_type = coerce_to_type.clone();
         match type_name.as_ref() {
             "Item" | "Variant" | "FunctionLike" | "Importable" | "ImplOwner" | "RawType"
-            | "ResolvedPathType" => {
+            | "ResolvedPathType" | "GlobalValue" => {
                 resolve_coercion_with(contexts, move |vertex| {
                     let actual_type_name = vertex.typename();
 
@@ -231,6 +233,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         "ResolvedPathType" => {
                             matches!(actual_type_name, "ResolvedPathType" | "ImplementedTrait")
                         }
+                        "GlobalValue" => matches!(actual_type_name, "Constant" | "Static",),
                         _ => {
                             // The remaining types are final (don't have any subtypes)
                             // so we can just compare the actual type name to
@@ -256,5 +259,6 @@ pub(crate) fn supported_item_kind(item: &Item) -> bool {
             | rustdoc_types::ItemEnum::Impl(..)
             | rustdoc_types::ItemEnum::Trait(..)
             | rustdoc_types::ItemEnum::Constant(..)
+            | rustdoc_types::ItemEnum::Static(..)
     )
 }
