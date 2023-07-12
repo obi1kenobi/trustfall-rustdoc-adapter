@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use rustdoc_types::Item;
 use trustfall::{
     provider::{
         resolve_coercion_with, Adapter, ContextIterator, ContextOutcomeIterator, EdgeParameters,
@@ -92,6 +93,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "Item" => properties::resolve_item_property(contexts, property_name),
                 "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant" | "PlainVariant"
                 | "TupleVariant" | "StructVariant" | "Trait" | "Function" | "Method" | "Impl"
+                | "Constant"
                     if matches!(
                         property_name.as_ref(),
                         "id" | "crate_id" | "name" | "docs" | "attrs" | "visibility_limit"
@@ -146,7 +148,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         match type_name.as_ref() {
             "CrateDiff" => edges::resolve_crate_diff_edge(contexts, edge_name),
             "Crate" => edges::resolve_crate_edge(self, contexts, edge_name, resolve_info),
-            "Importable" | "ImplOwner" | "Struct" | "Enum" | "Trait" | "Function"
+            "Importable" | "ImplOwner" | "Struct" | "Enum" | "Trait" | "Function" | "Constant"
                 if matches!(edge_name.as_ref(), "importable_path" | "canonical_path") =>
             {
                 edges::resolve_importable_edge(
@@ -158,7 +160,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             }
             "Item" | "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant"
             | "PlainVariant" | "TupleVariant" | "StructVariant" | "Trait" | "Function"
-            | "Method" | "Impl"
+            | "Method" | "Impl" | "Constant"
                 if matches!(edge_name.as_ref(), "span" | "attribute") =>
             {
                 edges::resolve_item_edge(contexts, edge_name)
@@ -241,4 +243,18 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             _ => unreachable!("resolve_coercion {type_name} {coerce_to_type}"),
         }
     }
+}
+
+pub(crate) fn supported_item_kind(item: &Item) -> bool {
+    matches!(
+        item.inner,
+        rustdoc_types::ItemEnum::Struct(..)
+            | rustdoc_types::ItemEnum::StructField(..)
+            | rustdoc_types::ItemEnum::Enum(..)
+            | rustdoc_types::ItemEnum::Variant(..)
+            | rustdoc_types::ItemEnum::Function(..)
+            | rustdoc_types::ItemEnum::Impl(..)
+            | rustdoc_types::ItemEnum::Trait(..)
+            | rustdoc_types::ItemEnum::Constant(..)
+    )
 }

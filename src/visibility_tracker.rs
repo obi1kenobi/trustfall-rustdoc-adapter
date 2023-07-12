@@ -312,9 +312,13 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
     let mut result = NameResolution::default();
 
     for item in crate_.index.values() {
-        let ItemEnum::Module(module_item) = &item.inner else { continue; };
+        let ItemEnum::Module(module_item) = &item.inner else {
+            continue;
+        };
         for inner_id in &module_item.items {
-            let Some(inner_item) = crate_.index.get(inner_id) else { continue; };
+            let Some(inner_item) = crate_.index.get(inner_id) else {
+                continue;
+            };
 
             if let ItemEnum::Import(imp) = &inner_item.inner {
                 if imp.glob {
@@ -345,7 +349,9 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
                                 break Some(&underlying_item.id);
                             }
                         };
-                        let Some(final_underlying_id) = final_underlying_id else { continue; };
+                        let Some(final_underlying_id) = final_underlying_id else {
+                            continue;
+                        };
                         let definition = Definition::new(inner_id, final_underlying_id);
 
                         result

@@ -5,7 +5,7 @@ use std::{
 
 use rustdoc_types::{Crate, Id, Item};
 
-use crate::visibility_tracker::VisibilityTracker;
+use crate::{adapter::supported_item_kind, visibility_tracker::VisibilityTracker};
 
 /// The rustdoc for a crate, together with associated indexed data to speed up common operations.
 ///
@@ -53,19 +53,11 @@ impl<'a> IndexedCrate<'a> {
 
         let mut imports_index: HashMap<ImportablePath, Vec<&Item>> =
             HashMap::with_capacity(crate_.index.len());
-        for item in crate_.index.values().filter_map(|item| {
-            matches!(
-                item.inner,
-                rustdoc_types::ItemEnum::Struct(..)
-                    | rustdoc_types::ItemEnum::StructField(..)
-                    | rustdoc_types::ItemEnum::Enum(..)
-                    | rustdoc_types::ItemEnum::Variant(..)
-                    | rustdoc_types::ItemEnum::Function(..)
-                    | rustdoc_types::ItemEnum::Impl(..)
-                    | rustdoc_types::ItemEnum::Trait(..)
-            )
-            .then_some(item)
-        }) {
+        for item in crate_
+            .index
+            .values()
+            .filter_map(|item| supported_item_kind(item).then_some(item))
+        {
             for importable_path in value.publicly_importable_names(&item.id) {
                 imports_index
                     .entry(ImportablePath::new(importable_path))
@@ -1337,7 +1329,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                     );
                 }
 
-                all_importable_paths.extend(actual_items.into_iter());
+                all_importable_paths.extend(actual_items);
             }
 
             all_importable_paths.sort_unstable();
@@ -1402,7 +1394,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                     _ => unreachable!("unexpected value for {deduplicated_actual_items:?}"),
                 };
 
-                all_importable_paths.extend(actual_items.into_iter());
+                all_importable_paths.extend(actual_items);
             }
 
             all_importable_paths.sort_unstable();
@@ -1468,7 +1460,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                     _ => unreachable!("unexpected value for {deduplicated_actual_items:?}"),
                 };
 
-                all_importable_paths.extend(actual_items.into_iter());
+                all_importable_paths.extend(actual_items);
             }
 
             all_importable_paths.sort_unstable();
