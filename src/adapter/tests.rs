@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use maplit::btreemap;
-use trustfall::{FieldValue, Schema};
+use trustfall::{FieldValue, Schema, TryIntoStruct};
 
 use crate::{IndexedCrate, RustdocAdapter};
 
@@ -113,6 +113,66 @@ fn rustdoc_finds_supertrait() {
             btreemap! {
                 Arc::from("name") => FieldValue::String("Supertrait".to_string()),
             }
+        ],
+        results
+    );
+}
+
+#[test]
+fn rustdoc_finds_consts() {
+    let path = "./localdata/test_data/consts/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = RustdocAdapter::new(&indexed_crate, None);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Constant {
+                name @output
+
+                importable_path {
+                    path @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        path: Vec<String>,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, Arc::new(adapter), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    assert_eq!(
+        vec![
+            Output {
+                name: "FIRST".into(),
+                path: vec!["consts".into(), "FIRST".into()],
+            },
+            Output {
+                name: "SECOND".into(),
+                path: vec!["consts".into(), "inner".into(), "SECOND".into()],
+            },
         ],
         results
     );
