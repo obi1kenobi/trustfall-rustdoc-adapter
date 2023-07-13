@@ -1772,5 +1772,22 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
 
             assert_exported_items_match(test_crate, &expected_items);
         }
+
+        #[test]
+        fn reexport_consts_and_statics() {
+            let test_crate = "reexport_consts_and_statics";
+            let expected_items = btreemap! {
+                "FIRST" => btreeset![
+                    "reexport_consts_and_statics::FIRST",
+                    "reexport_consts_and_statics::inner::FIRST",
+                ],
+                "SECOND" => btreeset![
+                    "reexport_consts_and_statics::SECOND",
+                    "reexport_consts_and_statics::inner::SECOND",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
     }
 }
