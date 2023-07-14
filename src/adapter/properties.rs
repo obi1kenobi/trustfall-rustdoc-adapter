@@ -305,6 +305,6 @@ pub(crate) fn resolve_associated_type_property<'a>(
                 default.is_some().into()
             }),
         ),
-        _ => unreachable!("Static property {property_name}"),
+        _ => unreachable!("AssociatedType property {property_name}"),
     }
 }
