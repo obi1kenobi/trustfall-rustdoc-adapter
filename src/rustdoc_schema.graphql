@@ -727,8 +727,8 @@ type PrimitiveType implements RawType {
 }
 
 """
-https://docs.rs/rustdoc-types/latest/rustdoc_types/enum.ItemEnum.html#variant.AssocType
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
+https://docs.rs/rustdoc-types/latest/rustdoc_types/enum.ItemEnum.html#variant.AssocType
 """
 type AssociatedType implements Item {
   # properties from Item
