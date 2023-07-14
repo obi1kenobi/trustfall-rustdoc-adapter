@@ -223,7 +223,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         let coerce_to_type = coerce_to_type.clone();
         match type_name.as_ref() {
             "Item" | "Variant" | "FunctionLike" | "Importable" | "ImplOwner" | "RawType"
-            | "ResolvedPathType" | "GlobalValue" | "AssociatedType" => {
+            | "ResolvedPathType" | "GlobalValue" => {
                 resolve_coercion_with(contexts, move |vertex| {
                     let actual_type_name = vertex.typename();
 
