@@ -93,7 +93,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "Item" => properties::resolve_item_property(contexts, property_name),
                 "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant" | "PlainVariant"
                 | "TupleVariant" | "StructVariant" | "Trait" | "Function" | "Method" | "Impl"
-                | "GlobalValue" | "Constant" | "Static"
+                | "GlobalValue" | "Constant" | "Static" | "AssociatedType"
                     if matches!(
                         property_name.as_ref(),
                         "id" | "crate_id" | "name" | "docs" | "attrs" | "visibility_limit"
@@ -132,6 +132,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 {
                     // fields from "RawType"
                     properties::resolve_raw_type_property(contexts, property_name)
+                }
+                "AssociatedType" => {
+                    properties::resolve_associated_type_property(contexts, property_name)
                 }
                 _ => unreachable!("resolve_property {type_name} {property_name}"),
             }
@@ -260,5 +263,6 @@ pub(crate) fn supported_item_kind(item: &Item) -> bool {
             | rustdoc_types::ItemEnum::Trait(..)
             | rustdoc_types::ItemEnum::Constant(..)
             | rustdoc_types::ItemEnum::Static(..)
+            | rustdoc_types::ItemEnum::AssocType { .. }
     )
 }

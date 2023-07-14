@@ -203,6 +203,65 @@ fn rustdoc_finds_consts() {
 }
 
 #[test]
+fn rustdoc_trait_has_associated_types() {
+    let path = "./localdata/test_data/traits_with_associated_types/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                associated_type {
+                    name @output
+                    has_default @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        has_default: bool,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    assert_eq!(
+        vec![
+            Output {
+                name: "DeserializedType".into(),
+                has_default: false,
+            },
+            Output {
+                name: "SerializedType".into(),
+                has_default: true,
+            },
+        ],
+        results
+    );
+}
+
+#[test]
 fn rustdoc_finds_statics() {
     let path = "./localdata/test_data/statics/rustdoc.json";
     let content = std::fs::read_to_string(path)
