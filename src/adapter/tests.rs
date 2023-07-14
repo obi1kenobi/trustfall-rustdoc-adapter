@@ -204,7 +204,7 @@ fn rustdoc_finds_consts() {
 
 #[test]
 fn rustdoc_trait_has_associated_types() {
-    let path = "./localdata/test_data/traits_with_types/rustdoc.json";
+    let path = "./localdata/test_data/traits_with_associated_types/rustdoc.json";
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
         .expect("failed to load rustdoc");

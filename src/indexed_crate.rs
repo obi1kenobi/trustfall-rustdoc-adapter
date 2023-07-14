@@ -1262,7 +1262,7 @@ mod tests {
 
         #[test]
         fn trait_types() {
-            let test_crate = "traits_with_types";
+            let test_crate = "traits_with_associated_types";
 
             let rustdoc = load_pregenerated_rustdoc(test_crate);
             let indexed_crate = IndexedCrate::new(&rustdoc);

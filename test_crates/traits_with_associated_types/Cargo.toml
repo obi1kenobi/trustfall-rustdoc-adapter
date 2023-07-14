@@ -1,6 +1,6 @@
 [package]
 publish = false
-name = "traits_with_types"
+name = "traits_with_associated_types"
 version = "0.1.0"
 edition = "2021"
 
