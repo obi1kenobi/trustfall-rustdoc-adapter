@@ -133,6 +133,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     // fields from "RawType"
                     properties::resolve_raw_type_property(contexts, property_name)
                 }
+                "AssociatedType" => {
+                    properties::resolve_associated_type_property(contexts, property_name)
+                }
                 _ => unreachable!("resolve_property {type_name} {property_name}"),
             }
         }
@@ -220,7 +223,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         let coerce_to_type = coerce_to_type.clone();
         match type_name.as_ref() {
             "Item" | "Variant" | "FunctionLike" | "Importable" | "ImplOwner" | "RawType"
-            | "ResolvedPathType" | "GlobalValue" => {
+            | "ResolvedPathType" | "GlobalValue" | "AssociatedType" => {
                 resolve_coercion_with(contexts, move |vertex| {
                     let actual_type_name = vertex.typename();
 
@@ -260,5 +263,6 @@ pub(crate) fn supported_item_kind(item: &Item) -> bool {
             | rustdoc_types::ItemEnum::Trait(..)
             | rustdoc_types::ItemEnum::Constant(..)
             | rustdoc_types::ItemEnum::Static(..)
+            | rustdoc_types::ItemEnum::AssocType { .. }
     )
 }

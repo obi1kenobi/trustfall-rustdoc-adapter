@@ -415,6 +415,8 @@ type Trait implements Item & Importable {
   method: [Method!]
 
   supertrait: [ImplementedTrait!]
+
+  associated_type: [AssociatedType!]!
 }
 
 """
@@ -722,6 +724,14 @@ type PrimitiveType implements RawType {
   For example: "usize"
   """
   name: String!
+}
+
+"""
+https://docs.rs/rustdoc-types/latest/rustdoc_types/enum.ItemEnum.html#variant.AssocType
+"""
+type AssociatedType implements RawType {
+  name: String!
+  has_default: Boolean!
 }
 
 """
