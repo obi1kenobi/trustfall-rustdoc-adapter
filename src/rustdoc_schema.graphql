@@ -734,12 +734,21 @@ type AssociatedType implements Item {
   # properties from Item
   id: String!
   crate_id: Int!
+  """
+  The name of the associated type.
+
+  ie: type X = u8; // X is the name
+  """
   name: String
   docs: String
   attrs: [String!]!
   visibility_limit: String!
 
   # properties for AssociatedType
+  """
+  Whether the type is defaulted.
+  ie: type X = u8; // it is defaulted to be u8, hence has_default is true.
+  """
   has_default: Boolean!
 
   # edges from Item
