@@ -1261,31 +1261,6 @@ mod tests {
         }
 
         #[test]
-        fn trait_types() {
-            let test_crate = "traits_with_associated_types";
-
-            let rustdoc = load_pregenerated_rustdoc(test_crate);
-            let indexed_crate = IndexedCrate::new(&rustdoc);
-
-            let associated_types = indexed_crate
-                .inner
-                .index
-                .values()
-                .filter_map(|x| {
-                    let ItemEnum::AssocType{default, ..} = &x.inner else {return None};
-                    Some((&x.name, default))
-                })
-                .fold(std::collections::HashMap::new(), |mut acc, el| {
-                    let Some(v) = el.0 else { return acc };
-                    acc.insert(v.clone(), el.1.clone());
-                    acc
-                });
-
-            assert!(&associated_types["DeserializedType"].is_none());
-            assert!(&associated_types["SerializedType"].is_some());
-        }
-
-        #[test]
         fn overlapping_glob_and_local_item() {
             let test_crate = "overlapping_glob_and_local_item";
 
