@@ -739,12 +739,12 @@ type AssociatedType implements Item {
   attrs: [String!]!
   visibility_limit: String!
 
+  # properties for AssociatedType
+  has_default: Boolean!
+
   # edges from Item
   span: Span
   attribute: [Attribute!]
-
-  # properties for AssociatedType
-  has_default: Boolean!
 }
 
 """
