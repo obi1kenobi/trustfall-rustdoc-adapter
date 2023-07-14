@@ -93,7 +93,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "Item" => properties::resolve_item_property(contexts, property_name),
                 "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant" | "PlainVariant"
                 | "TupleVariant" | "StructVariant" | "Trait" | "Function" | "Method" | "Impl"
-                | "GlobalValue" | "Constant" | "Static"
+                | "GlobalValue" | "Constant" | "Static" | "AssociatedType"
                     if matches!(
                         property_name.as_ref(),
                         "id" | "crate_id" | "name" | "docs" | "attrs" | "visibility_limit"

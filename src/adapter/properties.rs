@@ -295,7 +295,6 @@ pub(crate) fn resolve_associated_type_property<'a>(
     property_name: &str,
 ) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
     match property_name {
-        "name" => resolve_property_with(contexts, field_property!(as_item, name)),
         "has_default" => resolve_property_with(
             contexts,
             field_property!(as_item, inner, {
