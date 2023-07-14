@@ -734,10 +734,16 @@ type AssociatedType implements Item {
   # properties from Item
   id: String!
   crate_id: Int!
+
   """
   The name of the associated type.
 
-  ie: type X = u8; // X is the name
+  For example:
+  ```rust
+  trait Iterator {
+      type Item;  // `"Item"` is the name of the associated type
+  }
+  ```
   """
   name: String
   docs: String
@@ -746,8 +752,16 @@ type AssociatedType implements Item {
 
   # properties for AssociatedType
   """
-  Whether the type is defaulted.
-  ie: type X = u8; // it is defaulted to be u8, hence has_default is true.
+  Whether the type is defined to have a default value.
+
+  For example:
+  ```rust
+  trait IntIterator {
+      type Item = i64;  // by default, the associated type is `i64` so this property is `true`.
+  }
+  ```
+
+  Associated type defaults are currently unstable: https://github.com/rust-lang/rust/issues/29661
   """
   has_default: Boolean!
 
