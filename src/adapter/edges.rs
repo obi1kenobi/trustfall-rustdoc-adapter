@@ -393,6 +393,33 @@ pub(super) fn resolve_trait_edge<'a>(
                 }
             }))
         }),
+        "associated_type" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let item_index = match origin {
+                Origin::CurrentCrate => &current_crate.inner.index,
+                Origin::PreviousCrate => {
+                    &previous_crate
+                        .expect("no previous crate provided")
+                        .inner
+                        .index
+                }
+            };
+
+            let trait_vertex = vertex.as_trait().expect("not a Trait vertex");
+            Box::new(trait_vertex.items.iter().filter_map(move |item_id| {
+                let next_item = &item_index.get(item_id);
+                if let Some(next_item) = next_item {
+                    match &next_item.inner {
+                        rustdoc_types::ItemEnum::AssocType { .. } => {
+                            Some(origin.make_item_vertex(next_item))
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            }))
+        }),
         _ => unreachable!("resolve_trait_edge {edge_name}"),
     }
 }

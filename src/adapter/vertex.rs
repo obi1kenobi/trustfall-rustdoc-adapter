@@ -55,6 +55,7 @@ impl<'a> Typename for Vertex<'a> {
                 rustdoc_types::ItemEnum::Trait(..) => "Trait",
                 rustdoc_types::ItemEnum::Constant(..) => "Constant",
                 rustdoc_types::ItemEnum::Static(..) => "Static",
+                rustdoc_types::ItemEnum::AssocType { .. } => "AssociatedType",
                 _ => unreachable!("unexpected item.inner for item: {item:?}"),
             },
             VertexKind::Span(..) => "Span",
