@@ -416,7 +416,7 @@ type Trait implements Item & Importable {
 
   supertrait: [ImplementedTrait!]
 
-  associated_type: [AssociatedType!]!
+  associated_type: [AssociatedType!]
 }
 
 """
