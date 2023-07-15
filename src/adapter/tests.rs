@@ -363,3 +363,109 @@ fn rustdoc_finds_statics() {
         assert_eq!(expected.path, actual.path);
     }
 }
+
+#[test]
+fn rustdoc_associated_consts() {
+    let path = "./localdata/test_data/associated_consts/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let impl_owner_query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                inherent_impl {
+                    associated_constant {
+                        name @output
+                        default @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let trait_query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                associated_constant {
+                    name @output
+                    default @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        default: Option<String>,
+    }
+
+    let mut results: Vec<_> = trustfall::execute_query(
+        &schema,
+        adapter.clone(),
+        impl_owner_query,
+        variables.clone(),
+    )
+    .expect("failed to run query")
+    .map(|row| row.try_into_struct().expect("shape mismatch"))
+    .collect();
+    results.sort_unstable();
+
+    assert_eq!(
+        vec![Output {
+            name: "START".into(),
+            default: Some("0".into()),
+        },],
+        results
+    );
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), trait_query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    assert_eq!(
+        vec![
+            Output {
+                name: "DEFAULT_BATCH_SIZE".into(),
+                default: Some("16".into()),
+            },
+            Output {
+                name: "INVALID_BATCH_SIZE".into(),
+                default: Some("_".into()), // evaluating a const expression
+            },
+            Output {
+                name: "LOG_AS".into(),
+                default: Some("\"[batch]\"".into()),
+            },
+            Output {
+                name: "MAX_BATCH_SIZE".into(),
+                default: None,
+            },
+            Output {
+                name: "MIN_BATCH_SIZE".into(),
+                default: Some("_".into()), // call to a `const fn`
+            },
+        ],
+        results
+    );
+}

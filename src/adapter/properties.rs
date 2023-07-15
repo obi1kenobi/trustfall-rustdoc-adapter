@@ -307,3 +307,21 @@ pub(crate) fn resolve_associated_type_property<'a>(
         _ => unreachable!("AssociatedType property {property_name}"),
     }
 }
+
+pub(crate) fn resolve_associated_constant_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "default" => resolve_property_with(
+            contexts,
+            field_property!(as_item, inner, {
+                let ItemEnum::AssocConst { default, .. } = &inner else {
+                    unreachable!("expected to have a AssocConst")
+                };
+                default.clone().into()
+            }),
+        ),
+        _ => unreachable!("AssociatedConstant property {property_name}"),
+    }
+}
