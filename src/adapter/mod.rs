@@ -94,6 +94,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant" | "PlainVariant"
                 | "TupleVariant" | "StructVariant" | "Trait" | "Function" | "Method" | "Impl"
                 | "GlobalValue" | "Constant" | "Static" | "AssociatedType"
+                | "AssociatedConstant"
                     if matches!(
                         property_name.as_ref(),
                         "id" | "crate_id" | "name" | "docs" | "attrs" | "visibility_limit"
@@ -136,6 +137,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "AssociatedType" => {
                     properties::resolve_associated_type_property(contexts, property_name)
                 }
+                "AssociatedConstant" => {
+                    properties::resolve_associated_constant_property(contexts, property_name)
+                }
                 _ => unreachable!("resolve_property {type_name} {property_name}"),
             }
         }
@@ -165,7 +169,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             }
             "Item" | "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant"
             | "PlainVariant" | "TupleVariant" | "StructVariant" | "Trait" | "Function"
-            | "Method" | "Impl" | "GlobalValue" | "Constant" | "Static"
+            | "Method" | "Impl" | "GlobalValue" | "Constant" | "Static" | "AssociatedType"
+            | "AssociatedConstant"
                 if matches!(edge_name.as_ref(), "span" | "attribute") =>
             {
                 edges::resolve_item_edge(contexts, edge_name)

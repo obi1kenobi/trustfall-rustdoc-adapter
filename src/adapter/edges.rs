@@ -1,4 +1,4 @@
-use rustdoc_types::{GenericBound::TraitBound, Id, Variant};
+use rustdoc_types::{GenericBound::TraitBound, Id, ItemEnum, Variant};
 use trustfall::provider::{
     resolve_neighbors_with, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
     VertexIterator,
@@ -331,6 +331,28 @@ pub(super) fn resolve_impl_edge<'a>(
                 Box::new(std::iter::empty())
             }
         }),
+        "associated_constant" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let item_index = match origin {
+                Origin::CurrentCrate => &current_crate.inner.index,
+                Origin::PreviousCrate => {
+                    &previous_crate
+                        .expect("no previous crate provided")
+                        .inner
+                        .index
+                }
+            };
+
+            let impl_vertex = vertex.as_impl().expect("not an Impl vertex");
+            Box::new(impl_vertex.items.iter().filter_map(move |item_id| {
+                if let Some(item) = item_index.get(item_id) {
+                    matches!(item.inner, ItemEnum::AssocConst { .. })
+                        .then(|| origin.make_item_vertex(item))
+                } else {
+                    None
+                }
+            }))
+        }),
         _ => unreachable!("resolve_impl_edge {edge_name}"),
     }
 }
@@ -415,6 +437,28 @@ pub(super) fn resolve_trait_edge<'a>(
                         }
                         _ => None,
                     }
+                } else {
+                    None
+                }
+            }))
+        }),
+        "associated_constant" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let item_index = match origin {
+                Origin::CurrentCrate => &current_crate.inner.index,
+                Origin::PreviousCrate => {
+                    &previous_crate
+                        .expect("no previous crate provided")
+                        .inner
+                        .index
+                }
+            };
+
+            let trait_vertex = vertex.as_trait().expect("not a Trait vertex");
+            Box::new(trait_vertex.items.iter().filter_map(move |item_id| {
+                if let Some(item) = item_index.get(item_id) {
+                    matches!(item.inner, ItemEnum::AssocConst { .. })
+                        .then(|| origin.make_item_vertex(item))
                 } else {
                     None
                 }
