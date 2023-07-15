@@ -381,6 +381,11 @@ type Impl implements Item {
   Methods defined in this impl.
   """
   method: [Method!]
+
+  """
+  Constants associated with this type that are defined in this impl.
+  """
+  associated_constant: [AssociatedConstant!]
 }
 
 """
@@ -414,9 +419,22 @@ type Trait implements Item & Importable {
   """
   method: [Method!]
 
+  """
+  Traits whose implementation is a prerequisite for implementing this trait.
+  """
   supertrait: [ImplementedTrait!]
 
+  """
+  Types associated with the implementation of this trait.
+
+  For example: in the `Iterator` trait, `Iterator::Item` is an associated type.
+  """
   associated_type: [AssociatedType!]
+
+  """
+  Constants associated with this type that are defined in this impl.
+  """
+  associated_constant: [AssociatedConstant!]
 }
 
 """
@@ -764,6 +782,55 @@ type AssociatedType implements Item {
   Associated type defaults are currently unstable: https://github.com/rust-lang/rust/issues/29661
   """
   has_default: Boolean!
+
+  # edges from Item
+  span: Span
+  attribute: [Attribute!]
+}
+
+"""
+https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
+https://docs.rs/rustdoc-types/latest/rustdoc_types/enum.ItemEnum.html#variant.AssocConst
+"""
+type AssociatedConstant implements Item {
+  # properties from Item
+  id: String!
+  crate_id: Int!
+
+  """
+  The name of the associated constant.
+
+  For example:
+  ```rust
+  trait BatchIterator {
+    const SIZE: usize;  // `"SIZE"` is the name of the associated constant
+  }
+  ```
+  """
+  name: String
+  docs: String
+  attrs: [String!]!
+  visibility_limit: String!
+
+  # properties for AssociatedConstant
+  """
+  The default value of the constant, if any, represented either as a Rust literal or `"_"`.
+
+  For example:
+  ```rust
+  trait BatchIterator {
+    const SIZE: usize = 16;  // `"16"` is the default
+    const LOG_AS: &'static str = "batch";  // `"\"batch\""` is the default, including escaped quotes
+  }
+  ```
+
+  If the associated constant is on a type's inherent impl, the default is always required to be set.
+
+  If the associated constant is set by evaluating a `const` expression, such as `2 + 2` or
+  a `const fn` call, rustdoc's current behavior is to show a default value of `"_"`
+  instead of evaluating the constant value.
+  """
+  default: String
 
   # edges from Item
   span: Span
