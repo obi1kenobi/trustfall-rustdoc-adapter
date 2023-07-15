@@ -814,21 +814,25 @@ type AssociatedConstant implements Item {
 
   # properties for AssociatedConstant
   """
-  The default value of the constant, if any, represented either as a Rust literal or `"_"`.
+  The default value of the constant, if any, as a Rust literal, expression, or `"_"`.
 
   For example:
   ```rust
-  trait BatchIterator {
+  trait BatchIterator<const MIN: usize> {
     const SIZE: usize = 16;  // `"16"` is the default
     const LOG_AS: &'static str = "batch";  // `"\"batch\""` is the default, including escaped quotes
+    const MIN_SIZE: usize = MIN;  // "MIN" is the default, referring to the other constant's name
   }
   ```
 
   If the associated constant is on a type's inherent impl, the default is always required to be set.
 
+  If the associated constant is set to be equal to another constant, the default holds the name
+  of that other constant.
+
   If the associated constant is set by evaluating a `const` expression, such as `2 + 2` or
   a `const fn` call, rustdoc's current behavior is to show a default value of `"_"`
-  instead of evaluating the constant value.
+  instead of evaluating the constant value or including the full expression.
   """
   default: String
 
