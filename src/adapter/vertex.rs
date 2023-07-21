@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use rustdoc_types::{
-    Constant, Crate, Enum, Function, Impl, Item, Path, Span, Static, Struct, Trait, Type, Variant,
-    VariantKind, Abi,
+    Abi, Constant, Crate, Enum, Function, Impl, Item, Path, Span, Static, Struct, Trait, Type,
+    Variant, VariantKind,
 };
 use trustfall::provider::Typename;
 
@@ -74,7 +74,7 @@ impl<'a> Typename for Vertex<'a> {
                 _ => "OtherType",
             },
             VertexKind::FunctionParameter(..) => "FunctionParameter",
-            VertexKind::FunctionAbi(..) => "FunctionAbi"
+            VertexKind::FunctionAbi(..) => "FunctionAbi",
         }
     }
 }

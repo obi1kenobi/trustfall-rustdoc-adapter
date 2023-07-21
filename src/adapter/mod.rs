@@ -181,7 +181,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             {
                 edges::resolve_impl_owner_edge(self, contexts, edge_name, resolve_info)
             }
-            "Function" | "Method" | "FunctionLike" if matches!(edge_name.as_ref(), "parameter" | "abi") => {
+            "Function" | "Method" | "FunctionLike"
+                if matches!(edge_name.as_ref(), "parameter" | "abi") =>
+            {
                 edges::resolve_function_like_edge(contexts, edge_name)
             }
             "Struct" => edges::resolve_struct_edge(

@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use rustdoc_types::{Item, Span, Abi};
+use rustdoc_types::{Abi, Item, Span};
 
 use crate::attributes::{Attribute, AttributeMetaItem};
 
