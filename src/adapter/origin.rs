@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use rustdoc_types::{Item, Span};
+use rustdoc_types::{Item, Span, Abi};
 
 use crate::attributes::{Attribute, AttributeMetaItem};
 
@@ -84,6 +84,13 @@ impl Origin {
         Vertex {
             origin: *self,
             kind: VertexKind::FunctionParameter(name),
+        }
+    }
+
+    pub(super) fn make_function_abi_vertex<'a>(&self, abi: &'a Abi) -> Vertex<'a> {
+        Vertex {
+            origin: *self,
+            kind: abi.into(),
         }
     }
 }

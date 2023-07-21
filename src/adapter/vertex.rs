@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use rustdoc_types::{
     Constant, Crate, Enum, Function, Impl, Item, Path, Span, Static, Struct, Trait, Type, Variant,
-    VariantKind,
+    VariantKind, Abi,
 };
 use trustfall::provider::Typename;
 
@@ -34,6 +34,7 @@ pub enum VertexKind<'a> {
     AttributeMetaItem(Rc<AttributeMetaItem<'a>>),
     ImplementedTrait(&'a Path, &'a Item),
     FunctionParameter(&'a str),
+    FunctionAbi(&'a Abi),
 }
 
 impl<'a> Typename for Vertex<'a> {
@@ -73,6 +74,7 @@ impl<'a> Typename for Vertex<'a> {
                 _ => "OtherType",
             },
             VertexKind::FunctionParameter(..) => "FunctionParameter",
+            VertexKind::FunctionAbi(..) => "FunctionAbi"
         }
     }
 }
@@ -181,6 +183,13 @@ impl<'a> Vertex<'a> {
         }
     }
 
+    pub(super) fn as_function_abi(&self) -> Option<&'a Abi> {
+        match self.kind {
+            VertexKind::FunctionAbi(abi) => Some(abi),
+            _ => None,
+        }
+    }
+
     pub(super) fn as_impl(&self) -> Option<&'a Impl> {
         self.as_item().and_then(|item| match &item.inner {
             rustdoc_types::ItemEnum::Impl(x) => Some(x),
@@ -246,5 +255,11 @@ impl<'a> From<&'a IndexedCrate<'a>> for VertexKind<'a> {
 impl<'a> From<&'a Span> for VertexKind<'a> {
     fn from(s: &'a Span) -> Self {
         Self::Span(s)
+    }
+}
+
+impl<'a> From<&'a Abi> for VertexKind<'a> {
+    fn from(a: &'a Abi) -> Self {
+        Self::FunctionAbi(a)
     }
 }

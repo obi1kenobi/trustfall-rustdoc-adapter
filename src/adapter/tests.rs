@@ -469,3 +469,77 @@ fn rustdoc_associated_consts() {
         results
     );
 }
+
+#[test]
+fn function_abi() {
+    let path = "./localdata/test_data/function_abi/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+
+                abi_: abi {
+                    name @output
+                    raw_name @output
+                    unwind @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        abi_name: String,
+        abi_raw_name: String,
+        abi_unwind: Option<bool>,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    assert_eq!(
+        vec![
+            Output {
+                name: "example_not_unwind".into(),
+                abi_name: "C".into(),
+                abi_raw_name: "C".into(),
+                abi_unwind: Some(false),
+            },
+            Output {
+                name: "example_unwind".into(),
+                abi_name: "C".into(),
+                abi_raw_name: "C-unwind".into(),
+                abi_unwind: Some(true),
+            },
+            Output {
+                name: "rust_abi".into(),
+                abi_name: "Rust".into(),
+                abi_raw_name: "Rust".into(),
+                abi_unwind: Some(true),
+            },
+        ],
+        results
+    );
+}
