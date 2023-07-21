@@ -20,3 +20,4 @@ itertools = "0.10.5"
 serde_json = "1.0.85"
 serde = { version = "1.0.145", features = ["derive"] }
 maplit = "1.0.2"
+similar-asserts = { version = "1.4.2", features = ["serde"] }

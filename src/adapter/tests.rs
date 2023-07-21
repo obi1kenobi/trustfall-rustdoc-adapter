@@ -64,7 +64,7 @@ fn impl_for_ref() {
         .expect("failed to run query")
         .collect();
 
-    assert_eq!(
+    similar_asserts::assert_eq!(
         vec![btreemap! {
             Arc::from("matching_methods") => FieldValue::Uint64(3),
         }],
@@ -105,7 +105,7 @@ fn rustdoc_finds_supertrait() {
         .expect("failed to run query")
         .collect();
 
-    assert_eq!(
+    similar_asserts::assert_eq!(
         vec![
             btreemap! {
                 Arc::from("name") => FieldValue::String("Supertrait2".to_string()),
@@ -163,7 +163,7 @@ fn rustdoc_finds_consts() {
             .collect();
     results.sort_unstable();
 
-    assert_eq!(
+    similar_asserts::assert_eq!(
         vec![
             Output {
                 name: "FIRST".into(),
@@ -246,7 +246,7 @@ fn rustdoc_trait_has_associated_types() {
             .collect();
     results.sort_unstable();
 
-    assert_eq!(
+    similar_asserts::assert_eq!(
         vec![
             Output {
                 name: "DeserializedType".into(),
@@ -308,7 +308,7 @@ fn rustdoc_finds_statics() {
             .collect();
     results.sort_unstable();
 
-    assert_eq!(
+    similar_asserts::assert_eq!(
         vec![
             Output {
                 name: "FIRST".into(),
@@ -428,7 +428,7 @@ fn rustdoc_associated_consts() {
     .collect();
     results.sort_unstable();
 
-    assert_eq!(
+    similar_asserts::assert_eq!(
         vec![Output {
             name: "START".into(),
             default: Some("0".into()),
@@ -443,7 +443,7 @@ fn rustdoc_associated_consts() {
             .collect();
     results.sort_unstable();
 
-    assert_eq!(
+    similar_asserts::assert_eq!(
         vec![
             Output {
                 name: "DEFAULT_BATCH_SIZE".into(),
