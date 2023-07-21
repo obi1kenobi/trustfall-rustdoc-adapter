@@ -115,6 +115,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 {
                     properties::resolve_function_like_property(contexts, property_name)
                 }
+                "Function" => properties::resolve_function_property(contexts, property_name),
                 "FunctionParameter" => {
                     properties::resolve_function_parameter_property(contexts, property_name)
                 }

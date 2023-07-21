@@ -519,7 +519,7 @@ fn function_abi() {
             .collect();
     results.sort_unstable();
 
-    assert_eq!(
+    similar_asserts::assert_eq!(
         vec![
             Output {
                 name: "example_not_unwind".into(),
@@ -538,6 +538,82 @@ fn function_abi() {
                 abi_name: "Rust".into(),
                 abi_raw_name: "Rust".into(),
                 abi_unwind: Some(true),
+            },
+        ],
+        results
+    );
+}
+
+#[test]
+fn function_export_name() {
+    let path = "./localdata/test_data/function_export_name/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+                export_name @output
+                visibility_limit @output
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        export_name: Option<String>,
+        visibility_limit: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![
+            Output {
+                name: "example_export_name".into(),
+                export_name: Some("renamed".into()),
+                visibility_limit: "public".into(),
+            },
+            Output {
+                name: "example_not_mangled".into(),
+                export_name: Some("example_not_mangled".into()),
+                visibility_limit: "public".into(),
+            },
+            Output {
+                name: "mangled".into(),
+                export_name: None,
+                visibility_limit: "public".into(),
+            },
+            Output {
+                name: "private_export_name".into(),
+                export_name: Some("private_renamed".into()),
+                visibility_limit: "crate".into(),
+            },
+            Output {
+                name: "private_not_mangled".into(),
+                export_name: Some("private_not_mangled".into()),
+                visibility_limit: "crate".into(),
             },
         ],
         results

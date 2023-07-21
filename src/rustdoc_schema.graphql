@@ -559,6 +559,30 @@ type Function implements Item & FunctionLike & Importable {
   unsafe: Boolean!
   async: Boolean!
 
+  # own properties
+  """
+  The unmangled or explicitly-specified export name of this item, if any.
+
+  Export names are defined using the `#[export_name]` or `#[no_mangle]` attributes.
+
+  For example:
+  - The following function has `export_name = "example"`:
+    ```rust
+    #[no_mangle]
+    extern "C" fn example() {}
+    ```
+  - The following function has `export_name = "other"`:
+    ```rust
+    #[export_name = "other"]
+    extern "C" fn example() {}
+    ```
+
+  More info:
+  https://doc.rust-lang.org/reference/abi.html#the-no_mangle-attribute
+  https://doc.rust-lang.org/reference/abi.html#the-export_name-attribute
+  """
+  export_name: String
+
   # edges from Item
   span: Span
   attribute: [Attribute!]
