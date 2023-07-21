@@ -405,6 +405,16 @@ type Trait implements Item & Importable {
   # own properties
   unsafe: Boolean!
 
+  """
+  Is this trait sealed, i.e. can it be implemented for a type in an external crate.
+
+  This property is true if we can prove the trait is sealed, false if we can prove it isn't,
+  and null if based on information we have, we cannot conclusively determine one way or the other.
+
+  More info: https://predr.ag/blog/definitive-guide-to-sealed-traits-in-rust/
+  """
+  sealed: Boolean
+
   # edges from Item
   span: Span
   attribute: [Attribute!]

@@ -123,7 +123,12 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "AttributeMetaItem" => {
                     properties::resolve_attribute_meta_item_property(contexts, property_name)
                 }
-                "Trait" => properties::resolve_trait_property(contexts, property_name),
+                "Trait" => properties::resolve_trait_property(
+                    contexts,
+                    property_name,
+                    self.current_crate,
+                    self.previous_crate,
+                ),
                 "ImplementedTrait" => {
                     properties::resolve_implemented_trait_property(contexts, property_name)
                 }

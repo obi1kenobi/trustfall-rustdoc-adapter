@@ -1,4 +1,4 @@
-use rustdoc_types::ItemEnum;
+use rustdoc_types::{ItemEnum, GenericBound};
 use trustfall::{
     provider::{
         accessor_property, field_property, resolve_property_with, ContextIterator,
@@ -7,7 +7,9 @@ use trustfall::{
     FieldValue,
 };
 
-use super::vertex::Vertex;
+use crate::IndexedCrate;
+
+use super::{vertex::Vertex, origin::Origin};
 
 pub(super) fn resolve_crate_property<'a>(
     contexts: ContextIterator<'a, Vertex<'a>>,
@@ -258,9 +260,85 @@ pub(super) fn resolve_raw_type_property<'a>(
 pub(super) fn resolve_trait_property<'a>(
     contexts: ContextIterator<'a, Vertex<'a>>,
     property_name: &str,
+    current_crate: &'a IndexedCrate<'a>,
+    previous_crate: Option<&'a IndexedCrate<'a>>,
 ) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
     match property_name {
         "unsafe" => resolve_property_with(contexts, field_property!(as_trait, is_unsafe)),
+        "sealed" => resolve_property_with(contexts, |vertex| {
+            let origin_crate = match vertex.origin {
+                Origin::CurrentCrate => current_crate,
+                Origin::PreviousCrate => previous_crate.expect("no baseline provided"),
+            };
+
+            let trait_item = vertex.as_trait().expect("not a Trait vertex");
+
+            // Background on trait sealing:
+            // https://predr.ag/blog/definitive-guide-to-sealed-traits-in-rust/
+            // https://old.reddit.com/r/rust/comments/12cj6as/a_definitive_guide_to_sealed_traits_in_rust/jf21zsm/
+            //
+            // A trait is sealed if any of the following cases are true:
+            // 1. The trait has a pub-in-priv supertrait (i.e. non-importable)
+            //    since external impls cannot impl the supertrait.
+            let non_importable_supertrait = trait_item.bounds.iter().any(|bound| {
+                match bound {
+                    GenericBound::TraitBound { trait_, generic_params, modifier } => {
+                        let supertrait_id = &trait_.id;
+
+                        // If the supertrait is part of this crate,
+                        // but has no importable names, then it must be pub-in-priv.
+                        // That means `trait_item` is sealed.
+                        if origin_crate.inner.index.contains_key(supertrait_id) && origin_crate.publicly_importable_names(supertrait_id).is_empty() {
+                            return true;
+                        }
+
+                        false
+                    }
+                    GenericBound::Outlives(_) => false,
+                }
+            });
+
+            // 2. The trait has a method without a default implementation that satisfies any of:
+            //    - takes an argument whose type is pub-in-priv
+            //    - returns a value whose type is pub-in-priv
+            //    - has a trait bound where the trait is pub-in-priv
+            let sealed_method = trait_item.items
+                .iter()
+                .filter_map(|id| origin_crate.inner.index.get(id))
+                .any(|item| {
+                    if let rustdoc_types::Function { decl, generics, has_body, .. } = &item.inner {
+                        if has_body {
+                            // This method has a default implementation, so it is not sealed.
+                            return false;
+                        }
+
+                        let sealed_due_to_arg = decl.inputs.iter().any(|(_, ty)| {
+                            match ty {
+                                rustdoc_types::Type::ResolvedPath(_) => todo!(),
+                                rustdoc_types::Type::DynTrait(_) => todo!(),
+                                rustdoc_types::Type::Generic(_) => todo!(),
+                                rustdoc_types::Type::Primitive(_) => todo!(),
+                                rustdoc_types::Type::FunctionPointer(_) => todo!(),
+                                rustdoc_types::Type::Tuple(_) => todo!(),
+                                rustdoc_types::Type::Slice(_) => todo!(),
+                                rustdoc_types::Type::Array { type_, len } => todo!(),
+                                rustdoc_types::Type::ImplTrait(_) => todo!(),
+                                rustdoc_types::Type::Infer => todo!(),
+                                rustdoc_types::Type::RawPointer { mutable, type_ } => todo!(),
+                                rustdoc_types::Type::BorrowedRef { lifetime, mutable, type_ } => todo!(),
+                                rustdoc_types::Type::QualifiedPath { name, args, self_type, trait_ } => todo!(),
+                            }
+                        })
+                    } else {
+                        false
+                    }
+                })
+                .any(|item| {
+
+                })
+
+            non_importable_supertrait.into()
+        }),
         _ => unreachable!("Trait property {property_name}"),
     }
 }
