@@ -1,3 +1,5 @@
+#![feature(c_unwind)]
+
 pub extern "C-unwind" fn example_unwind() {}
 
 pub extern "C" fn example_not_unwind() {}
