@@ -100,7 +100,22 @@ fn resolve_items_slow_path<'a>(
     crate_vertex: &'a IndexedCrate,
     origin: Origin,
 ) -> VertexIterator<'a, Vertex<'a>> {
-    resolve_item_vertices(origin, crate_vertex.inner.index.values())
+    // When listing the items in the crate index, ensure we return
+    // only the items that belong to the crate itself.
+    // This is a concern since the crate index in rustdoc JSON can sometimes contain
+    // inlined items from language builtins like `str`:
+    // https://rust-lang.zulipchat.com/#narrow/stream/266220-rustdoc/topic/Rustdoc.20JSON.3A.20Unexpected.20.60core.60.20items.20included.20in.20output/near/377420065
+    //
+    // We look up the `crate_id` of the root module of the crate, and then discard any items
+    // that don't belong to that same `crate_id`. This matches the fast-path behavior.
+    let own_crate_id = crate_vertex.inner.index[&crate_vertex.inner.root].crate_id;
+    let items = crate_vertex
+        .inner
+        .index
+        .values()
+        .filter(move |item| item.crate_id == own_crate_id);
+
+    resolve_item_vertices(origin, items)
 }
 
 fn resolve_item_vertices<'a>(
