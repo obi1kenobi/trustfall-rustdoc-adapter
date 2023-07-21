@@ -70,8 +70,7 @@ impl<'a> Typename for Vertex<'a> {
             VertexKind::ImplementedTrait(..) => "ImplementedTrait",
             VertexKind::RawType(ty) => match ty {
                 rustdoc_types::Type::ResolvedPath { .. } => "ResolvedPathType",
-                rustdoc_types::Type::Primitive(..) => "PrimitiveType",
-                _ => "OtherType",
+                _ => "RawType",
             },
             VertexKind::FunctionParameter(..) => "FunctionParameter",
             VertexKind::FunctionAbi(..) => "FunctionAbi",
