@@ -118,6 +118,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "FunctionParameter" => {
                     properties::resolve_function_parameter_property(contexts, property_name)
                 }
+                "FunctionAbi" => properties::resolve_function_abi_property(contexts, property_name),
                 "Impl" => properties::resolve_impl_property(contexts, property_name),
                 "Attribute" => properties::resolve_attribute_property(contexts, property_name),
                 "AttributeMetaItem" => {
@@ -180,7 +181,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             {
                 edges::resolve_impl_owner_edge(self, contexts, edge_name, resolve_info)
             }
-            "Function" | "Method" | "FunctionLike" if matches!(edge_name.as_ref(), "parameter") => {
+            "Function" | "Method" | "FunctionLike"
+                if matches!(edge_name.as_ref(), "parameter" | "abi") =>
+            {
                 edges::resolve_function_like_edge(contexts, edge_name)
             }
             "Struct" => edges::resolve_struct_edge(

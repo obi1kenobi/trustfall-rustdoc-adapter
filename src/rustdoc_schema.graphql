@@ -478,6 +478,7 @@ interface FunctionLike {
 
   # own edges
   parameter: [FunctionParameter!]
+  abi: FunctionAbi!
 }
 
 """
@@ -486,6 +487,54 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.FnDecl.html
 """
 type FunctionParameter {
   name: String!
+}
+
+"""
+The ABI of a function, method, or function pointer.
+
+It defines the calling convention for those functions, including whether unwinding across
+the call boundary is supported. More info: https://rust-lang.github.io/rfcs/2945-c-unwind-abi.html
+
+The list of supported ABIs is here:
+https://github.com/rust-lang/rust/blob/557359f92512ca88b62a602ebda291f17a953002/compiler/rustc_target/src/spec/abi.rs#L74-L110
+
+Backed by:
+https://docs.rs/rustdoc-types/latest/rustdoc_types/enum.Abi.html
+"""
+type FunctionAbi {
+    """
+    The name of the ABI, with any `"-unwind"` modifier stripped.
+
+    To get the ABI name directly as it would appear in a Rust source file,
+    use the `raw_name` property instead.
+
+    For example, a function defined as `extern "C-unwind" fn example()` would
+    have `name = "C"` and `raw_name = "C-unwind"`.
+
+    Functions with no specified ABI by default have an ABI named `"Rust"`.
+    """
+    name: String!
+
+    """
+    The raw name of the ABI, as it would appear in a Rust source file.
+
+    For example: "C-unwind" or "thiscall-unwind"
+
+    Functions with no specified ABI by default have an ABI named `"Rust"`.
+    """
+    raw_name: String!
+
+    """
+    Whether unwinding across this call is supported.
+
+    If encountering an unknown ABI, this value will be `null` due to unknown unwind semantics.
+
+    Unwind ability is specified in rustc here:
+    https://github.com/rust-lang/rust/blob/557359f92512ca88b62a602ebda291f17a953002/compiler/rustc_middle/src/ty/layout.rs#L1422-L1488
+
+    More info: https://rust-lang.github.io/rfcs/2945-c-unwind-abi.html
+    """
+    unwind: Boolean
 }
 
 """
@@ -513,6 +562,7 @@ type Function implements Item & FunctionLike & Importable {
 
   # edges from FunctionLike
   parameter: [FunctionParameter!]
+  abi: FunctionAbi!
 
   # edges from Importable
   importable_path: [ImportablePath!]
@@ -544,6 +594,7 @@ type Method implements Item & FunctionLike {
 
   # edges from FunctionLike
   parameter: [FunctionParameter!]
+  abi: FunctionAbi!
 }
 
 """
