@@ -126,6 +126,9 @@ type StructField implements Item {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  # own edges
+  raw_type: RawType
 }
 
 """
@@ -842,4 +845,34 @@ type AssociatedConstant implements Item {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+}
+
+"""
+A type represented in the "raw" rustdoc JSON representation.
+
+Copiously detailed, but not the easiest to use due to its complexity.
+
+This interface is a temporary, perma-unstable type intended to be used
+only until the rustdoc JSON format is stabilized and until subsequently
+we are able to design a better, more permanent representation for
+Rust types in this schema.
+
+https://docs.rs/rustdoc-types/latest/rustdoc_types/enum.Type.html
+"""
+interface RawType {
+  name: String!
+}
+
+"""
+Represents a struct, enum, or trait.
+
+https://docs.rs/rustdoc-types/latest/rustdoc_types/enum.Type.html#variant.ResolvedPath
+"""
+type ResolvedPathType implements RawType {
+  """
+  The fully-qualified canonical name of the type.
+
+  For example: "core::marker::PhantomData" or "std::marker::PhantomData"
+  """
+  name: String!
 }
