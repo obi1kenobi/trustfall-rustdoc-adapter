@@ -129,9 +129,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     properties::resolve_implemented_trait_property(contexts, property_name)
                 }
                 "Static" => properties::resolve_static_property(contexts, property_name),
-                "RawType" | "ResolvedPathType" | "PrimitiveType"
-                    if matches!(property_name.as_ref(), "name") =>
-                {
+                "RawType" | "ResolvedPathType" if matches!(property_name.as_ref(), "name") => {
                     // fields from "RawType"
                     properties::resolve_raw_type_property(contexts, property_name)
                 }
@@ -231,7 +229,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         let coerce_to_type = coerce_to_type.clone();
         match type_name.as_ref() {
             "Item" | "Variant" | "FunctionLike" | "Importable" | "ImplOwner" | "RawType"
-            | "ResolvedPathType" | "GlobalValue" => {
+            | "GlobalValue" => {
                 resolve_coercion_with(contexts, move |vertex| {
                     let actual_type_name = vertex.typename();
 
@@ -241,9 +239,6 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                             "PlainVariant" | "TupleVariant" | "StructVariant"
                         ),
                         "ImplOwner" => matches!(actual_type_name, "Struct" | "Enum"),
-                        "ResolvedPathType" => {
-                            matches!(actual_type_name, "ResolvedPathType" | "ImplementedTrait")
-                        }
                         "GlobalValue" => matches!(actual_type_name, "Constant" | "Static",),
                         _ => {
                             // The remaining types are final (don't have any subtypes)
