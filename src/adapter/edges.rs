@@ -148,6 +148,16 @@ pub(super) fn resolve_function_like_edge<'a>(
                     .map(move |(name, _type_)| origin.make_function_parameter_vertex(name)),
             )
         }),
+        "abi" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let abi = &vertex
+                .as_function()
+                .expect("vertex was not a Function")
+                .header
+                .abi;
+
+            Box::new(std::iter::once(origin.make_function_abi_vertex(abi)))
+        }),
         _ => unreachable!("resolve_function_like_edge {edge_name}"),
     }
 }
