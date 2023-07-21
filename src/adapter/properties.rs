@@ -7,6 +7,8 @@ use trustfall::{
     FieldValue,
 };
 
+use crate::attributes::Attribute;
+
 use super::vertex::Vertex;
 
 pub(super) fn resolve_crate_property<'a>(
@@ -178,6 +180,46 @@ pub(super) fn resolve_function_like_property<'a>(
             field_property!(as_function, header, { header.unsafe_.into() }),
         ),
         _ => unreachable!("FunctionLike property {property_name}"),
+    }
+}
+
+pub(super) fn resolve_function_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "export_name" => resolve_property_with(contexts, move |vertex| {
+            let item = vertex.as_item().expect("not an Item vertex");
+
+            if item.attrs.iter().any(|attr| attr == "#[no_mangle]") {
+                // Items with `#[no_mangle]` attributes are exported under their item name.
+                // Ref: https://doc.rust-lang.org/reference/abi.html#the-no_mangle-attribute
+                item.name.clone().into()
+            } else {
+                // Look for an `#[export_name = "something"]` attribute.
+                // Ref: https://doc.rust-lang.org/reference/abi.html#the-export_name-attribute
+                item.attrs
+                    .iter()
+                    .filter_map(|attr| {
+                        if attr.starts_with("#[export_name") {
+                            let parsed = Attribute::new(attr);
+                            if parsed.content.base == "export_name" {
+                                parsed
+                                    .content
+                                    .assigned_item
+                                    .map(|name| name.trim_matches('"'))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                    .next()
+                    .into()
+            }
+        }),
+        _ => unreachable!("Function property {property_name}"),
     }
 }
 
