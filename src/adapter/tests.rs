@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use maplit::btreemap;
-use trustfall::{FieldValue, Schema, TryIntoStruct};
+use trustfall::{Schema, TryIntoStruct};
 
 use crate::{IndexedCrate, RustdocAdapter};
 
@@ -60,14 +60,21 @@ fn impl_for_ref() {
 
     let schema =
         Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
-    let results: Vec<_> = trustfall::execute_query(&schema, Arc::new(adapter), query, variables)
-        .expect("failed to run query")
-        .collect();
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        matching_methods: u64,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.into(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
 
     similar_asserts::assert_eq!(
-        vec![btreemap! {
-            Arc::from("matching_methods") => FieldValue::Uint64(3),
-        }],
+        vec![Output { matching_methods: 3 }],
         results
     );
 }
@@ -101,18 +108,27 @@ fn rustdoc_finds_supertrait() {
 
     let schema =
         Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
-    let results: Vec<_> = trustfall::execute_query(&schema, Arc::new(adapter), query, variables)
-        .expect("failed to run query")
-        .collect();
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.into(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
 
     similar_asserts::assert_eq!(
         vec![
-            btreemap! {
-                Arc::from("name") => FieldValue::String("Supertrait2".to_string()),
+            Output {
+                name: "Supertrait".into(),
             },
-            btreemap! {
-                Arc::from("name") => FieldValue::String("Supertrait".to_string()),
-            }
+            Output {
+                name: "Supertrait2".into(),
+            },
         ],
         results
     );
