@@ -74,7 +74,9 @@ fn impl_for_ref() {
     results.sort_unstable();
 
     similar_asserts::assert_eq!(
-        vec![Output { matching_methods: 3 }],
+        vec![Output {
+            matching_methods: 3
+        }],
         results
     );
 }
