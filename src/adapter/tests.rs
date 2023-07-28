@@ -24,6 +24,24 @@ fn rustdoc_json_format_version() {
     );
 }
 
+#[test]
+fn adapter_invariants() {
+    // Which rustdoc file we use doesn't really matter,
+    // we just need it to create the `RustdocAdapter` struct.
+    let path = "./localdata/test_data/impl_for_ref/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = RustdocAdapter::new(&indexed_crate, None);
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    trustfall::provider::check_adapter_invariants(&schema, adapter)
+}
+
 /// Ensure that methods implemented on references (like `&Foo`) show up in queries.
 #[test]
 fn impl_for_ref() {
