@@ -56,7 +56,7 @@ impl<'a> IndexedCrate<'a> {
         for item in crate_
             .index
             .values()
-            .filter_map(|item| supported_item_kind(item).then_some(item))
+            .filter(|item| supported_item_kind(item))
         {
             for importable_path in value.publicly_importable_names(&item.id) {
                 imports_index
@@ -1501,7 +1501,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                 .inner
                 .index
                 .values()
-                .filter_map(|item| (item.name.as_deref() == Some("First")).then_some(item))
+                .filter(|item| item.name.as_deref() == Some("First"))
                 .collect();
             assert_eq!(2, items_named_first.len(), "{items_named_first:?}");
             let variant_item = items_named_first
