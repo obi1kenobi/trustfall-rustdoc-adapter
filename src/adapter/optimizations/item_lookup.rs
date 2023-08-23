@@ -122,7 +122,9 @@ fn resolve_item_vertices<'a>(
     origin: Origin,
     items: impl Iterator<Item = &'a Item> + 'a,
 ) -> VertexIterator<'a, Vertex<'a>> {
-    Box::new(items.filter_map(move |value| {
-        crate::adapter::supported_item_kind(value).then(|| origin.make_item_vertex(value))
-    }))
+    Box::new(
+        items
+            .filter(|value| crate::adapter::supported_item_kind(value))
+            .map(move |value| origin.make_item_vertex(value)),
+    )
 }
