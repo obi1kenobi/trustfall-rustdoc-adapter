@@ -1,6 +1,6 @@
 [package]
 name = "trustfall-rustdoc-adapter"
-version = "26.2.0"
+version = "27.0.0"
 edition = "2021"
 authors = ["Predrag Gruevski <obi1kenobi82@gmail.com>"]
 license = "Apache-2.0 OR MIT"
@@ -12,7 +12,7 @@ readme = "./README.md"
 
 [dependencies]
 trustfall = "0.6.0"
-rustdoc-types = "0.22.0"
+rustdoc-types = "0.23.0"
 
 [dev-dependencies]
 anyhow = "1.0.58"

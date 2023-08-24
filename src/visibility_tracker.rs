@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use rustdoc_types::{Crate, GenericArgs, Id, Item, ItemEnum, Typedef, Visibility};
+use rustdoc_types::{Crate, GenericArgs, Id, Item, ItemEnum, TypeAlias, Visibility};
 
 #[derive(Debug, Clone)]
 pub(crate) struct VisibilityTracker<'a> {
@@ -76,7 +76,7 @@ impl<'a> VisibilityTracker<'a> {
                     (push_name, popped_name)
                 }
             }
-            rustdoc_types::ItemEnum::Typedef(..) => {
+            rustdoc_types::ItemEnum::TypeAlias(..) => {
                 // Use the typedef name instead of the underlying item's own name,
                 // since it might be renaming the underlying item.
                 let push_name = Some(item.name.as_deref().expect("typedef had no name"));
@@ -240,7 +240,7 @@ fn get_names_for_item<'a>(
         | ItemEnum::Union(..)
         | ItemEnum::Enum(..)
         | ItemEnum::Trait(..)
-        | ItemEnum::Typedef(..) => {
+        | ItemEnum::TypeAlias(..) => {
             let item_name = item.name.as_deref().expect("item did not have a name");
             [Some(NamespacedName::Types(item_name)), None]
                 .into_iter()
@@ -718,7 +718,7 @@ fn visit_root_reachable_public_items<'a>(
                 );
             }
         }
-        rustdoc_types::ItemEnum::Typedef(ty) => {
+        rustdoc_types::ItemEnum::TypeAlias(ty) => {
             // We're interested in type aliases that are specifically used to rename types:
             //   `pub type Foo = Bar`
             // If the underlying type is generic, it's only a valid renaming if the typedef
@@ -759,7 +759,7 @@ fn visit_root_reachable_public_items<'a>(
 /// since `Foo<A, B = i64>` is not valid whereas `crate::Bar<A, B = i64>` is fine.
 fn get_typedef_equivalent_reexport_target<'a>(
     crate_: &'a Crate,
-    ty: &'a Typedef,
+    ty: &'a TypeAlias,
 ) -> Option<&'a Item> {
     if let rustdoc_types::Type::ResolvedPath(resolved_path) = &ty.type_ {
         let underlying = crate_.index.get(&resolved_path.id)?;
@@ -777,7 +777,7 @@ fn get_typedef_equivalent_reexport_target<'a>(
                 rustdoc_types::ItemEnum::Enum(enum_) => &enum_.generics,
                 rustdoc_types::ItemEnum::Trait(trait_) => &trait_.generics,
                 rustdoc_types::ItemEnum::Union(union_) => &union_.generics,
-                rustdoc_types::ItemEnum::Typedef(ty) => &ty.generics,
+                rustdoc_types::ItemEnum::TypeAlias(ty) => &ty.generics,
                 _ => unreachable!("unexpected underlying item kind: {underlying:?}"),
             };
 
@@ -835,7 +835,7 @@ fn get_typedef_equivalent_reexport_target<'a>(
                         rustdoc_types::GenericParamDefKind::Lifetime { .. },
                         rustdoc_types::GenericParamDefKind::Lifetime { .. },
                     ) => {
-                        // Typedefs cannot have "outlives" relationships on their lifetimes,
+                        // TypeAlias values cannot have "outlives" relationships on their lifetimes,
                         // so there's nothing further to compare here. So far, it's a match.
                     }
                     (
