@@ -483,6 +483,24 @@ type ImportablePath {
   visibility_limit: String!
 
   """
+  This path is hidden in documentation.
+  """
+  doc_hidden: Boolean!
+
+  """
+  This path is deprecated.
+  """
+  deprecated: Boolean!
+
+  """
+  This path should be treated as public API. This is true if:
+  - the path is visible in documentation, or
+  - the path is not visible and is also deprecated.
+    (Which assumes that in the past it was a public API.)
+  """
+  public_api: Boolean!
+
+  """
   The path from which the item can be imported.
 
   For example: ["foo", "bar", "Baz"] for a type importable as foo::bar::Baz

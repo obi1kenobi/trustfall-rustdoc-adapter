@@ -162,12 +162,22 @@ pub(super) fn resolve_importable_path_property<'a>(
             vertex
                 .as_importable_path()
                 .expect("not an importable path")
+                .components
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
                 .into()
         }),
         "visibility_limit" => resolve_property_with(contexts, |_| "public".into()),
+        "doc_hidden" => {
+            resolve_property_with(contexts, field_property!(as_importable_path, doc_hidden))
+        }
+        "deprecated" => {
+            resolve_property_with(contexts, field_property!(as_importable_path, deprecated))
+        }
+        "public_api" => {
+            resolve_property_with(contexts, accessor_property!(as_importable_path, public_api))
+        }
         _ => unreachable!("ImportablePath property {property_name}"),
     }
 }

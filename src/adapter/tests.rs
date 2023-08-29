@@ -825,3 +825,158 @@ fn function_export_name() {
         results
     );
 }
+
+#[test]
+fn importable_paths() {
+    let path = "./localdata/test_data/importable_paths/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                name @output
+                importable_path @fold {
+                    path @output
+                    doc_hidden @output
+                    deprecated @output
+                    public_api @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        path: Vec<Vec<String>>,
+        doc_hidden: Vec<bool>,
+        deprecated: Vec<bool>,
+        public_api: Vec<bool>,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![
+            Output {
+                name: "DeprecatedHidden".into(),
+                path: vec![vec![
+                    "importable_paths".into(),
+                    "submodule".into(),
+                    "DeprecatedHidden".into(),
+                ],],
+                doc_hidden: vec![true,],
+                deprecated: vec![true,],
+                public_api: vec![true,],
+            },
+            Output {
+                name: "DeprecatedModuleHidden".into(),
+                path: vec![vec![
+                    "importable_paths".into(),
+                    "hidden".into(),
+                    "DeprecatedModuleHidden".into(),
+                ],],
+                doc_hidden: vec![false,],
+                deprecated: vec![true,],
+                public_api: vec![true,],
+            },
+            Output {
+                name: "Hidden".into(),
+                path: vec![vec![
+                    "importable_paths".into(),
+                    "submodule".into(),
+                    "Hidden".into(),
+                ],],
+                doc_hidden: vec![true,],
+                deprecated: vec![false,],
+                public_api: vec![false,],
+            },
+            Output {
+                name: "ModuleDeprecated".into(),
+                path: vec![
+                    vec![
+                        "importable_paths".into(),
+                        "deprecated".into(),
+                        "ModuleDeprecated".into(),
+                    ],
+                    vec!["importable_paths".into(), "UsedModuleDeprecated".into(),],
+                ],
+                doc_hidden: vec![false, false],
+                deprecated: vec![true, true],
+                public_api: vec![true, true],
+            },
+            Output {
+                name: "ModuleDeprecatedHidden".into(),
+                path: vec![vec![
+                    "importable_paths".into(),
+                    "deprecated".into(),
+                    "ModuleDeprecatedHidden".into(),
+                ],],
+                doc_hidden: vec![true,],
+                deprecated: vec![true,],
+                public_api: vec![true,],
+            },
+            Output {
+                name: "ModuleDeprecatedModuleHidden".into(),
+                path: vec![vec![
+                    "importable_paths".into(),
+                    "hidden".into(),
+                    "deprecated".into(),
+                    "ModuleDeprecatedModuleHidden".into(),
+                ],],
+                doc_hidden: vec![false,],
+                deprecated: vec![true,],
+                public_api: vec![true,],
+            },
+            Output {
+                name: "ModuleHidden".into(),
+                path: vec![
+                    vec!["importable_paths".into(), "UsedVisible".into(),],
+                    vec![
+                        "importable_paths".into(),
+                        "hidden".into(),
+                        "ModuleHidden".into(),
+                    ],
+                ],
+                doc_hidden: vec![false, false,],
+                deprecated: vec![false, false,],
+                public_api: vec![true, true,],
+            },
+            Output {
+                name: "Private".into(),
+                path: vec![],
+                doc_hidden: vec![],
+                deprecated: vec![],
+                public_api: vec![],
+            },
+            Output {
+                name: "PublicImportable".into(),
+                path: vec![vec!["importable_paths".into(), "PublicImportable".into(),],],
+                doc_hidden: vec![false,],
+                deprecated: vec![false,],
+                public_api: vec![true,],
+            }
+        ],
+        results
+    );
+}

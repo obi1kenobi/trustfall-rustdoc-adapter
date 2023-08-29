@@ -59,8 +59,9 @@ impl<'a> IndexedCrate<'a> {
             .filter(|item| supported_item_kind(item))
         {
             for importable_path in value.publicly_importable_names(&item.id) {
+                // TODO: doc_hidden and deprecated are not relevant in this index
                 imports_index
-                    .entry(ImportablePath::new(importable_path))
+                    .entry(ImportablePath::new(importable_path, false, false))
                     .or_default()
                     .push(item);
             }
@@ -162,13 +163,24 @@ impl<'a> IndexedCrate<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct ImportablePath<'a> {
+#[non_exhaustive]
+pub struct ImportablePath<'a> {
     pub(crate) components: Vec<&'a str>,
+    pub(crate) doc_hidden: bool,
+    pub(crate) deprecated: bool,
 }
 
 impl<'a> ImportablePath<'a> {
-    fn new(components: Vec<&'a str>) -> Self {
-        Self { components }
+    pub(crate) fn new(components: Vec<&'a str>, doc_hidden: bool, deprecated: bool) -> Self {
+        Self {
+            components,
+            doc_hidden,
+            deprecated,
+        }
+    }
+
+    pub(crate) fn public_api(&self) -> bool {
+        self.deprecated || !self.doc_hidden
     }
 }
 
