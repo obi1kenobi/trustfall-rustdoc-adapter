@@ -162,6 +162,35 @@ pub(super) fn resolve_function_like_edge<'a>(
     }
 }
 
+pub(super) fn resolve_module_edge<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    edge_name: &str,
+    current_crate: &'a IndexedCrate<'a>,
+    previous_crate: Option<&'a IndexedCrate<'a>>,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+    match edge_name {
+        "item" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let module_item = vertex.as_module().expect("vertex was not a Module");
+
+            let item_index = match origin {
+                Origin::CurrentCrate => &current_crate.inner.index,
+                Origin::PreviousCrate => {
+                    &previous_crate
+                        .expect("no previous crate provided")
+                        .inner
+                        .index
+                }
+            };
+
+            Box::new(module_item.items.iter().map(move |item_id| {
+                origin.make_item_vertex(item_index.get(item_id).expect("missing item"))
+            }))
+        }),
+        _ => unreachable!("resolve_module_edge {edge_name}"),
+    }
+}
+
 pub(super) fn resolve_struct_edge<'a>(
     contexts: ContextIterator<'a, Vertex<'a>>,
     edge_name: &str,

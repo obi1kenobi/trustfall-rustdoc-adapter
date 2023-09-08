@@ -401,6 +401,116 @@ fn rustdoc_finds_statics() {
 }
 
 #[test]
+fn rustdoc_modules() {
+    let path = "./localdata/test_data/modules/rustdoc.json";
+
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let mod_query = r#"
+{
+   Crate {
+       item {
+           ... on Module {
+               module: name @output
+               is_crate @output
+               is_stripped @output
+               item {
+                   member: name @output
+               }
+           }
+       }
+   }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        member: Option<String>,
+        module: String,
+        is_crate: bool,
+        is_stripped: bool,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), mod_query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![
+            Output {
+                member: None,
+                module: "outer".into(),
+                is_crate: false,
+                is_stripped: false,
+            },
+            Output {
+                member: Some("T1".into(),),
+                module: "world".into(),
+                is_crate: false,
+                is_stripped: false,
+            },
+            Output {
+                member: Some("T2".into(),),
+                module: "hello".into(),
+                is_crate: false,
+                is_stripped: false,
+            },
+            Output {
+                member: Some("T3".into(),),
+                module: "outer".into(),
+                is_crate: false,
+                is_stripped: false,
+            },
+            Output {
+                member: Some("T4".into(),),
+                module: "inner".into(),
+                is_crate: false,
+                is_stripped: false,
+            },
+            Output {
+                member: Some("hello".into(),),
+                module: "modules".into(),
+                is_crate: true,
+                is_stripped: false,
+            },
+            Output {
+                member: Some("inner".into(),),
+                module: "outer".into(),
+                is_crate: false,
+                is_stripped: false,
+            },
+            Output {
+                member: Some("outer".into(),),
+                module: "modules".into(),
+                is_crate: true,
+                is_stripped: false,
+            },
+            Output {
+                member: Some("world".into(),),
+                module: "hello".into(),
+                is_crate: false,
+                is_stripped: false,
+            },
+        ],
+        results
+    );
+}
+
+#[test]
 fn rustdoc_associated_consts() {
     let path = "./localdata/test_data/associated_consts/rustdoc.json";
     let content = std::fs::read_to_string(path)
