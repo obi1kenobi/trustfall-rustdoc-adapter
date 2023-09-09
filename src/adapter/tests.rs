@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use anyhow::Context;
-use maplit::btreemap;
+use maplit::{btreemap, btreeset};
 use trustfall::{Schema, TryIntoStruct};
 
 use crate::{IndexedCrate, RustdocAdapter};
@@ -420,8 +420,8 @@ fn rustdoc_modules() {
                module: name @output
                is_crate @output
                is_stripped @output
-               item {
-                   member: name @output
+               item @fold {
+                   members: name @output
                }
            }
        }
@@ -436,10 +436,10 @@ fn rustdoc_modules() {
 
     #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
     struct Output {
-        member: Option<String>,
         module: String,
         is_crate: bool,
         is_stripped: bool,
+        members: BTreeSet<Option<String>>,
     }
 
     let mut results: Vec<Output> =
@@ -452,58 +452,34 @@ fn rustdoc_modules() {
     similar_asserts::assert_eq!(
         vec![
             Output {
-                member: None,
-                module: "outer".into(),
-                is_crate: false,
-                is_stripped: false,
-            },
-            Output {
-                member: Some("T1".into(),),
-                module: "world".into(),
-                is_crate: false,
-                is_stripped: false,
-            },
-            Output {
-                member: Some("T2".into(),),
                 module: "hello".into(),
                 is_crate: false,
                 is_stripped: false,
+                members: btreeset![Some("T2".into(),), Some("world".into(),),]
             },
             Output {
-                member: Some("T3".into(),),
-                module: "outer".into(),
-                is_crate: false,
-                is_stripped: false,
-            },
-            Output {
-                member: Some("T4".into(),),
                 module: "inner".into(),
                 is_crate: false,
                 is_stripped: false,
+                members: btreeset![Some("T4".into(),),],
             },
             Output {
-                member: Some("hello".into(),),
                 module: "modules".into(),
                 is_crate: true,
                 is_stripped: false,
+                members: btreeset![Some("hello".into(),), Some("outer".into(),),],
             },
             Output {
-                member: Some("inner".into(),),
                 module: "outer".into(),
                 is_crate: false,
                 is_stripped: false,
+                members: btreeset![None, Some("T3".into(),), Some("inner".into(),),],
             },
             Output {
-                member: Some("outer".into(),),
-                module: "modules".into(),
-                is_crate: true,
-                is_stripped: false,
-            },
-            Output {
-                member: Some("world".into(),),
-                module: "hello".into(),
+                module: "world".into(),
                 is_crate: false,
                 is_stripped: false,
+                members: btreeset![Some("T1".into(),),],
             },
         ],
         results
