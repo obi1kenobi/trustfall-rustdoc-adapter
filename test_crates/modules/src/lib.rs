@@ -1,4 +1,3 @@
-
 pub mod hello {
     pub mod world {
 	pub struct T1 {}
@@ -7,4 +6,3 @@ pub mod hello {
 }
 
 pub mod outer;
-
