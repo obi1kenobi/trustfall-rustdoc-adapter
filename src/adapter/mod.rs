@@ -94,7 +94,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant" | "PlainVariant"
                 | "TupleVariant" | "StructVariant" | "Trait" | "Function" | "Method" | "Impl"
                 | "GlobalValue" | "Constant" | "Static" | "AssociatedType"
-                | "AssociatedConstant"
+                | "AssociatedConstant" | "Module"
                     if matches!(
                         property_name.as_ref(),
                         "id" | "crate_id" | "name" | "docs" | "attrs" | "visibility_limit"
@@ -103,6 +103,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     // properties inherited from Item, accesssed on Item subtypes
                     properties::resolve_item_property(contexts, property_name)
                 }
+                "Module" => properties::resolve_module_property(contexts, property_name),
                 "Struct" => properties::resolve_struct_property(contexts, property_name),
                 "Enum" => properties::resolve_enum_property(contexts, property_name),
                 "Span" => properties::resolve_span_property(contexts, property_name),
@@ -156,7 +157,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             "CrateDiff" => edges::resolve_crate_diff_edge(contexts, edge_name),
             "Crate" => edges::resolve_crate_edge(self, contexts, edge_name, resolve_info),
             "Importable" | "ImplOwner" | "Struct" | "Enum" | "Trait" | "Function"
-            | "GlobalValue" | "Constant" | "Static"
+            | "GlobalValue" | "Constant" | "Static" | "Module"
                 if matches!(edge_name.as_ref(), "importable_path" | "canonical_path") =>
             {
                 edges::resolve_importable_edge(
@@ -169,7 +170,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             "Item" | "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant"
             | "PlainVariant" | "TupleVariant" | "StructVariant" | "Trait" | "Function"
             | "Method" | "Impl" | "GlobalValue" | "Constant" | "Static" | "AssociatedType"
-            | "AssociatedConstant"
+            | "AssociatedConstant" | "Module"
                 if matches!(edge_name.as_ref(), "span" | "attribute") =>
             {
                 edges::resolve_item_edge(contexts, edge_name)
@@ -184,6 +185,12 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             {
                 edges::resolve_function_like_edge(contexts, edge_name)
             }
+            "Module" => edges::resolve_module_edge(
+                contexts,
+                edge_name,
+                self.current_crate,
+                self.previous_crate,
+            ),
             "Struct" => edges::resolve_struct_edge(
                 contexts,
                 edge_name,
@@ -267,5 +274,6 @@ pub(crate) fn supported_item_kind(item: &Item) -> bool {
             | rustdoc_types::ItemEnum::Constant(..)
             | rustdoc_types::ItemEnum::Static(..)
             | rustdoc_types::ItemEnum::AssocType { .. }
+            | rustdoc_types::ItemEnum::Module { .. }
     )
 }
