@@ -183,8 +183,10 @@ pub(super) fn resolve_module_edge<'a>(
                 }
             };
 
-            Box::new(module_item.items.iter().map(move |item_id| {
-                origin.make_item_vertex(item_index.get(item_id).expect("missing item"))
+            Box::new(module_item.items.iter().filter_map(move |item_id| {
+                item_index
+                    .get(item_id)
+                    .map(|item| origin.make_item_vertex(item))
             }))
         }),
         _ => unreachable!("resolve_module_edge {edge_name}"),
