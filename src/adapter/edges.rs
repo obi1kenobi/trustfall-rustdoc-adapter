@@ -4,7 +4,7 @@ use trustfall::provider::{
     VertexIterator,
 };
 
-use crate::{attributes::Attribute, IndexedCrate};
+use crate::{adapter::supported_item_kind, attributes::Attribute, IndexedCrate};
 
 use super::{optimizations, origin::Origin, vertex::Vertex, RustdocAdapter};
 
@@ -35,6 +35,29 @@ pub(super) fn resolve_crate_edge<'a>(
 ) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "item" => optimizations::item_lookup::resolve_crate_items(adapter, contexts, resolve_info),
+        "root_module" => {
+            let current_crate = adapter.current_crate;
+            let previous_crate = adapter.previous_crate;
+
+            resolve_neighbors_with(contexts, move |vertex| {
+                let origin = vertex.origin;
+                let crate_ = vertex.as_crate().expect("vertex was not a crate!");
+                let item_index = match origin {
+                    Origin::CurrentCrate => &current_crate.inner.index,
+                    Origin::PreviousCrate => {
+                        &previous_crate
+                            .expect("no previous crate provided")
+                            .inner
+                            .index
+                    }
+                };
+
+                let module = item_index
+                    .get(&crate_.root)
+                    .expect("crate had no root module");
+                Box::new(std::iter::once(origin.make_item_vertex(module)))
+            })
+        }
         _ => unreachable!("resolve_crate_edge {edge_name}"),
     }
 }
@@ -159,6 +182,38 @@ pub(super) fn resolve_function_like_edge<'a>(
             Box::new(std::iter::once(origin.make_function_abi_vertex(abi)))
         }),
         _ => unreachable!("resolve_function_like_edge {edge_name}"),
+    }
+}
+
+pub(super) fn resolve_module_edge<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    edge_name: &str,
+    current_crate: &'a IndexedCrate<'a>,
+    previous_crate: Option<&'a IndexedCrate<'a>>,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+    match edge_name {
+        "item" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let module_item = vertex.as_module().expect("vertex was not a Module");
+
+            let item_index = match origin {
+                Origin::CurrentCrate => &current_crate.inner.index,
+                Origin::PreviousCrate => {
+                    &previous_crate
+                        .expect("no previous crate provided")
+                        .inner
+                        .index
+                }
+            };
+
+            Box::new(module_item.items.iter().filter_map(move |item_id| {
+                item_index
+                    .get(item_id)
+                    .filter(|item| supported_item_kind(item))
+                    .map(|item| origin.make_item_vertex(item))
+            }))
+        }),
+        _ => unreachable!("resolve_module_edge {edge_name}"),
     }
 }
 
