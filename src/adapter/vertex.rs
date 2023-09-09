@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use rustdoc_types::{
-    Abi, Constant, Crate, Enum, Function, Impl, Item, Path, Span, Static, Struct, Trait, Type,
-    Variant,
+    Abi, Constant, Crate, Enum, Function, Impl, Item, Module, Path, Span, Static, Struct, Trait,
+    Type, Variant,
 };
 use trustfall::provider::Typename;
 
@@ -44,6 +44,7 @@ impl<'a> Typename for Vertex<'a> {
     fn typename(&self) -> &'static str {
         match self.kind {
             VertexKind::Item(item) => match &item.inner {
+                rustdoc_types::ItemEnum::Module { .. } => "Module",
                 rustdoc_types::ItemEnum::Struct(..) => "Struct",
                 rustdoc_types::ItemEnum::Enum(..) => "Enum",
                 rustdoc_types::ItemEnum::Function(..) => "Function",
@@ -110,6 +111,13 @@ impl<'a> Vertex<'a> {
             VertexKind::Item(item) => Some(item),
             _ => None,
         }
+    }
+
+    pub(super) fn as_module(&self) -> Option<&'a Module> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::Module(m) => Some(m),
+            _ => None,
+        })
     }
 
     pub(super) fn as_struct(&self) -> Option<&'a Struct> {
