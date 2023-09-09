@@ -61,6 +61,16 @@ pub(super) fn resolve_item_property<'a>(
     }
 }
 
+pub(super) fn resolve_module_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "is_stripped" => resolve_property_with(contexts, field_property!(as_module, is_stripped)),
+        _ => unreachable!("Module property {property_name}"),
+    }
+}
+
 pub(super) fn resolve_struct_property<'a>(
     contexts: ContextIterator<'a, Vertex<'a>>,
     property_name: &str,

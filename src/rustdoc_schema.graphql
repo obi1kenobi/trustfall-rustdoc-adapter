@@ -27,6 +27,11 @@ type Crate {
   includes_private: Boolean!
   format_version: Int!
 
+  """
+  The top-level module of the crate, in which everything else in the crate is contained.
+  """
+  root_module: Module!
+
   item: [Item!]
 }
 
@@ -54,6 +59,35 @@ interface Item {
   attribute: [Attribute!]
   span: Span
 }
+
+"""
+https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
+https://docs.rs/rustdoc-types/0.16.0/rustdoc_types/struct.Module.html
+"""
+type Module implements Item & Importable {
+  # properties from Item
+  id: String!
+  crate_id: Int!
+  name: String
+  docs: String
+  attrs: [String!]!
+  visibility_limit: String!
+
+  # own properties
+  is_stripped: Boolean!
+
+  # edges from Item
+  span: Span
+  attribute: [Attribute!]
+
+  # edges from Importable
+  importable_path: [ImportablePath!]
+  canonical_path: Path
+
+  # own edges
+  item: [Item!]!
+}
+
 
 """
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
