@@ -4,7 +4,7 @@ use trustfall::provider::{
     VertexIterator,
 };
 
-use crate::{attributes::Attribute, IndexedCrate};
+use crate::{adapter::supported_item_kind, attributes::Attribute, IndexedCrate};
 
 use super::{optimizations, origin::Origin, vertex::Vertex, RustdocAdapter};
 
@@ -186,6 +186,7 @@ pub(super) fn resolve_module_edge<'a>(
             Box::new(module_item.items.iter().filter_map(move |item_id| {
                 item_index
                     .get(item_id)
+                    .filter(|item| supported_item_kind(item))
                     .map(|item| origin.make_item_vertex(item))
             }))
         }),
