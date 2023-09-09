@@ -491,6 +491,39 @@ fn rustdoc_modules() {
         ],
         results
     );
+
+    let root_query = r#"
+{
+   Crate {
+       root_module {
+           module: name @output
+           is_crate @output
+           is_stripped @output
+           item @fold {
+               members: name @output
+               types: __typename @output
+           }
+       }
+   }
+}
+"#;
+
+    let results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), root_query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+
+    similar_asserts::assert_eq!(
+        vec![Output {
+            module: "modules".into(),
+            is_crate: true,
+            is_stripped: false,
+            members: vec![Some("hello".into()), Some("outer".into())],
+            types: vec!["Module".into(), "Module".into()],
+        }],
+        results
+    );
 }
 
 #[test]

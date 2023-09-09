@@ -35,6 +35,29 @@ pub(super) fn resolve_crate_edge<'a>(
 ) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "item" => optimizations::item_lookup::resolve_crate_items(adapter, contexts, resolve_info),
+        "root_module" => {
+            let current_crate = adapter.current_crate;
+            let previous_crate = adapter.previous_crate;
+
+            resolve_neighbors_with(contexts, move |vertex| {
+                let origin = vertex.origin;
+                let crate_ = vertex.as_crate().expect("vertex was not a crate!");
+                let item_index = match origin {
+                    Origin::CurrentCrate => &current_crate.inner.index,
+                    Origin::PreviousCrate => {
+                        &previous_crate
+                            .expect("no previous crate provided")
+                            .inner
+                            .index
+                    }
+                };
+
+                let module = item_index
+                    .get(&crate_.root)
+                    .expect("crate had no root module");
+                Box::new(std::iter::once(origin.make_item_vertex(module)))
+            })
+        }
         _ => unreachable!("resolve_crate_edge {edge_name}"),
     }
 }

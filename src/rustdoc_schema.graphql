@@ -27,6 +27,8 @@ type Crate {
   includes_private: Boolean!
   format_version: Int!
 
+  root_module: Module!
+
   item: [Item!]
 }
 
