@@ -1,8 +1,8 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::Context;
-use maplit::{btreemap, btreeset};
+use maplit::btreemap;
 use trustfall::{Schema, TryIntoStruct};
 
 use crate::{IndexedCrate, RustdocAdapter};
@@ -422,6 +422,7 @@ fn rustdoc_modules() {
                is_stripped @output
                item @fold {
                    members: name @output
+                   types: __typename @output
                }
            }
        }
@@ -439,7 +440,8 @@ fn rustdoc_modules() {
         module: String,
         is_crate: bool,
         is_stripped: bool,
-        members: BTreeSet<Option<String>>,
+        members: Vec<Option<String>>,
+        types: Vec<String>,
     }
 
     let mut results: Vec<Output> =
@@ -455,31 +457,36 @@ fn rustdoc_modules() {
                 module: "hello".into(),
                 is_crate: false,
                 is_stripped: false,
-                members: btreeset![Some("T2".into(),), Some("world".into(),),]
+                members: vec![Some("world".into()), Some("T2".into())],
+                types: vec!["Module".into(), "Struct".into()],
             },
             Output {
                 module: "inner".into(),
                 is_crate: false,
                 is_stripped: false,
-                members: btreeset![Some("T4".into(),),],
+                members: vec![Some("T4".into(),),],
+                types: vec!["Struct".into()],
             },
             Output {
                 module: "modules".into(),
                 is_crate: true,
                 is_stripped: false,
-                members: btreeset![Some("hello".into(),), Some("outer".into(),),],
+                members: vec![Some("hello".into()), Some("outer".into())],
+                types: vec!["Module".into(), "Module".into()],
             },
             Output {
                 module: "outer".into(),
                 is_crate: false,
                 is_stripped: false,
-                members: btreeset![None, Some("T3".into(),), Some("inner".into(),),],
+                members: vec![Some("inner".into()), Some("T3".into())],
+                types: vec!["Module".into(), "Struct".into()],
             },
             Output {
                 module: "world".into(),
                 is_crate: false,
                 is_stripped: false,
-                members: btreeset![Some("T1".into(),),],
+                members: vec![Some("T1".into())],
+                types: vec!["Struct".into()],
             },
         ],
         results
