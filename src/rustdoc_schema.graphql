@@ -74,7 +74,6 @@ type Module implements Item & Importable {
   visibility_limit: String!
 
   # own properties
-  is_crate: Boolean!
   is_stripped: Boolean!
 
   # edges from Item

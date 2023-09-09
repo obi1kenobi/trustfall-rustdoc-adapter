@@ -418,7 +418,6 @@ fn rustdoc_modules() {
        item {
            ... on Module {
                module: name @output
-               is_crate @output
                is_stripped @output
                item @fold {
                    members: name @output
@@ -438,7 +437,6 @@ fn rustdoc_modules() {
     #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
     struct Output {
         module: String,
-        is_crate: bool,
         is_stripped: bool,
         members: Vec<Option<String>>,
         types: Vec<String>,
@@ -455,35 +453,30 @@ fn rustdoc_modules() {
         vec![
             Output {
                 module: "hello".into(),
-                is_crate: false,
                 is_stripped: false,
                 members: vec![Some("world".into()), Some("T2".into())],
                 types: vec!["Module".into(), "Struct".into()],
             },
             Output {
                 module: "inner".into(),
-                is_crate: false,
                 is_stripped: false,
                 members: vec![Some("T4".into(),),],
                 types: vec!["Struct".into()],
             },
             Output {
                 module: "modules".into(),
-                is_crate: true,
                 is_stripped: false,
                 members: vec![Some("hello".into()), Some("outer".into())],
                 types: vec!["Module".into(), "Module".into()],
             },
             Output {
                 module: "outer".into(),
-                is_crate: false,
                 is_stripped: false,
                 members: vec![Some("inner".into()), Some("T3".into())],
                 types: vec!["Module".into(), "Struct".into()],
             },
             Output {
                 module: "world".into(),
-                is_crate: false,
                 is_stripped: false,
                 members: vec![Some("T1".into())],
                 types: vec!["Struct".into()],
@@ -497,7 +490,6 @@ fn rustdoc_modules() {
    Crate {
        root_module {
            module: name @output
-           is_crate @output
            is_stripped @output
            item @fold {
                members: name @output
@@ -517,7 +509,6 @@ fn rustdoc_modules() {
     similar_asserts::assert_eq!(
         vec![Output {
             module: "modules".into(),
-            is_crate: true,
             is_stripped: false,
             members: vec![Some("hello".into()), Some("outer".into())],
             types: vec!["Module".into(), "Module".into()],

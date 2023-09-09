@@ -66,7 +66,6 @@ pub(super) fn resolve_module_property<'a>(
     property_name: &str,
 ) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
     match property_name {
-        "is_crate" => resolve_property_with(contexts, field_property!(as_module, is_crate)),
         "is_stripped" => resolve_property_with(contexts, field_property!(as_module, is_stripped)),
         _ => unreachable!("Module property {property_name}"),
     }
