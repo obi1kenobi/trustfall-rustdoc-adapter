@@ -27,6 +27,9 @@ type Crate {
   includes_private: Boolean!
   format_version: Int!
 
+  """
+  The top-level module of the crate, in which everything else in the crate is contained.
+  """
   root_module: Module!
 
   item: [Item!]
