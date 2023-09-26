@@ -61,7 +61,11 @@ impl<'a> VisibilityTracker<'a> {
 
         let (push_name, popped_name) = match &item.inner {
             rustdoc_types::ItemEnum::Import(import_item) => {
-                if import_item.glob {
+                if import_item.name == "_" {
+                    // Items re-exported as `_` are not nameable. They cannot be directly imported.
+                    // They can be used via a glob import, but we are not interested in that here.
+                    return;
+                } else if import_item.glob {
                     // Glob imports refer to the *contents* of the named item, not the item itself.
                     // Rust doesn't allow glob imports to rename items, so there's no name to add.
                     (None, None)
@@ -328,6 +332,17 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
                         .or_default()
                         .insert(inner_id);
                 } else if let Some(target) = imp.id.as_ref().and_then(|id| crate_.index.get(id)) {
+                    if imp.name == "_" {
+                        // `_` is a special name which causes the imported item to be available
+                        // but unnameable. `pub use Trait as _` makes sense when constructing
+                        // modules intended to be used as a prelude, since glob imports will
+                        // include the (unnameable) trait and make its methods available for use.
+                        //
+                        // For importable path purposes, items re-exported as `_` do not exist
+                        // since they cannot be directly imported due to lack of a usable name.
+                        continue;
+                    }
+
                     for name in get_names_for_item(crate_, target) {
                         // Handle renaming imports like `use some::foo as bar;`
                         let name = name.rename(&imp.name);
