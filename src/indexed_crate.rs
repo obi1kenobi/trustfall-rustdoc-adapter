@@ -601,7 +601,10 @@ mod tests {
                     "duplicates found: {actual_items:?}"
                 );
 
-                assert_eq!(expected_importable_paths, &deduplicated_actual_items);
+                assert_eq!(
+                    expected_importable_paths, &deduplicated_actual_items,
+                    "mismatch for item name {expected_item_name}",
+                );
             }
         }
 
@@ -1788,6 +1791,78 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
             };
 
             assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn reexport_as_underscore() {
+            let test_crate = "reexport_as_underscore";
+            let expected_items = btreemap! {
+                "Struct" => btreeset![
+                    "reexport_as_underscore::Struct",
+                ],
+                "Trait" => btreeset![],
+                "hidden" => btreeset![],
+                "UnderscoreImported" => btreeset![],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn nested_reexport_as_underscore() {
+            let test_crate = "nested_reexport_as_underscore";
+            let expected_items = btreemap! {
+                "Trait" => btreeset![],  // no importable paths!
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn overlapping_reexport_as_underscore() {
+            let test_crate = "overlapping_reexport_as_underscore";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Example")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    Example, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            for item_id in item_id_candidates {
+                let importable_paths: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|components| components.into_iter().join("::"))
+                    .collect();
+
+                match &rustdoc.index[item_id].inner {
+                    ItemEnum::Struct(..) => {
+                        assert_eq!(
+                            vec!["overlapping_reexport_as_underscore::Example"],
+                            importable_paths,
+                        );
+                    }
+                    ItemEnum::Trait(..) => {
+                        assert!(
+                            importable_paths.is_empty(),
+                            "expected no importable item names but found {importable_paths:?}"
+                        );
+                    }
+                    _ => unreachable!(
+                        "unexpected item for ID {item_id:?}: {:?}",
+                        rustdoc.index[item_id]
+                    ),
+                }
+            }
         }
     }
 }
