@@ -465,6 +465,26 @@ pub(crate) fn resolve_associated_constant_property<'a>(
         _ => unreachable!("AssociatedConstant property {property_name}"),
     }
 }
+
+
+// const example from rustdocs
+// {"id"           	:"0:9:xx","crate_id":0,
+// "name"          	:"PUB_CONST_NAME",
+// "span"          	:{"filename":"","begin":[5,0],"end":[5,68]},
+// "visibility"    	:"public",
+// "docs"          	:null,
+// "links"         	:{},
+// "attrs"         	:[],
+// "deprecation"   	: null,
+// "inner"         	: { ← &inner will be set to ItemEnum::Constant(c), where c=struct rustdoc_types::Constant
+//   "constant"    	: { rustdoc_types::Constant has type_/expr/value/is_literal fields (docs.rs/rustdoc-types/latest/rustdoc_types/struct.Constant.html)
+//     "type"      	:{"primitive":"i32"}, or ↓ or any of docs.rs/rustdoc-types/latest/rustdoc_types/enum.Type.html
+//     "type"      	:{"borrowed_ref":{"lifetime": "'static","mutable": false,"type":{"primitive": "str"}}},
+//     "type"      	:{"resolved_path":{"name":"Years","id": "0:3:1633","args":{"angle_bracketed":{"args":[],"bindings":[]}}}},
+//     "expr"      	: "_",
+//     "value"     	: null,
+//     "is_literal"	: false}}
+// },
 pub(crate) fn resolve_constant_property<'a>(
     contexts: ContextIterator<'a, Vertex<'a>>,
     property_name: &str,
