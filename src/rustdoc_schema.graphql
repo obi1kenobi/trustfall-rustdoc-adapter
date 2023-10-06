@@ -697,31 +697,31 @@ type Constant implements Item & Importable & GlobalValue {
 
   # properties for Constant
   """
-  A type represented in the "raw" rustdoc JSON representation, see interface RawType.
+  A type represented in the "raw" rustdoc JSON representation (see `interface RawType`)
   Currently serialized as a serde_json String instead of a proper RawType
   ```rust
-  //          	                	            	// rustdocs type field
-  const MIN   	:          usize	= 16       ;	// {"primitive":"usize"}
-  const LOG_AS	: &'static str  	= "batch"  ;	// {"borrowed_ref":{"lifetime":"'static","mutable":false,"type":{"primitive":"str"}}}
-  const YEAR  	:          Years	= Years(42);	// {"resolved_path":{"name":"Years","id":"0:3:1633","args":{"angle_bracketed":{"args":[],"bindings":[]}}}}
+  //                               // rustdocs type field
+  const MIN   : usize = 16       ; // {"primitive":"usize"}
+  const LOG_AS: &str  = "batch"  ; // {"borrowed_ref":{"lifetime":null,"mutable":false,"type":{"primitive":"str"}}}
+  const YEAR  : Years = Years(42); // {"resolved_path":{"name":"Years","id":"0:3:1633","args":{"angle_bracketed":{"args":[],"bindings":[]}}}}
   ```
   """
   type_: String
   """
   The expression/value of the constant, if any, as a Rust literal, expression, or `"_"`, as well as its literal flag. For example:
   ```rust
-  //            	                	            	// is_literal	value      	expr
-  const MIN     	:          usize	= 16       ;	// true      	`"16usize"`	`16`
-  const MIN_SIZE	:          usize	= MIN      ;	// false     	`"16usize"`	"MIN", referring to the other constant's name
-  const LOG_AS  	: &'static str  	= "batch"  ;	// true      	None       	`"\"batch\""` including escaped quotes
-  const YEAR    	:          Years	= Years(42);	// false     	None       	"_"
-  const EXPR_2_2	:          i32  	= 2 + 2    ;	// false     	`"4i32"    	"_"
-  const FN_FIVE 	:          i32  	= five()   ;	// false     	`"5i32"    	"_"
-  const fn five() -> i32 { 5 } ;
+  //                                 // is_literal value       expr
+  const MIN     : usize = 16       ; // true       `"16usize"` `16`
+  const MIN_SIZE: usize = MIN      ; // false      `"16usize"` "MIN", referring to the other constant's name
+  const LOG_AS  : &str  = "batch"  ; // true       None        `"\"batch\""` including escaped quotes
+  const YEAR    : Years = Years(42); // false      None        "_"
+  const EXPR_2_2: i32   = 2 + 2    ; // false      `"4i32"     "_"
+  const FN_FIVE : i32   = five()   ; // false      `"5i32"     "_"
+  const fn five() -> i32 { 5 };
   struct Years(i32);
   ```
-  If the constant is set to be equal to another constant, the expr holds the name of that other constant, while the value holds the value of that other constant.
-  If the constant is set by evaluating a `const` expression, such as `2 + 2` or a `const fn` call, rustdoc's current behavior is to show an expr of `"_"` (the value is evaluated)
+  If the constant is set to be equal to another constant, `expr` holds the name of that other constant, while `value` holds the value of that other constant.
+  If the constant is set by evaluating a `const` expression, such as `2 + 2` or a `const fn` call, rustdoc's current behavior is to show an `expr` of `"_"` (`value` is evaluated)
   """
   expr: String
   value: String
