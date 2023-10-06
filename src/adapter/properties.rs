@@ -502,7 +502,7 @@ pub(crate) fn resolve_constant_property<'a>(
             c.value     .clone().into()}),),
         "is_literal" => resolve_property_with(contexts, field_property!(as_item, inner, {
             let ItemEnum::Constant(c) = &inner else {unreachable!("expected to have a Constant")};
-            c.is_literal.clone().into()}),),
+            c.is_literal        .into()}),),
         _ => unreachable!("Constant property {property_name}"),
     }
 }
