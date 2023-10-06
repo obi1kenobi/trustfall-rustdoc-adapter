@@ -916,14 +916,36 @@ type AssociatedConstant implements Item {
 
   # properties for AssociatedConstant
   """
+  A type represented in the "raw" rustdoc JSON representation (see `interface RawType`)
+  Currently serialized as a serde_json String instead of a proper RawType
+  ```rust
+  const fn five() -> i32 { 5 };
+  struct Years(i32);
+  trait BatchIterator<const MIN: usize> {	    // rustdocs type field
+    const MIN     : usize        = 16       ; // {"primitive":"usize"}
+    const MIN_SIZE: usize        = MIN      ; // {"primitive":"usize"}
+    const LOG_AS  : &'static str = "batch"  ; // {"borrowed_ref":{"lifetime":null,"mutable":false,"type":{"primitive":"str"}}}
+    const YEAR    : Years        = Years(42); // {"resolved_path":{"name":"Years","id":"0:3:1633","args":{"angle_bracketed":{"args":[],"bindings":[]}}}}
+    const EXPR2_2 : i32          = 2+2      ; // {"primitive":"i32"}
+    const FN_FIVE : i32          = five()   ; // {"primitive":"i32"}
+  }
+  ```
+  """
+  type_: String
+  """
   The default value of the constant, if any, as a Rust literal, expression, or `"_"`.
 
   For example:
   ```rust
-  trait BatchIterator<const MIN: usize> {
-    const SIZE: usize = 16;  // `"16"` is the default
-    const LOG_AS: &'static str = "batch";  // `"\"batch\""` is the default, including escaped quotes
-    const MIN_SIZE: usize = MIN;  // "MIN" is the default, referring to the other constant's name
+  const fn five() -> i32 { 5 };
+  struct Years(i32);
+  trait BatchIterator<const MIN: usize> {	    // rustdocs default field
+    const MIN     : usize        = 16       ; // `"16"`
+    const MIN_SIZE: usize        = MIN      ; // `"MIN"`, referring to the other constant's name
+    const LOG_AS  : &'static str = "batch"  ; // `"\"batch\""`, including escaped quotes
+    const EXPR2_2 : i32          = 2+2      ; // `"_"`
+    const FN_FIVE : i32          = five()   ; // `"_"`
+    const YEAR    : Years        = Years(42); // `"_"`
   }
   ```
 
