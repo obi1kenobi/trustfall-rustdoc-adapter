@@ -724,7 +724,13 @@ type Constant implements Item & Importable & GlobalValue {
   If the constant is set by evaluating a `const` expression, such as `2 + 2` or a `const fn` call, rustdoc's current behavior is to show an `expr` of `"_"` (`value` is evaluated)
   """
   expr: String
+  """
+  See `expr` docs for a comprehensive example also covering `value`
+  """
   value: String
+  """
+  See `expr` docs for a comprehensive example also covering `is_literal`
+  """
   is_literal: Boolean
 
   # edges from Item
