@@ -462,6 +462,16 @@ pub(crate) fn resolve_associated_constant_property<'a>(
                 default.clone().into()
             }),
         ),
+        "type_" => resolve_property_with(
+            contexts,
+            field_property!(as_item, inner, {
+                let ItemEnum::AssocConst { type_, .. } = &inner else {
+                    unreachable!("expected to have a AssocConst")
+                };
+                // type_.clone().into() // Type→FieldValue not implemented, use ↓ json
+                serde_json::to_string(&type_.clone()).unwrap().into()
+            }),
+        ),
         _ => unreachable!("AssociatedConstant property {property_name}"),
     }
 }
