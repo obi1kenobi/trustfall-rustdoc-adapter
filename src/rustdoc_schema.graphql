@@ -697,7 +697,7 @@ type Constant implements Item & Importable & GlobalValue {
 
   # properties for Constant
   """
-  A type represented in the "raw" rustdoc JSON representation (see `interface RawType`)
+  A type represented in the "raw" rustdoc JSON representation (see `interface RawType`)<br>
   Currently serialized as a serde_json String instead of a proper RawType
   ```rust
   //                               // rustdocs type field
@@ -944,7 +944,7 @@ type AssociatedConstant implements Item {
 
   # properties for AssociatedConstant
   """
-  A type represented in the "raw" rustdoc JSON representation (see `interface RawType`)
+  A type represented in the "raw" rustdoc JSON representation (see `interface RawType`)<br>
   Currently serialized as a serde_json String instead of a proper RawType
   ```rust
   const fn five() -> i32 { 5 };
@@ -977,14 +977,12 @@ type AssociatedConstant implements Item {
   }
   ```
 
-  If the associated constant is on a type's inherent impl, the default is always required to be set.
+  If the associated constant is on a type's inherent impl, `default` is always required to be set.
 
-  If the associated constant is set to be equal to another constant, the default holds the name
-  of that other constant.
+  If the associated constant is set
 
-  If the associated constant is set by evaluating a `const` expression, such as `2 + 2` or
-  a `const fn` call, rustdoc's current behavior is to show a default value of `"_"`
-  instead of evaluating the constant value or including the full expression.
+    - to be equal to another constant, `default` holds the name of that other constant.
+    - by evaluating a `const` expression, such as `2 + 2` or a `const fn` call, `default` is `"_"` instead of evaluating the constant value or including the full expression.
   """
   default: String
 
