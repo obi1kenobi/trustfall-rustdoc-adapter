@@ -708,28 +708,56 @@ type Constant implements Item & Importable & GlobalValue {
   """
   type_: String
   """
-  The expression/value of the constant, if any, as a Rust literal, expression, or `"_"`, as well as its literal flag. For example:
+  The expression of the constant, if any, as a Rust literal or `"_"`. For example:
   ```rust
-  //                                 // is_literal value       expr
-  const MIN     : usize = 16       ; // true       `"16usize"` `16`
-  const MIN_SIZE: usize = MIN      ; // false      `"16usize"` "MIN", referring to the other constant's name
-  const LOG_AS  : &str  = "batch"  ; // true       None        `"\"batch\""` including escaped quotes
-  const YEAR    : Years = Years(42); // false      None        "_"
-  const EXPR_2_2: i32   = 2 + 2    ; // false      `"4i32"     "_"
-  const FN_FIVE : i32   = five()   ; // false      `"5i32"     "_"
+  //                                 // expr
+  const MIN     : usize = 16       ; // 16
+  const MIN_SIZE: usize = MIN      ; // "MIN", referring to the other constant's name
+  const LOG_AS  : &str  = "batch"  ; // "\"batch\"", including escaped quotes
+  const YEAR    : Years = Years(42); // "_"
+  const EXPR_2_2: i32   = 2 + 2    ; // "_"
+  const FN_FIVE : i32   = five()   ; // "_"
   const fn five() -> i32 { 5 };
   struct Years(i32);
   ```
-  If the constant is set to be equal to another constant, `expr` holds the name of that other constant, while `value` holds the value of that other constant.
-  If the constant is set by evaluating a `const` expression, such as `2 + 2` or a `const fn` call, rustdoc's current behavior is to show an `expr` of `"_"` (`value` is evaluated)
+  If the constant is set:
+
+    - to be equal to another constant, `expr` holds the name of that other constant.
+    - by evaluating a `const` expression, such as `2 + 2` or a `const fn` call, `expr` is `"_"` instead of including the full expression.
   """
   expr: String
   """
-  See `expr` docs for a comprehensive example also covering `value`
+  The value of the constant, if any, as a Rust literal. For example:
+  ```rust
+  //                                 // value
+  const MIN     : usize = 16       ; // "16usize"
+  const MIN_SIZE: usize = MIN      ; // "16usize"
+  const LOG_AS  : &str  = "batch"  ; // None
+  const YEAR    : Years = Years(42); // None
+  const EXPR_2_2: i32   = 2 + 2    ; // "4i32"
+  const FN_FIVE : i32   = five()   ; // "5i32"
+  const fn five() -> i32 { 5 };
+  struct Years(i32);
+  ```
+  If the  If the constant is set:
+
+    - to be equal to another constant, `value` holds the value of that other constant.
+    - by evaluating a `const` expression, such as `2 + 2` or a `const fn` call, `value` is evaluated
   """
   value: String
   """
-  See `expr` docs for a comprehensive example also covering `is_literal`
+  The literal flag of the constant. For example:
+  ```rust
+  //                                 // is_literal
+  const MIN     : usize = 16       ; // true
+  const MIN_SIZE: usize = MIN      ; // false
+  const LOG_AS  : &str  = "batch"  ; // true
+  const YEAR    : Years = Years(42); // false
+  const EXPR_2_2: i32   = 2 + 2    ; // false
+  const FN_FIVE : i32   = five()   ; // false
+  const fn five() -> i32 { 5 };
+  struct Years(i32);
+  ```
   """
   is_literal: Boolean
 
