@@ -694,6 +694,7 @@ type Constant implements Item & Importable & GlobalValue {
   docs: String
   attrs: [String!]!
   visibility_limit: String!
+
   # properties for Constant
   """
   A type represented in the "raw" rustdoc JSON representation, see interface RawType.
