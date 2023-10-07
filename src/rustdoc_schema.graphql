@@ -949,7 +949,7 @@ type AssociatedConstant implements Item {
   ```rust
   const fn five() -> i32 { 5 };
   struct Years(i32);
-  trait BatchIterator<const MIN: usize> {	    // rustdocs type field
+  trait MyTrait<const MINT: usize> {          // rustdocs type field
     const MIN     : usize        = 16       ; // {"primitive":"usize"}
     const MIN_SIZE: usize        = MIN      ; // {"primitive":"usize"}
     const LOG_AS  : &'static str = "batch"  ; // {"borrowed_ref":{"lifetime":null,"mutable":false,"type":{"primitive":"str"}}}
@@ -967,7 +967,7 @@ type AssociatedConstant implements Item {
   ```rust
   const fn five() -> i32 { 5 };
   struct Years(i32);
-  trait BatchIterator<const MIN: usize> {	    // rustdocs default field
+  trait MyTrait<const MINT: usize> {          // rustdocs default field
     const MIN     : usize        = 16       ; // `"16"`
     const MIN_SIZE: usize        = MIN      ; // `"MIN"`, referring to the other constant's name
     const LOG_AS  : &'static str = "batch"  ; // `"\"batch\""`, including escaped quotes
