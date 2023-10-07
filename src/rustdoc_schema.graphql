@@ -739,7 +739,7 @@ type Constant implements Item & Importable & GlobalValue {
   const fn five() -> i32 { 5 };
   struct Years(i32);
   ```
-  If the  If the constant is set:
+  If the constant is set:
 
     - to be equal to another constant, `value` holds the value of that other constant.
     - by evaluating a `const` expression, such as `2 + 2` or a `const fn` call, `value` is evaluated
