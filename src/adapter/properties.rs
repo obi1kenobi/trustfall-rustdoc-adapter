@@ -462,16 +462,6 @@ pub(crate) fn resolve_associated_constant_property<'a>(
                 default.clone().into()
             }),
         ),
-        "type_" => resolve_property_with(
-            contexts,
-            field_property!(as_item, inner, {
-                let ItemEnum::AssocConst { type_, .. } = &inner else {
-                    unreachable!("expected to have a AssocConst")
-                };
-                // type_.clone().into() // Type→FieldValue not implemented, use ↓ json
-                serde_json::to_string(&type_.clone()).unwrap().into()
-            }),
-        ),
         _ => unreachable!("AssociatedConstant property {property_name}"),
     }
 }
@@ -487,6 +477,7 @@ pub(crate) fn resolve_associated_constant_property<'a>(
 // "deprecation"   	: null,
 // "inner"         	: { ← &inner will be set to ItemEnum::Constant(c), where c=struct rustdoc_types::Constant
 //   "constant"    	: { rustdoc_types::Constant has type_/expr/value/is_literal fields (docs.rs/rustdoc-types/latest/rustdoc_types/struct.Constant.html)
+//     "type"      	: currently not supported as a property pending custom scalar type support in Trustfall (https://github.com/obi1kenobi/trustfall-rustdoc-adapter/pull/280#discussion_r1348950734)
 //     "type"      	:{"primitive":"i32"}, or ↓ or any of docs.rs/rustdoc-types/latest/rustdoc_types/enum.Type.html
 //     "type"      	:{"borrowed_ref":{"lifetime": "'static","mutable": false,"type":{"primitive": "str"}}},
 //     "type"      	:{"resolved_path":{"name":"Years","id": "0:3:1633","args":{"angle_bracketed":{"args":[],"bindings":[]}}}},
@@ -499,16 +490,6 @@ pub(crate) fn resolve_constant_property<'a>(
     property_name: &str,
 ) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
     match property_name {
-        "type_" => resolve_property_with(
-            contexts,
-            field_property!(as_item, inner, {
-                let ItemEnum::Constant(c) = &inner else {
-                    unreachable!("expected to have a Constant")
-                };
-                // c.type_     .clone().into()}),), // Type→FieldValue not implemented, use ↓ json
-                serde_json::to_string(&c.type_.clone()).unwrap().into()
-            }),
-        ),
         "expr" => resolve_property_with(
             contexts,
             field_property!(as_item, inner, {
