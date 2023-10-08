@@ -939,13 +939,13 @@ type AssociatedConstant implements Item {
   ```rust
   const fn five() -> i32 { 5 };
   struct Years(i32);
-  trait MyTrait<const MINT: usize> {          // rustdocs default field
-    const MIN     : usize        = 16       ; // `"16"`
-    const MIN_SIZE: usize        = MIN      ; // `"MIN"`, referring to the other constant's name
-    const LOG_AS  : &'static str = "batch"  ; // `"\"batch\""`, including escaped quotes
-    const EXPR2_2 : i32          = 2+2      ; // `"_"`
-    const FN_FIVE : i32          = five()   ; // `"_"`
-    const YEAR    : Years        = Years(42); // `"_"`
+  trait MyTrait<const MIN: usize> {           // rustdocs default field
+    const NUM     : i32          = 16       ; // 16
+    const MIN_SIZE: usize        = MIN      ; // "MIN", referring to the other constant's name
+    const LOG_AS  : &'static str = "batch"  ; // "\"batch\"", including escaped quotes
+    const EXPR2_2 : i32          = 2+2      ; // "_"
+    const FN_FIVE : i32          = five()   ; // "_"
+    const YEAR    : Years        = Years(42); // "_"
   }
   ```
 
