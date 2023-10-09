@@ -171,6 +171,9 @@ fn rustdoc_finds_consts() {
         item {
             ... on Constant {
                 name @output
+                expr @output
+                value @output
+                is_literal @output
 
                 importable_path {
                     path @output
@@ -190,24 +193,48 @@ fn rustdoc_finds_consts() {
     struct Output {
         name: String,
         path: Vec<String>,
+        expr: String,
+        value: Option<String>,
+        is_literal: bool,
+    }
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct OutputSimple {
+        name: String,
+        path: Vec<String>,
     }
 
     let mut results: Vec<_> =
         trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
             .expect("failed to run query")
-            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .map(|row| row.try_into_struct::<Output>().expect("shape mismatch"))
             .collect();
     results.sort_unstable();
+    // to compare to GlobalValue that doesn't Constant-specific properties
+    let mut results_simple: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| {
+                row.try_into_struct::<OutputSimple>()
+                    .expect("shape mismatch")
+            })
+            .collect();
+    results_simple.sort_unstable();
 
     similar_asserts::assert_eq!(
         vec![
             Output {
                 name: "FIRST".into(),
                 path: vec!["consts".into(), "FIRST".into()],
+                expr: "1".to_string(),
+                value: Some("1u32".to_string()),
+                is_literal: true,
             },
             Output {
                 name: "SECOND".into(),
                 path: vec!["consts".into(), "inner".into(), "SECOND".into()],
+                expr: "2".to_string(),
+                value: Some("2i64".to_string()),
+                is_literal: true,
             },
         ],
         results
@@ -232,10 +259,13 @@ fn rustdoc_finds_consts() {
     let mut global_values_results: Vec<_> =
         trustfall::execute_query(&schema, adapter, global_values_query, variables)
             .expect("failed to run query")
-            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .map(|row| {
+                row.try_into_struct::<OutputSimple>()
+                    .expect("shape mismatch")
+            })
             .collect();
     global_values_results.sort_unstable();
-    assert_eq!(results, global_values_results);
+    assert_eq!(results_simple, global_values_results);
 }
 
 #[test]
