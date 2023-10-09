@@ -465,3 +465,39 @@ pub(crate) fn resolve_associated_constant_property<'a>(
         _ => unreachable!("AssociatedConstant property {property_name}"),
     }
 }
+
+pub(crate) fn resolve_constant_property<'a>(
+    contexts: ContextIterator<'a, Vertex<'a>>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+    match property_name {
+        "expr" => resolve_property_with(
+            contexts,
+            field_property!(as_item, inner, {
+                let ItemEnum::Constant(c) = &inner else {
+                    unreachable!("expected to have a Constant")
+                };
+                c.expr.clone().into()
+            }),
+        ),
+        "value" => resolve_property_with(
+            contexts,
+            field_property!(as_item, inner, {
+                let ItemEnum::Constant(c) = &inner else {
+                    unreachable!("expected to have a Constant")
+                };
+                c.value.clone().into()
+            }),
+        ),
+        "is_literal" => resolve_property_with(
+            contexts,
+            field_property!(as_item, inner, {
+                let ItemEnum::Constant(c) = &inner else {
+                    unreachable!("expected to have a Constant")
+                };
+                c.is_literal.into()
+            }),
+        ),
+        _ => unreachable!("Constant property {property_name}"),
+    }
+}
