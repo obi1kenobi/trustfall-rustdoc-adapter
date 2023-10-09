@@ -671,6 +671,61 @@ type Constant implements Item & Importable & GlobalValue {
   attrs: [String!]!
   visibility_limit: String!
 
+  # properties for Constant
+  """
+  The expression of the constant, if any, as a Rust literal or `"_"`. For example:
+  ```rust
+  //                                 // expr
+  const MIN     : usize = 16       ; // 16
+  const MIN_SIZE: usize = MIN      ; // "MIN", referring to the other constant's name
+  const LOG_AS  : &str  = "batch"  ; // "\"batch\"", including escaped quotes
+  const YEAR    : Years = Years(42); // "_"
+  const EXPR_2_2: i32   = 2 + 2    ; // "_"
+  const FN_FIVE : i32   = five()   ; // "_"
+  const fn five() -> i32 { 5 };
+  struct Years(i32);
+  ```
+  If the constant is set:
+
+    - to be equal to another constant, `expr` holds the name of that other constant.
+    - by evaluating a `const` expression, such as `2 + 2` or a `const fn` call, `expr` is `"_"` instead of including the full expression.
+  """
+  expr: String
+  """
+  The value of the constant, if any, as a Rust literal. For example:
+  ```rust
+  //                                 // value
+  const MIN     : usize = 16       ; // "16usize"
+  const MIN_SIZE: usize = MIN      ; // "16usize"
+  const LOG_AS  : &str  = "batch"  ; // None
+  const YEAR    : Years = Years(42); // None
+  const EXPR_2_2: i32   = 2 + 2    ; // "4i32"
+  const FN_FIVE : i32   = five()   ; // "5i32"
+  const fn five() -> i32 { 5 };
+  struct Years(i32);
+  ```
+  If the constant is set:
+
+    - to be equal to another constant, `value` holds the value of that other constant.
+    - by evaluating a `const` expression, such as `2 + 2` or a `const fn` call, `value` is evaluated
+  """
+  value: String
+  """
+  The literal flag of the constant. For example:
+  ```rust
+  //                                 // is_literal
+  const MIN     : usize = 16       ; // true
+  const MIN_SIZE: usize = MIN      ; // false
+  const LOG_AS  : &str  = "batch"  ; // true
+  const YEAR    : Years = Years(42); // false
+  const EXPR_2_2: i32   = 2 + 2    ; // false
+  const FN_FIVE : i32   = five()   ; // false
+  const fn five() -> i32 { 5 };
+  struct Years(i32);
+  ```
+  """
+  is_literal: Boolean
+
   # edges from Item
   span: Span
   attribute: [Attribute!]
@@ -858,21 +913,25 @@ type AssociatedConstant implements Item {
 
   For example:
   ```rust
-  trait BatchIterator<const MIN: usize> {
-    const SIZE: usize = 16;  // `"16"` is the default
-    const LOG_AS: &'static str = "batch";  // `"\"batch\""` is the default, including escaped quotes
-    const MIN_SIZE: usize = MIN;  // "MIN" is the default, referring to the other constant's name
+  const fn five() -> i32 { 5 };
+  struct Years(i32);
+  trait MyTrait<const MIN: usize> {           // rustdocs default field
+    const NUM     : i32          = 16       ; // 16
+    const MIN_SIZE: usize        = MIN      ; // "MIN", referring to the other constant's name
+    const LOG_AS  : &'static str = "batch"  ; // "\"batch\"", including escaped quotes
+    const EXPR2_2 : i32          = 2+2      ; // "_"
+    const FN_FIVE : i32          = five()   ; // "_"
+    const YEAR    : Years        = Years(42); // "_"
   }
   ```
 
-  If the associated constant is on a type's inherent impl, the default is always required to be set.
+  If the associated constant is on a type's inherent impl, `default` is always required to be set.
 
-  If the associated constant is set to be equal to another constant, the default holds the name
-  of that other constant.
+  If the associated constant is set:
 
-  If the associated constant is set by evaluating a `const` expression, such as `2 + 2` or
-  a `const fn` call, rustdoc's current behavior is to show a default value of `"_"`
-  instead of evaluating the constant value or including the full expression.
+    - to be equal to another constant, `default` holds the name of that other constant.
+    - by evaluating a `const` expression, such as `2 + 2` or a `const fn` call, 
+      `default` is `"_"` instead of evaluating the constant value or including the full expression.
   """
   default: String
 

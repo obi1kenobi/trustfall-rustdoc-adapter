@@ -140,6 +140,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "AssociatedConstant" => {
                     properties::resolve_associated_constant_property(contexts, property_name)
                 }
+                "Constant" => properties::resolve_constant_property(contexts, property_name),
                 _ => unreachable!("resolve_property {type_name} {property_name}"),
             }
         }
