@@ -685,6 +685,7 @@ type Constant implements Item & Importable & GlobalValue {
   const fn five() -> i32 { 5 };
   struct Years(i32);
   ```
+
   If the constant is set:
 
     - to be equal to another constant, `expr` holds the name of that other constant.
@@ -704,6 +705,7 @@ type Constant implements Item & Importable & GlobalValue {
   const fn five() -> i32 { 5 };
   struct Years(i32);
   ```
+
   If the constant is set:
 
     - to be equal to another constant, `value` holds the value of that other constant.
@@ -930,7 +932,7 @@ type AssociatedConstant implements Item {
   If the associated constant is set:
 
     - to be equal to another constant, `default` holds the name of that other constant.
-    - by evaluating a `const` expression, such as `2 + 2` or a `const fn` call, 
+    - by evaluating a `const` expression, such as `2 + 2` or a `const fn` call,
       `default` is `"_"` instead of evaluating the constant value or including the full expression.
   """
   default: String
