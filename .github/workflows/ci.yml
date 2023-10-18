@@ -40,18 +40,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
 
       - name: Install rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt, clippy
-
-      - uses: Swatinem/rust-cache@v2
-
-      - uses: r7kamura/rust-problem-matchers@v1
+          rustflags: ""
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-features --all-targets -- -D warnings -Dclippy::print_stdout -Dclippy::print_stderr -Dclippy::dbg_macro --allow deprecated
@@ -72,16 +69,15 @@ jobs:
         toolchain: ["1.68", "1.69", "1.70"]
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
 
       - name: Install rust
-        uses: dtolnay/rust-toolchain@master
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: ${{ matrix.toolchain }}
-
-      - uses: Swatinem/rust-cache@v2
+          rustflags: ""
 
       - name: Regenerate test data
         run: ./scripts/regenerate_test_rustdocs.sh +${{ matrix.toolchain }}
@@ -102,11 +98,15 @@ jobs:
     if: needs.should-publish.outputs.is_new_version == 'yes' && startsWith(github.ref, 'refs/heads/rustdoc-v')
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           persist-credentials: true
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+          rustflags: ""
 
       - name: Tag the version
         run: |
@@ -127,7 +127,7 @@ jobs:
       is_new_version: ${{ steps.check.outputs.is_new_version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
 
@@ -155,7 +155,7 @@ jobs:
     if: needs.should-publish.outputs.is_new_version == 'yes'
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
 
