@@ -444,18 +444,23 @@ fn rustdoc_modules() {
 
     let mod_query = r#"
 {
-   Crate {
-       item {
-           ... on Module {
-               module: name @output
-               is_stripped @output
-               item @fold {
-                   members: name @output
-                   types: __typename @output
-               }
-           }
-       }
-   }
+    Crate {
+        item {
+            ... on Module {
+                module: name @output
+                is_stripped @output
+
+                item @fold {
+                    members: name @output
+                    types: __typename @output
+                }
+
+                importable_path @fold {
+                    paths: path @output
+                }
+            }
+        }
+    }
 }
 "#;
 
@@ -470,6 +475,7 @@ fn rustdoc_modules() {
         is_stripped: bool,
         members: Vec<Option<String>>,
         types: Vec<String>,
+        paths: Vec<Vec<String>>,
     }
 
     let mut results: Vec<Output> =
@@ -486,30 +492,41 @@ fn rustdoc_modules() {
                 is_stripped: false,
                 members: vec![Some("world".into()), Some("T2".into())],
                 types: vec!["Module".into(), "Struct".into()],
+                paths: vec![
+                    vec!["modules".into(), "hello".into()],
+                    vec!["modules".into(), "hi".into()]
+                ],
             },
             Output {
                 module: "inner".into(),
                 is_stripped: false,
                 members: vec![Some("T4".into(),),],
                 types: vec!["Struct".into()],
+                paths: vec![],
             },
             Output {
                 module: "modules".into(),
                 is_stripped: false,
                 members: vec![Some("hello".into()), Some("outer".into())],
                 types: vec!["Module".into(), "Module".into()],
+                paths: vec![vec!["modules".into()]],
             },
             Output {
                 module: "outer".into(),
                 is_stripped: false,
                 members: vec![Some("inner".into()), Some("T3".into())],
                 types: vec!["Module".into(), "Struct".into()],
+                paths: vec![vec!["modules".into(), "outer".into()]],
             },
             Output {
                 module: "world".into(),
                 is_stripped: false,
                 members: vec![Some("T1".into())],
                 types: vec!["Struct".into()],
+                paths: vec![
+                    vec!["modules".into(), "hello".into(), "world".into()],
+                    vec!["modules".into(), "hi".into(), "world".into()],
+                ],
             },
         ],
         results
@@ -517,16 +534,21 @@ fn rustdoc_modules() {
 
     let root_query = r#"
 {
-   Crate {
-       root_module {
-           module: name @output
-           is_stripped @output
-           item @fold {
-               members: name @output
-               types: __typename @output
-           }
-       }
-   }
+    Crate {
+        root_module {
+            module: name @output
+            is_stripped @output
+
+            item @fold {
+                members: name @output
+                types: __typename @output
+            }
+
+            importable_path @fold {
+                paths: path @output
+            }
+        }
+    }
 }
 "#;
 
@@ -542,6 +564,7 @@ fn rustdoc_modules() {
             is_stripped: false,
             members: vec![Some("hello".into()), Some("outer".into())],
             types: vec!["Module".into(), "Module".into()],
+            paths: vec![vec!["modules".into()]]
         }],
         results
     );
