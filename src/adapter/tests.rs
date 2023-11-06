@@ -843,7 +843,7 @@ fn importable_paths() {
         item {
             ... on Struct {
                 name @output
-                importable_path @fold {
+                importable_path {
                     path @output
                     doc_hidden @output
                     deprecated @output
@@ -863,10 +863,10 @@ fn importable_paths() {
     #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
     struct Output {
         name: String,
-        path: Vec<Vec<String>>,
-        doc_hidden: Vec<bool>,
-        deprecated: Vec<bool>,
-        public_api: Vec<bool>,
+        path: Vec<String>,
+        doc_hidden: bool,
+        deprecated: bool,
+        public_api: bool,
     }
 
     let mut results: Vec<_> =
@@ -876,107 +876,169 @@ fn importable_paths() {
             .collect();
     results.sort_unstable();
 
-    similar_asserts::assert_eq!(
-        vec![
-            Output {
-                name: "DeprecatedHidden".into(),
-                path: vec![vec![
-                    "importable_paths".into(),
-                    "submodule".into(),
-                    "DeprecatedHidden".into(),
-                ],],
-                doc_hidden: vec![true,],
-                deprecated: vec![true,],
-                public_api: vec![true,],
-            },
-            Output {
-                name: "DeprecatedModuleHidden".into(),
-                path: vec![vec![
-                    "importable_paths".into(),
-                    "hidden".into(),
-                    "DeprecatedModuleHidden".into(),
-                ],],
-                doc_hidden: vec![false,],
-                deprecated: vec![true,],
-                public_api: vec![true,],
-            },
-            Output {
-                name: "Hidden".into(),
-                path: vec![vec![
-                    "importable_paths".into(),
-                    "submodule".into(),
-                    "Hidden".into(),
-                ],],
-                doc_hidden: vec![true,],
-                deprecated: vec![false,],
-                public_api: vec![false,],
-            },
-            Output {
-                name: "ModuleDeprecated".into(),
-                path: vec![
-                    vec![
-                        "importable_paths".into(),
-                        "deprecated".into(),
-                        "ModuleDeprecated".into(),
-                    ],
-                    vec!["importable_paths".into(), "UsedModuleDeprecated".into(),],
-                ],
-                doc_hidden: vec![false, false],
-                deprecated: vec![true, true],
-                public_api: vec![true, true],
-            },
-            Output {
-                name: "ModuleDeprecatedHidden".into(),
-                path: vec![vec![
-                    "importable_paths".into(),
-                    "deprecated".into(),
-                    "ModuleDeprecatedHidden".into(),
-                ],],
-                doc_hidden: vec![true,],
-                deprecated: vec![true,],
-                public_api: vec![true,],
-            },
-            Output {
-                name: "ModuleDeprecatedModuleHidden".into(),
-                path: vec![vec![
-                    "importable_paths".into(),
-                    "hidden".into(),
-                    "deprecated".into(),
-                    "ModuleDeprecatedModuleHidden".into(),
-                ],],
-                doc_hidden: vec![false,],
-                deprecated: vec![true,],
-                public_api: vec![true,],
-            },
-            Output {
-                name: "ModuleHidden".into(),
-                path: vec![
-                    vec!["importable_paths".into(), "UsedVisible".into(),],
-                    vec![
-                        "importable_paths".into(),
-                        "hidden".into(),
-                        "ModuleHidden".into(),
-                    ],
-                ],
-                doc_hidden: vec![false, false,],
-                deprecated: vec![false, false,],
-                public_api: vec![true, true,],
-            },
-            Output {
-                name: "Private".into(),
-                path: vec![],
-                doc_hidden: vec![],
-                deprecated: vec![],
-                public_api: vec![],
-            },
-            Output {
-                name: "PublicImportable".into(),
-                path: vec![vec!["importable_paths".into(), "PublicImportable".into(),],],
-                doc_hidden: vec![false,],
-                deprecated: vec![false,],
-                public_api: vec![true,],
-            }
-        ],
-        results
-    );
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "PublicImportable".into(),
+            path: vec!["importable_paths".into(), "PublicImportable".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "ModuleHidden".into(),
+            path: vec![
+                "importable_paths".into(),
+                "hidden".into(),
+                "ModuleHidden".into(),
+            ],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        Output {
+            name: "DeprecatedModuleHidden".into(),
+            path: vec![
+                "importable_paths".into(),
+                "hidden".into(),
+                "DeprecatedModuleHidden".into(),
+            ],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "ModuleDeprecatedModuleHidden".into(),
+            path: vec![
+                "importable_paths".into(),
+                "hidden".into(),
+                "deprecated".into(),
+                "ModuleDeprecatedModuleHidden".into(),
+            ],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "Hidden".into(),
+            path: vec![
+                "importable_paths".into(),
+                "submodule".into(),
+                "Hidden".into(),
+            ],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        Output {
+            name: "DeprecatedHidden".into(),
+            path: vec![
+                "importable_paths".into(),
+                "submodule".into(),
+                "DeprecatedHidden".into(),
+            ],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "ModuleDeprecated".into(),
+            path: vec![
+                "importable_paths".into(),
+                "deprecated".into(),
+                "ModuleDeprecated".into(),
+            ],
+            doc_hidden: false,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "ModuleDeprecatedHidden".into(),
+            path: vec![
+                "importable_paths".into(),
+                "deprecated".into(),
+                "ModuleDeprecatedHidden".into(),
+            ],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "ModuleHidden".into(),
+            path: vec!["importable_paths".into(), "UsedVisible".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "Hidden".into(),
+            path: vec!["importable_paths".into(), "UsedHidden".into()],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        Output {
+            name: "ModuleDeprecated".into(),
+            path: vec!["importable_paths".into(), "UsedModuleDeprecated".into()],
+            doc_hidden: false,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "ModuleDeprecatedHidden".into(),
+            path: vec![
+                "importable_paths".into(),
+                "UsedModuleDeprecatedHidden".into(),
+            ],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "PublicImportable".into(),
+            path: vec![
+                "importable_paths".into(),
+                "reexports".into(),
+                "DeprecatedReexport".into(),
+            ],
+            doc_hidden: false,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "PublicImportable".into(),
+            path: vec![
+                "importable_paths".into(),
+                "reexports".into(),
+                "HiddenReexport".into(),
+            ],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        Output {
+            name: "ModuleDeprecated".into(),
+            path: vec![
+                "importable_paths".into(),
+                "reexports".into(),
+                "HiddenDeprecatedReexport".into(),
+            ],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "Aliased".into(),
+            path: vec!["importable_paths".into(), "Aliased".into()],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results,);
 }

@@ -43,5 +43,24 @@ pub use submodule::Hidden as UsedHidden;
 // This is expected to be public_api and deprecated
 pub use deprecated::ModuleDeprecated as UsedModuleDeprecated;
 
-// not public_api; it's not relevant that the module was deprecated
+// Still public_api, the item is deprecated (via its module) so the item is visible.
 pub use deprecated::ModuleDeprecatedHidden as UsedModuleDeprecatedHidden;
+
+pub mod reexports {
+    // Re-exports can be deprecated too.
+    #[deprecated]
+    pub use super::PublicImportable as DeprecatedReexport;
+
+    // Re-exports can be doc-hidden as well.
+    #[doc(hidden)]
+    pub use super::PublicImportable as HiddenReexport;
+
+    // Doc-hidden re-exports of deprecated items are still public API.
+    #[doc(hidden)]
+    pub use super::deprecated::ModuleDeprecated as HiddenDeprecatedReexport;
+}
+
+// Our doc-hidden analysis works even when `#[doc(hidden)]` does not appear verbatim
+// in the attributes, and is instead combined with other `doc` commands.
+#[doc(hidden, alias = "TheAlias")]
+pub struct Aliased;

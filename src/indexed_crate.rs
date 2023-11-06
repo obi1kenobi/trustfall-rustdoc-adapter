@@ -20,7 +20,7 @@ pub struct IndexedCrate<'a> {
     pub(crate) visibility_tracker: VisibilityTracker<'a>,
 
     /// index: importable name (in any namespace) -> list of items under that name
-    pub(crate) imports_index: Option<HashMap<ImportablePath<'a>, Vec<&'a Item>>>,
+    pub(crate) imports_index: Option<HashMap<Path<'a>, Vec<(&'a Item, Modifiers)>>>,
 
     /// index: impl owner + impl'd item name -> list of (impl itself, the named item))
     pub(crate) impl_index: Option<HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>>,
@@ -51,7 +51,7 @@ impl<'a> IndexedCrate<'a> {
             impl_index: None,
         };
 
-        let mut imports_index: HashMap<ImportablePath, Vec<&Item>> =
+        let mut imports_index: HashMap<Path, Vec<(&Item, Modifiers)>> =
             HashMap::with_capacity(crate_.index.len());
         for item in crate_
             .index
@@ -59,11 +59,12 @@ impl<'a> IndexedCrate<'a> {
             .filter(|item| supported_item_kind(item))
         {
             for importable_path in value.publicly_importable_names(&item.id) {
-                // TODO: doc_hidden and deprecated are not relevant in this index
+                let modifiers = importable_path.modifiers;
+
                 imports_index
-                    .entry(ImportablePath::new(importable_path, false, false))
+                    .entry(importable_path.path)
                     .or_default()
-                    .push(item);
+                    .push((item, modifiers));
             }
         }
         let index_size = imports_index.len();
@@ -143,48 +144,60 @@ impl<'a> IndexedCrate<'a> {
         value
     }
 
-    /// Return all the paths (as Vec<&'a str> of component names, joinable with "::")
-    /// with which the given item can be imported from this crate.
-    pub fn publicly_importable_names(&self, id: &'a Id) -> Vec<Vec<&'a str>> {
-        let mut result = vec![];
-
+    /// Return all the paths with which the given item can be imported from this crate.
+    pub fn publicly_importable_names(&self, id: &'a Id) -> Vec<ImportablePath<'a>> {
         if self.inner.index.contains_key(id) {
-            let mut already_visited_ids = Default::default();
-            self.visibility_tracker.collect_publicly_importable_names(
-                id,
-                &mut already_visited_ids,
-                &mut vec![],
-                &mut result,
-            );
+            self.visibility_tracker
+                .collect_publicly_importable_names(id)
+        } else {
+            Default::default()
         }
-
-        result
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
-pub struct ImportablePath<'a> {
+pub struct Path<'a> {
     pub(crate) components: Vec<&'a str>,
+}
+
+impl<'a> Path<'a> {
+    fn new(components: Vec<&'a str>) -> Self {
+        Self { components }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub struct Modifiers {
     pub(crate) doc_hidden: bool,
     pub(crate) deprecated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub struct ImportablePath<'a> {
+    pub(crate) path: Path<'a>,
+    pub(crate) modifiers: Modifiers,
 }
 
 impl<'a> ImportablePath<'a> {
     pub(crate) fn new(components: Vec<&'a str>, doc_hidden: bool, deprecated: bool) -> Self {
         Self {
-            components,
-            doc_hidden,
-            deprecated,
+            path: Path::new(components),
+            modifiers: Modifiers {
+                doc_hidden,
+                deprecated,
+            },
         }
     }
 
     pub(crate) fn public_api(&self) -> bool {
-        self.deprecated || !self.doc_hidden
+        self.modifiers.deprecated || !self.modifiers.doc_hidden
     }
 }
 
-impl<'a: 'b, 'b> Borrow<[&'b str]> for ImportablePath<'a> {
+impl<'a: 'b, 'b> Borrow<[&'b str]> for Path<'a> {
     fn borrow(&self) -> &[&'b str] {
         &self.components
     }
@@ -372,7 +385,7 @@ mod tests {
     use itertools::Itertools;
     use rustdoc_types::{Crate, Id};
 
-    use crate::{test_util::load_pregenerated_rustdoc, IndexedCrate};
+    use crate::{test_util::load_pregenerated_rustdoc, ImportablePath, IndexedCrate};
 
     fn find_item_id<'a>(crate_: &'a Crate, name: &str) -> &'a Id {
         crate_
@@ -419,23 +432,27 @@ mod tests {
 
         // But only `top_level_function` is importable.
         assert_eq!(
-            vec![vec!["structs_are_not_modules", "top_level_function"]],
+            vec![ImportablePath::new(
+                vec!["structs_are_not_modules", "top_level_function"],
+                false,
+                false,
+            )],
             indexed_crate.publicly_importable_names(top_level_function)
         );
         assert_eq!(
-            Vec::<Vec<&str>>::new(),
+            Vec::<ImportablePath<'_>>::new(),
             indexed_crate.publicly_importable_names(method)
         );
         assert_eq!(
-            Vec::<Vec<&str>>::new(),
+            Vec::<ImportablePath<'_>>::new(),
             indexed_crate.publicly_importable_names(associated_fn)
         );
         assert_eq!(
-            Vec::<Vec<&str>>::new(),
+            Vec::<ImportablePath<'_>>::new(),
             indexed_crate.publicly_importable_names(field)
         );
         assert_eq!(
-            Vec::<Vec<&str>>::new(),
+            Vec::<ImportablePath<'_>>::new(),
             indexed_crate.publicly_importable_names(const_item)
         );
     }
@@ -477,23 +494,31 @@ mod tests {
 
         // But only `top_level_function` and `Foo::variant` is importable.
         assert_eq!(
-            vec![vec!["enums_are_not_modules", "top_level_function"]],
+            vec![ImportablePath::new(
+                vec!["enums_are_not_modules", "top_level_function"],
+                false,
+                false,
+            )],
             indexed_crate.publicly_importable_names(top_level_function)
         );
         assert_eq!(
-            vec![vec!["enums_are_not_modules", "Foo", "Variant"]],
+            vec![ImportablePath::new(
+                vec!["enums_are_not_modules", "Foo", "Variant"],
+                false,
+                false,
+            )],
             indexed_crate.publicly_importable_names(variant)
         );
         assert_eq!(
-            Vec::<Vec<&str>>::new(),
+            Vec::<ImportablePath<'_>>::new(),
             indexed_crate.publicly_importable_names(method)
         );
         assert_eq!(
-            Vec::<Vec<&str>>::new(),
+            Vec::<ImportablePath<'_>>::new(),
             indexed_crate.publicly_importable_names(associated_fn)
         );
         assert_eq!(
-            Vec::<Vec<&str>>::new(),
+            Vec::<ImportablePath<'_>>::new(),
             indexed_crate.publicly_importable_names(const_item)
         );
     }
@@ -539,27 +564,31 @@ mod tests {
 
         // But only `top_level_function` is importable.
         assert_eq!(
-            vec![vec!["unions_are_not_modules", "top_level_function"]],
+            vec![ImportablePath::new(
+                vec!["unions_are_not_modules", "top_level_function"],
+                false,
+                false,
+            )],
             indexed_crate.publicly_importable_names(top_level_function)
         );
         assert_eq!(
-            Vec::<Vec<&str>>::new(),
+            Vec::<ImportablePath<'_>>::new(),
             indexed_crate.publicly_importable_names(method)
         );
         assert_eq!(
-            Vec::<Vec<&str>>::new(),
+            Vec::<ImportablePath<'_>>::new(),
             indexed_crate.publicly_importable_names(associated_fn)
         );
         assert_eq!(
-            Vec::<Vec<&str>>::new(),
+            Vec::<ImportablePath<'_>>::new(),
             indexed_crate.publicly_importable_names(left_field)
         );
         assert_eq!(
-            Vec::<Vec<&str>>::new(),
+            Vec::<ImportablePath<'_>>::new(),
             indexed_crate.publicly_importable_names(right_field)
         );
         assert_eq!(
-            Vec::<Vec<&str>>::new(),
+            Vec::<ImportablePath<'_>>::new(),
             indexed_crate.publicly_importable_names(const_item)
         );
     }
@@ -571,7 +600,7 @@ mod tests {
         use maplit::{btreemap, btreeset};
         use rustdoc_types::{ItemEnum, Visibility};
 
-        use crate::{test_util::load_pregenerated_rustdoc, IndexedCrate};
+        use crate::{test_util::load_pregenerated_rustdoc, ImportablePath, IndexedCrate};
 
         fn assert_exported_items_match(
             test_crate: &str,
@@ -603,7 +632,7 @@ mod tests {
                 let actual_items: Vec<_> = indexed_crate
                     .publicly_importable_names(item_id)
                     .into_iter()
-                    .map(|components| components.into_iter().join("::"))
+                    .map(|importable| importable.path.components.into_iter().join("::"))
                     .collect();
                 let deduplicated_actual_items: BTreeSet<_> =
                     actual_items.iter().map(|x| x.as_str()).collect();
@@ -654,7 +683,7 @@ mod tests {
                     let actual_items: Vec<_> = indexed_crate
                         .publicly_importable_names(item_id)
                         .into_iter()
-                        .map(|components| components.into_iter().join("::"))
+                        .map(|importable| importable.path.components.into_iter().join("::"))
                         .collect();
                     let deduplicated_actual_items: BTreeSet<_> =
                         actual_items.iter().map(|x| x.as_str()).collect();
@@ -1313,7 +1342,7 @@ mod tests {
                 let actual_items: Vec<_> = indexed_crate
                     .publicly_importable_names(item_id)
                     .into_iter()
-                    .map(|components| components.into_iter().join("::"))
+                    .map(|importable| importable.path.components.into_iter().join("::"))
                     .collect();
                 let deduplicated_actual_items: BTreeSet<_> =
                     actual_items.iter().map(|x| x.as_str()).collect();
@@ -1383,7 +1412,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                 let actual_items: Vec<_> = indexed_crate
                     .publicly_importable_names(item_id)
                     .into_iter()
-                    .map(|components| components.into_iter().join("::"))
+                    .map(|importable| importable.path.components.into_iter().join("::"))
                     .collect();
                 let deduplicated_actual_items: BTreeSet<_> =
                     actual_items.iter().map(|x| x.as_str()).collect();
@@ -1447,7 +1476,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                 let actual_items: Vec<_> = indexed_crate
                     .publicly_importable_names(item_id)
                     .into_iter()
-                    .map(|components| components.into_iter().join("::"))
+                    .map(|importable| importable.path.components.into_iter().join("::"))
                     .collect();
                 let deduplicated_actual_items: BTreeSet<_> =
                     actual_items.iter().map(|x| x.as_str()).collect();
@@ -1531,20 +1560,20 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                 .expect("no struct item found");
 
             assert_eq!(
-                vec![vec![
-                    "overlapping_glob_of_enum_with_local_item",
-                    "Foo",
-                    "First"
-                ],],
+                vec![ImportablePath::new(
+                    vec!["overlapping_glob_of_enum_with_local_item", "Foo", "First"],
+                    false,
+                    false,
+                )],
                 indexed_crate.publicly_importable_names(&variant_item.id),
             );
             assert_eq!(
                 // The struct definition overrides the glob-imported variant here.
-                vec![vec![
-                    "overlapping_glob_of_enum_with_local_item",
-                    "inner",
-                    "First"
-                ]],
+                vec![ImportablePath::new(
+                    vec!["overlapping_glob_of_enum_with_local_item", "inner", "First"],
+                    false,
+                    false,
+                )],
                 indexed_crate.publicly_importable_names(&struct_item.id),
             );
         }
@@ -1572,7 +1601,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                 let actual_items: Vec<_> = indexed_crate
                     .publicly_importable_names(item_id)
                     .into_iter()
-                    .map(|components| components.into_iter().join("::"))
+                    .map(|importable| importable.path.components.into_iter().join("::"))
                     .collect();
                 let deduplicated_actual_items: BTreeSet<_> =
                     actual_items.iter().map(|x| x.as_str()).collect();
@@ -1625,7 +1654,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                 let actual_items: Vec<_> = indexed_crate
                     .publicly_importable_names(item_id)
                     .into_iter()
-                    .map(|components| components.into_iter().join("::"))
+                    .map(|importable| importable.path.components.into_iter().join("::"))
                     .collect();
 
                 assert!(
@@ -1668,7 +1697,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                 let actual_items: Vec<_> = indexed_crate
                     .publicly_importable_names(item_id)
                     .into_iter()
-                    .map(|components| components.into_iter().join("::"))
+                    .map(|importable| importable.path.components.into_iter().join("::"))
                     .collect();
 
                 assert!(
@@ -1701,7 +1730,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                 let actual_items: Vec<_> = indexed_crate
                     .publicly_importable_names(item_id)
                     .into_iter()
-                    .map(|components| components.into_iter().join("::"))
+                    .map(|importable| importable.path.components.into_iter().join("::"))
                     .collect();
 
                 if rustdoc.index[item_id].visibility == Visibility::Public {
@@ -1853,7 +1882,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                 let importable_paths: Vec<_> = indexed_crate
                     .publicly_importable_names(item_id)
                     .into_iter()
-                    .map(|components| components.into_iter().join("::"))
+                    .map(|importable| importable.path.components.into_iter().join("::"))
                     .collect();
 
                 match &rustdoc.index[item_id].inner {

@@ -4,10 +4,7 @@ use trustfall::provider::{
     VertexIterator,
 };
 
-use crate::{
-    adapter::supported_item_kind, attributes::Attribute, indexed_crate::ImportablePath,
-    IndexedCrate,
-};
+use crate::{adapter::supported_item_kind, attributes::Attribute, IndexedCrate};
 
 use super::{optimizations, origin::Origin, vertex::Vertex, RustdocAdapter};
 
@@ -105,15 +102,7 @@ pub(super) fn resolve_importable_edge<'a>(
                 parent_crate
                     .publicly_importable_names(item_id)
                     .into_iter()
-                    .map(move |x| {
-                        // TODO: fold doc_hidden and deprecated along the whole path
-                        origin.make_importable_path_vertex(ImportablePath::new(
-                            x,
-                            // TODO: parse the attribute properly to allow for other args to doc
-                            item.attrs.iter().any(|attr| attr == "#[doc(hidden)]"),
-                            item.deprecation.is_some(),
-                        ))
-                    }),
+                    .map(move |x| origin.make_importable_path_vertex(x)),
             )
         }),
         _ => unreachable!("resolve_importable_edge {edge_name}"),
