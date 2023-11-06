@@ -44,7 +44,7 @@ impl Origin {
     ) -> Vertex<'a> {
         Vertex {
             origin: *self,
-            kind: VertexKind::ImportablePath(importable_path),
+            kind: VertexKind::ImportablePath(Rc::from(importable_path)),
         }
     }
 

@@ -29,7 +29,7 @@ pub enum VertexKind<'a> {
     Item(&'a Item),
     Span(&'a Span),
     Path(&'a [String]),
-    ImportablePath(ImportablePath<'a>),
+    ImportablePath(Rc<ImportablePath<'a>>),
     RawType(&'a Type),
     Attribute(Attribute<'a>),
     AttributeMetaItem(Rc<AttributeMetaItem<'a>>),
