@@ -1040,5 +1040,133 @@ fn importable_paths() {
     ];
     expected_results.sort_unstable();
 
-    similar_asserts::assert_eq!(expected_results, results,);
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn item_own_public_api_properties() {
+    let path = "./localdata/test_data/importable_paths/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                name @output
+                doc_hidden @output
+                deprecated @output
+                public_api_eligible @output
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        doc_hidden: bool,
+        deprecated: bool,
+        public_api_eligible: bool,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We are checking whether the *items themselves* are deprecated / hidden.
+    // We are *not* checking whether their paths are deprecated or hidden.
+    // Recall that Rust propagates deprecations into child item definitions,
+    // but does not propagate "hidden"-ness.
+    //
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "PublicImportable".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "PubInPriv".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "Private".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: false,
+        },
+        Output {
+            name: "ModuleHidden".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "DeprecatedModuleHidden".into(),
+            doc_hidden: false,
+            deprecated: true,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "ModuleDeprecatedModuleHidden".into(),
+            doc_hidden: false,
+            deprecated: true,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "Hidden".into(),
+            doc_hidden: true,
+            deprecated: false,
+            public_api_eligible: false,
+        },
+        Output {
+            name: "DeprecatedHidden".into(),
+            doc_hidden: true,
+            deprecated: true,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "ModuleDeprecated".into(),
+            doc_hidden: false,
+            deprecated: true,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "ModuleDeprecatedHidden".into(),
+            doc_hidden: true,
+            deprecated: true,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "Aliased".into(),
+            doc_hidden: true,
+            deprecated: false,
+            public_api_eligible: false,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
 }

@@ -119,23 +119,8 @@ impl<'a> VisibilityTracker<'a> {
             stack.push(pushed_name);
         }
 
-        let next_doc_hidden = currently_doc_hidden
-            || item
-                .attrs
-                .iter()
-                // Attribute formatting is normalized by rustdoc, so let's pre-filter attributes
-                // before parsing them, since parsing is expensive and allocates quite a bit.
-                .filter(|attr| attr.starts_with("#[doc("))
-                .any(|attr| {
-                    let attribute = Attribute::new(attr);
-                    attribute.content.base == "doc"
-                        && attribute
-                            .content
-                            .arguments
-                            .iter()
-                            .flatten()
-                            .any(|arg| arg.base == "hidden")
-                });
+        let next_doc_hidden =
+            currently_doc_hidden || item.attrs.iter().any(|attr| Attribute::is_doc_hidden(attr));
         let next_deprecated = currently_deprecated || item.deprecation.is_some();
 
         self.collect_publicly_importable_names_recurse(

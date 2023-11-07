@@ -1,7 +1,9 @@
 pub struct PublicImportable {}
 
 mod private {
-    pub struct Private {}
+    pub struct PubInPriv {}
+
+    struct Private {}
 }
 
 #[doc(hidden)]
