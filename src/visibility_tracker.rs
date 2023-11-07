@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use rustdoc_types::{Crate, GenericArgs, Id, Item, ItemEnum, Typedef, Visibility};
 
+use crate::{attributes::Attribute, ImportablePath};
+
 #[derive(Debug, Clone)]
 pub(crate) struct VisibilityTracker<'a> {
     // The crate this represents.
@@ -29,12 +31,30 @@ impl<'a> VisibilityTracker<'a> {
         }
     }
 
-    pub(crate) fn collect_publicly_importable_names(
+    pub(crate) fn collect_publicly_importable_names(&self, id: &'a Id) -> Vec<ImportablePath<'a>> {
+        let mut already_visited_ids = Default::default();
+        let mut result = Default::default();
+
+        self.collect_publicly_importable_names_inner(
+            id,
+            &mut already_visited_ids,
+            &mut vec![],
+            false,
+            false,
+            &mut result,
+        );
+
+        result
+    }
+
+    pub(crate) fn collect_publicly_importable_names_inner(
         &self,
         next_id: &'a Id,
         already_visited_ids: &mut HashSet<&'a Id>,
         stack: &mut Vec<&'a str>,
-        output: &mut Vec<Vec<&'a str>>,
+        currently_doc_hidden: bool,
+        currently_deprecated: bool,
+        output: &mut Vec<ImportablePath<'a>>,
     ) {
         if !already_visited_ids.insert(next_id) {
             // We found a cycle, and we've already processed this item.
@@ -99,7 +119,18 @@ impl<'a> VisibilityTracker<'a> {
             stack.push(pushed_name);
         }
 
-        self.collect_publicly_importable_names_inner(next_id, already_visited_ids, stack, output);
+        let next_doc_hidden =
+            currently_doc_hidden || item.attrs.iter().any(|attr| Attribute::is_doc_hidden(attr));
+        let next_deprecated = currently_deprecated || item.deprecation.is_some();
+
+        self.collect_publicly_importable_names_recurse(
+            next_id,
+            already_visited_ids,
+            stack,
+            next_doc_hidden,
+            next_deprecated,
+            output,
+        );
 
         // Undo any changes made to the stack, returning it to its pre-recursion state.
         if let Some(pushed_name) = push_name {
@@ -115,22 +146,30 @@ impl<'a> VisibilityTracker<'a> {
         assert!(removed);
     }
 
-    fn collect_publicly_importable_names_inner(
+    fn collect_publicly_importable_names_recurse(
         &self,
         next_id: &'a Id,
         already_visited_ids: &mut HashSet<&'a Id>,
         stack: &mut Vec<&'a str>,
-        output: &mut Vec<Vec<&'a str>>,
+        currently_doc_hidden: bool,
+        currently_deprecated: bool,
+        output: &mut Vec<ImportablePath<'a>>,
     ) {
         if next_id == &self.inner.root {
             let final_name = stack.iter().rev().copied().collect();
-            output.push(final_name);
+            output.push(ImportablePath::new(
+                final_name,
+                currently_doc_hidden,
+                currently_deprecated,
+            ));
         } else if let Some(visible_parents) = self.visible_parent_ids.get(next_id) {
             for parent_id in visible_parents.iter().copied() {
-                self.collect_publicly_importable_names(
+                self.collect_publicly_importable_names_inner(
                     parent_id,
                     already_visited_ids,
                     stack,
+                    currently_doc_hidden,
+                    currently_deprecated,
                     output,
                 );
             }

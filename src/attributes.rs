@@ -7,6 +7,38 @@ pub struct Attribute<'a> {
 }
 
 impl<'a> Attribute<'a> {
+    /// Checks if the attribute contents contain `#[doc(hidden)]`.
+    ///
+    /// Also returns `true` if the "hidden" argument is combined with other arguments.
+    pub(crate) fn is_doc_hidden(raw: &'a str) -> bool {
+        // We cannot just look for `#[doc(hidden)]` as a string,
+        // since it might be combined with other arguments to `#[doc]`.
+        //
+        // However, we'd like to bail early without parsing the full attribute if possible,
+        // since parsing is expensive and involves many allocations.
+        // We can rely on the fact that rustdoc does some formatting and normalization
+        // of the attributes presented in rustdoc JSON, for example removing unnecessary spaces.
+        let raw = raw.trim_start();
+        if !raw.starts_with("#[doc(") {
+            return false;
+        }
+
+        let attribute = Attribute::new(raw);
+
+        // We look for:
+        // - the base of the attribute is `doc`, and
+        // - one of its arguments has the base `hidden`.
+        //
+        // This gracefully handles complex cases like `#[doc(hidden, alias = "TheAlias")]`.
+        attribute.content.base == "doc"
+            && attribute
+                .content
+                .arguments
+                .iter()
+                .flatten()
+                .any(|arg| arg.base == "hidden")
+    }
+
     pub fn raw_attribute(&self) -> String {
         format!(
             "#{}[{}]",
@@ -170,6 +202,12 @@ mod tests {
     use std::rc::Rc;
 
     use super::{Attribute, AttributeMetaItem};
+
+    #[test]
+    fn is_doc_hidden() {
+        let doc_hidden = Attribute::is_doc_hidden("#[doc(hidden, alias = \"TheAlias\")]");
+        assert!(doc_hidden);
+    }
 
     #[test]
     fn attribute_simple_inner() {
