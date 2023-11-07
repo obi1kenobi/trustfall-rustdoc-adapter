@@ -828,6 +828,13 @@ fn function_export_name() {
 
 #[test]
 fn importable_paths() {
+    if !version_check::is_min_version("1.73.0").unwrap_or(false) {
+        // rustdoc prior to 1.73 incorrectly failed to include re-exports of `#[doc(hidden)]` items
+        // when the flag to include hidden items is used. We skip this test on those versions,
+        // since it is broken not due to our fault.
+        return;
+    }
+
     let path = "./localdata/test_data/importable_paths/rustdoc.json";
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
