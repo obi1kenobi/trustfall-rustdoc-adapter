@@ -8,6 +8,7 @@ use trustfall::provider::Typename;
 
 use crate::{
     attributes::{Attribute, AttributeMetaItem},
+    indexed_crate::ImportablePath,
     IndexedCrate,
 };
 
@@ -28,7 +29,7 @@ pub enum VertexKind<'a> {
     Item(&'a Item),
     Span(&'a Span),
     Path(&'a [String]),
-    ImportablePath(Vec<&'a str>),
+    ImportablePath(Rc<ImportablePath<'a>>),
     RawType(&'a Type),
     Attribute(Attribute<'a>),
     AttributeMetaItem(Rc<AttributeMetaItem<'a>>),
@@ -169,7 +170,7 @@ impl<'a> Vertex<'a> {
         }
     }
 
-    pub(super) fn as_importable_path(&self) -> Option<&'_ Vec<&'a str>> {
+    pub(super) fn as_importable_path(&self) -> Option<&'_ ImportablePath<'a>> {
         match &self.kind {
             VertexKind::ImportablePath(path) => Some(path),
             _ => None,

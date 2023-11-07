@@ -97,7 +97,14 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 | "AssociatedConstant" | "Module"
                     if matches!(
                         property_name.as_ref(),
-                        "id" | "crate_id" | "name" | "docs" | "attrs" | "visibility_limit"
+                        "id" | "crate_id"
+                            | "name"
+                            | "docs"
+                            | "attrs"
+                            | "doc_hidden"
+                            | "deprecated"
+                            | "public_api_eligible"
+                            | "visibility_limit"
                     ) =>
                 {
                     // properties inherited from Item, accesssed on Item subtypes

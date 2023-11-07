@@ -2,7 +2,10 @@ use std::rc::Rc;
 
 use rustdoc_types::{Abi, Item, Span};
 
-use crate::attributes::{Attribute, AttributeMetaItem};
+use crate::{
+    attributes::{Attribute, AttributeMetaItem},
+    indexed_crate::ImportablePath,
+};
 
 use super::vertex::{Vertex, VertexKind};
 
@@ -37,11 +40,11 @@ impl Origin {
 
     pub(super) fn make_importable_path_vertex<'a>(
         &self,
-        importable_path: Vec<&'a str>,
+        importable_path: ImportablePath<'a>,
     ) -> Vertex<'a> {
         Vertex {
             origin: *self,
-            kind: VertexKind::ImportablePath(importable_path),
+            kind: VertexKind::ImportablePath(Rc::from(importable_path)),
         }
     }
 
