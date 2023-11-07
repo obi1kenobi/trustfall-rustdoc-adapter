@@ -7,6 +7,8 @@ use trustfall::{
     FieldValue,
 };
 
+use crate::attributes::Attribute;
+
 use super::vertex::Vertex;
 
 pub(super) fn resolve_crate_property<'a>(
