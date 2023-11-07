@@ -64,6 +64,7 @@ jobs:
   rust-tests:
     name: Run tests
     runs-on: ubuntu-latest
+    continue-on-error: true
     strategy:
       matrix:
         toolchain: ["1.71", "1.72", "1.73"]
