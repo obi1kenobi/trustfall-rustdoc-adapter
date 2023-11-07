@@ -4,6 +4,34 @@ mod private {
     pub struct PubInPriv {}
 
     struct Private {}
+
+    enum PrivateEnum {
+        NotHidden,
+
+        #[deprecated]
+        Deprecated,
+
+        #[deprecated]
+        #[doc(hidden)]
+        DeprecatedHidden,
+
+        #[doc(hidden)]
+        Hidden,
+    }
+
+    trait SomeTrait {
+        #[doc(hidden)]
+        #[deprecated]
+        type T;
+
+        #[doc(hidden)]
+        #[deprecated]
+        const N: i64;
+
+        #[doc(hidden)]
+        #[deprecated]
+        fn associated();
+    }
 }
 
 #[doc(hidden)]

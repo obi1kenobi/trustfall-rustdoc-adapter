@@ -1170,3 +1170,225 @@ fn item_own_public_api_properties() {
 
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+/// Enum variants have as-if-public visibility by default -- they are public if the enum is public.
+#[test]
+fn enum_variant_public_api_eligible() {
+    let path = "./localdata/test_data/importable_paths/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Variant {
+                name @output
+                doc_hidden @output
+                deprecated @output
+                public_api_eligible @output
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        doc_hidden: bool,
+        deprecated: bool,
+        public_api_eligible: bool,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We are checking whether the *items themselves* are deprecated / hidden.
+    // We are *not* checking whether their paths are deprecated or hidden.
+    // This is why it doesn't matter that the enum itself is private.
+    //
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "NotHidden".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "Deprecated".into(),
+            doc_hidden: false,
+            deprecated: true,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "DeprecatedHidden".into(),
+            doc_hidden: true,
+            deprecated: true,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "Hidden".into(),
+            doc_hidden: true,
+            deprecated: false,
+            public_api_eligible: false,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Trait associated items have as-if-public visibility by default.
+#[test]
+fn trait_associated_items_public_api_eligible() {
+    let path = "./localdata/test_data/importable_paths/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                name @filter(op: "=", value: ["$trait"])
+
+                associated_type {
+                    name @output
+                    doc_hidden @output
+                    deprecated @output
+                    public_api_eligible @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = btreemap! {
+        "trait" => "SomeTrait"
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        doc_hidden: bool,
+        deprecated: bool,
+        public_api_eligible: bool,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![Output {
+            name: "T".into(),
+            doc_hidden: true,
+            deprecated: true,
+            public_api_eligible: true
+        },],
+        results
+    );
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                name @filter(op: "=", value: ["$trait"])
+
+                associated_constant {
+                    name @output
+                    doc_hidden @output
+                    deprecated @output
+                    public_api_eligible @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![Output {
+            name: "N".into(),
+            doc_hidden: true,
+            deprecated: true,
+            public_api_eligible: true
+        },],
+        results
+    );
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                name @filter(op: "=", value: ["$trait"])
+
+                method {
+                    name @output
+                    doc_hidden @output
+                    deprecated @output
+                    public_api_eligible @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![Output {
+            name: "associated".into(),
+            doc_hidden: true,
+            deprecated: true,
+            public_api_eligible: true
+        },],
+        results
+    );
+}
