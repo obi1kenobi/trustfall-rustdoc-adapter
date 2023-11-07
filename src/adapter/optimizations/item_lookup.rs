@@ -89,7 +89,7 @@ fn resolve_items_by_importable_path_field_value<'a>(
         .expect("crate's imports_index was never constructed")
         .get(path_components.as_slice())
     {
-        resolve_item_vertices(origin, items.iter().copied())
+        resolve_item_vertices(origin, items.iter().map(|(item, _)| item).copied())
     } else {
         // No such items found.
         Box::new(std::iter::empty())

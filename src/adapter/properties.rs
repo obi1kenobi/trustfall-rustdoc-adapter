@@ -1,4 +1,4 @@
-use rustdoc_types::ItemEnum;
+use rustdoc_types::{ItemEnum, Visibility};
 use trustfall::{
     provider::{
         accessor_property, field_property, resolve_property_with, ContextIterator,
@@ -46,6 +46,35 @@ pub(super) fn resolve_item_property<'a>(
         "name" => resolve_property_with(contexts, field_property!(as_item, name)),
         "docs" => resolve_property_with(contexts, field_property!(as_item, docs)),
         "attrs" => resolve_property_with(contexts, field_property!(as_item, attrs)),
+        "deprecated" => resolve_property_with(
+            contexts,
+            field_property!(as_item, deprecation, { deprecation.is_some().into() }),
+        ),
+        "doc_hidden" => resolve_property_with(
+            contexts,
+            field_property!(as_item, attrs, {
+                attrs
+                    .iter()
+                    .any(|attr| Attribute::is_doc_hidden(attr))
+                    .into()
+            }),
+        ),
+        "public_api_eligible" => resolve_property_with(contexts, move |vertex| {
+            // Items are eligible for public API if both:
+            // - The item is public, either explicitly (`pub`) or implicitly (like enum variants).
+            // - The item is deprecated, or not `#[doc(hidden)]`.
+            //
+            // This does not mean that the item is necessarily part of the public API!
+            // An item that is not eligible by itself cannot be part of the public API,
+            // but eligible items might not be public API -- for example, pub-in-priv items
+            // (public items in a private module) are eligible but not public API.
+            let item = vertex.as_item().expect("vertex was not an Item");
+            let is_public = matches!(item.visibility, Visibility::Public | Visibility::Default);
+            (is_public
+                && (item.deprecation.is_some()
+                    || !item.attrs.iter().any(|attr| Attribute::is_doc_hidden(attr))))
+            .into()
+        }),
         "visibility_limit" => resolve_property_with(contexts, |vertex| {
             let item = vertex.as_item().expect("not an item");
             match &item.visibility {
@@ -162,12 +191,29 @@ pub(super) fn resolve_importable_path_property<'a>(
             vertex
                 .as_importable_path()
                 .expect("not an importable path")
+                .path
+                .components
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
                 .into()
         }),
         "visibility_limit" => resolve_property_with(contexts, |_| "public".into()),
+        "doc_hidden" => resolve_property_with(
+            contexts,
+            field_property!(as_importable_path, modifiers, {
+                modifiers.doc_hidden.into()
+            }),
+        ),
+        "deprecated" => resolve_property_with(
+            contexts,
+            field_property!(as_importable_path, modifiers, {
+                modifiers.deprecated.into()
+            }),
+        ),
+        "public_api" => {
+            resolve_property_with(contexts, accessor_property!(as_importable_path, public_api))
+        }
         _ => unreachable!("ImportablePath property {property_name}"),
     }
 }
