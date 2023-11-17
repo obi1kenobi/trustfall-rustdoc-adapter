@@ -1,7 +1,7 @@
 use rustdoc_types::Item;
 use trustfall::{
     provider::{
-        resolve_neighbors_with, CandidateValue, ContextIterator, ContextOutcomeIterator,
+        resolve_neighbors_with, AsVertex, CandidateValue, ContextIterator, ContextOutcomeIterator,
         ResolveEdgeInfo, VertexInfo, VertexIterator,
     },
     FieldValue,
@@ -11,11 +11,11 @@ use super::super::{origin::Origin, vertex::Vertex, RustdocAdapter};
 
 use crate::IndexedCrate;
 
-pub(crate) fn resolve_crate_items<'a>(
+pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
     adapter: &RustdocAdapter<'a>,
-    contexts: ContextIterator<'a, Vertex<'a>>,
+    contexts: ContextIterator<'a, V>,
     resolve_info: &ResolveEdgeInfo,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     // Is the `importable_path` edge being resolved in a subsequent step?
     if let Some(neighbor_info) = resolve_info
         .destination()
@@ -36,7 +36,6 @@ pub(crate) fn resolve_crate_items<'a>(
                 resolve_items_by_importable_path(crate_vertex, origin, candidate)
             });
         } else if let Some(path_value) = neighbor_info.statically_required_property("path") {
-            let path_value = path_value.cloned();
             return resolve_neighbors_with(contexts, move |vertex| {
                 let crate_vertex = vertex.as_indexed_crate().expect("vertex was not a Crate");
                 let origin = vertex.origin;

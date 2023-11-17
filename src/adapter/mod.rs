@@ -3,8 +3,8 @@ use std::sync::Arc;
 use rustdoc_types::Item;
 use trustfall::{
     provider::{
-        resolve_coercion_with, Adapter, ContextIterator, ContextOutcomeIterator, EdgeParameters,
-        ResolveEdgeInfo, ResolveInfo, Typename, VertexIterator,
+        resolve_coercion_with, Adapter, AsVertex, ContextIterator, ContextOutcomeIterator,
+        EdgeParameters, ResolveEdgeInfo, ResolveInfo, Typename, VertexIterator,
     },
     FieldValue, Schema,
 };
@@ -72,13 +72,13 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         }
     }
 
-    fn resolve_property(
+    fn resolve_property<V: AsVertex<Self::Vertex> + 'a>(
         &self,
-        contexts: ContextIterator<'a, Self::Vertex>,
+        contexts: ContextIterator<'a, V>,
         type_name: &Arc<str>,
         property_name: &Arc<str>,
         _resolve_info: &ResolveInfo,
-    ) -> ContextOutcomeIterator<'a, Self::Vertex, FieldValue> {
+    ) -> ContextOutcomeIterator<'a, V, FieldValue> {
         if property_name.as_ref() == "__typename" {
             Box::new(contexts.map(|ctx| match ctx.active_vertex() {
                 Some(vertex) => {
@@ -154,14 +154,14 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         }
     }
 
-    fn resolve_neighbors(
+    fn resolve_neighbors<V: AsVertex<Self::Vertex> + 'a>(
         &self,
-        contexts: ContextIterator<'a, Self::Vertex>,
+        contexts: ContextIterator<'a, V>,
         type_name: &Arc<str>,
         edge_name: &Arc<str>,
         parameters: &EdgeParameters,
         resolve_info: &ResolveEdgeInfo,
-    ) -> ContextOutcomeIterator<'a, Self::Vertex, VertexIterator<'a, Self::Vertex>> {
+    ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Self::Vertex>> {
         match type_name.as_ref() {
             "CrateDiff" => edges::resolve_crate_diff_edge(contexts, edge_name),
             "Crate" => edges::resolve_crate_edge(self, contexts, edge_name, resolve_info),
@@ -235,13 +235,13 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         }
     }
 
-    fn resolve_coercion(
+    fn resolve_coercion<V: AsVertex<Self::Vertex> + 'a>(
         &self,
-        contexts: ContextIterator<'a, Self::Vertex>,
+        contexts: ContextIterator<'a, V>,
         type_name: &Arc<str>,
         coerce_to_type: &Arc<str>,
         _resolve_info: &ResolveInfo,
-    ) -> ContextOutcomeIterator<'a, Self::Vertex, bool> {
+    ) -> ContextOutcomeIterator<'a, V, bool> {
         let coerce_to_type = coerce_to_type.clone();
         match type_name.as_ref() {
             "Item" | "Variant" | "FunctionLike" | "Importable" | "ImplOwner" | "RawType"
