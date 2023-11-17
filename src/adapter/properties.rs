@@ -1,7 +1,7 @@
 use rustdoc_types::{ItemEnum, Visibility};
 use trustfall::{
     provider::{
-        accessor_property, field_property, resolve_property_with, ContextIterator,
+        accessor_property, field_property, resolve_property_with, AsVertex, ContextIterator,
         ContextOutcomeIterator,
     },
     FieldValue,
@@ -11,10 +11,10 @@ use crate::attributes::Attribute;
 
 use super::vertex::Vertex;
 
-pub(super) fn resolve_crate_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_crate_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "root" => resolve_property_with(
             contexts,
@@ -33,10 +33,10 @@ pub(super) fn resolve_crate_property<'a>(
     }
 }
 
-pub(super) fn resolve_item_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_item_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "id" => resolve_property_with(
             contexts,
@@ -90,20 +90,20 @@ pub(super) fn resolve_item_property<'a>(
     }
 }
 
-pub(super) fn resolve_module_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_module_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "is_stripped" => resolve_property_with(contexts, field_property!(as_module, is_stripped)),
         _ => unreachable!("Module property {property_name}"),
     }
 }
 
-pub(super) fn resolve_struct_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_struct_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "struct_type" => resolve_property_with(contexts, |vertex| {
             let struct_vertex = vertex.as_struct().expect("not a struct");
@@ -127,10 +127,10 @@ pub(super) fn resolve_struct_property<'a>(
     }
 }
 
-pub(super) fn resolve_span_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_span_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "filename" => resolve_property_with(
             contexts,
@@ -158,10 +158,10 @@ pub(super) fn resolve_span_property<'a>(
     }
 }
 
-pub(super) fn resolve_enum_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_enum_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "variants_stripped" => {
             resolve_property_with(contexts, field_property!(as_enum, variants_stripped))
@@ -170,10 +170,10 @@ pub(super) fn resolve_enum_property<'a>(
     }
 }
 
-pub(super) fn resolve_path_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_path_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "path" => resolve_property_with(contexts, |vertex| {
             vertex.as_path().expect("not a path").into()
@@ -182,10 +182,10 @@ pub(super) fn resolve_path_property<'a>(
     }
 }
 
-pub(super) fn resolve_importable_path_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_importable_path_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "path" => resolve_property_with(contexts, |vertex| {
             vertex
@@ -218,10 +218,10 @@ pub(super) fn resolve_importable_path_property<'a>(
     }
 }
 
-pub(super) fn resolve_function_like_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_function_like_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "const" => resolve_property_with(
             contexts,
@@ -239,10 +239,10 @@ pub(super) fn resolve_function_like_property<'a>(
     }
 }
 
-pub(super) fn resolve_function_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_function_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "export_name" => resolve_property_with(contexts, move |vertex| {
             let item = vertex.as_item().expect("not an Item vertex");
@@ -279,10 +279,10 @@ pub(super) fn resolve_function_property<'a>(
     }
 }
 
-pub(super) fn resolve_function_parameter_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_function_parameter_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "name" => resolve_property_with(contexts, |vertex| {
             vertex
@@ -294,10 +294,10 @@ pub(super) fn resolve_function_parameter_property<'a>(
     }
 }
 
-pub(super) fn resolve_function_abi_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_function_abi_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     // Known implemented Rust ABIs:
     // https://github.com/rust-lang/rust/blob/557359f92512ca88b62a602ebda291f17a953002/compiler/rustc_target/src/spec/abi.rs#L74-L110
     match property_name {
@@ -382,10 +382,10 @@ pub(super) fn resolve_function_abi_property<'a>(
     }
 }
 
-pub(super) fn resolve_impl_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_impl_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "unsafe" => resolve_property_with(contexts, field_property!(as_impl, is_unsafe)),
         "negative" => resolve_property_with(contexts, field_property!(as_impl, negative)),
@@ -394,10 +394,10 @@ pub(super) fn resolve_impl_property<'a>(
     }
 }
 
-pub(super) fn resolve_attribute_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_attribute_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "raw_attribute" => {
             resolve_property_with(contexts, accessor_property!(as_attribute, raw_attribute))
@@ -407,10 +407,10 @@ pub(super) fn resolve_attribute_property<'a>(
     }
 }
 
-pub(super) fn resolve_attribute_meta_item_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_attribute_meta_item_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "raw_item" => {
             resolve_property_with(contexts, field_property!(as_attribute_meta_item, raw_item))
@@ -424,10 +424,10 @@ pub(super) fn resolve_attribute_meta_item_property<'a>(
     }
 }
 
-pub(super) fn resolve_raw_type_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_raw_type_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "name" => resolve_property_with(contexts, |vertex| {
             let type_vertex = vertex.as_raw_type().expect("not a RawType");
@@ -441,20 +441,20 @@ pub(super) fn resolve_raw_type_property<'a>(
     }
 }
 
-pub(super) fn resolve_trait_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "unsafe" => resolve_property_with(contexts, field_property!(as_trait, is_unsafe)),
         _ => unreachable!("Trait property {property_name}"),
     }
 }
 
-pub(super) fn resolve_implemented_trait_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_implemented_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "name" => resolve_property_with(contexts, |vertex| {
             let (path, _) = vertex
@@ -466,20 +466,20 @@ pub(super) fn resolve_implemented_trait_property<'a>(
     }
 }
 
-pub(crate) fn resolve_static_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(crate) fn resolve_static_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "mutable" => resolve_property_with(contexts, field_property!(as_static, mutable)),
         _ => unreachable!("Static property {property_name}"),
     }
 }
 
-pub(crate) fn resolve_associated_type_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(crate) fn resolve_associated_type_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "has_default" => resolve_property_with(
             contexts,
@@ -494,10 +494,10 @@ pub(crate) fn resolve_associated_type_property<'a>(
     }
 }
 
-pub(crate) fn resolve_associated_constant_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(crate) fn resolve_associated_constant_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "default" => resolve_property_with(
             contexts,
@@ -512,10 +512,10 @@ pub(crate) fn resolve_associated_constant_property<'a>(
     }
 }
 
-pub(crate) fn resolve_constant_property<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(crate) fn resolve_constant_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     property_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, FieldValue> {
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "expr" => resolve_property_with(
             contexts,
