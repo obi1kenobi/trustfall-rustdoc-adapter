@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use rustdoc_types::{Id, Item};
 use trustfall::{
     provider::{
-        resolve_neighbors_with, CandidateValue, ContextIterator, ContextOutcomeIterator,
+        resolve_neighbors_with, AsVertex, CandidateValue, ContextIterator, ContextOutcomeIterator,
         ResolveEdgeInfo, VertexInfo, VertexIterator,
     },
     FieldValue,
@@ -14,12 +14,12 @@ use crate::{indexed_crate::ImplEntry, IndexedCrate};
 use super::super::{origin::Origin, vertex::Vertex, RustdocAdapter};
 
 /// Resolve the `ImplOwner.impl` and `ImplOwner.inherent_impl` edges.
-pub(crate) fn resolve_owner_impl<'a>(
+pub(crate) fn resolve_owner_impl<'a, V: AsVertex<Vertex<'a>> + 'a>(
     adapter: &RustdocAdapter<'a>,
-    contexts: ContextIterator<'a, Vertex<'a>>,
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
     resolve_info: &ResolveEdgeInfo,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     let current_crate = adapter.current_crate;
     let previous_crate = adapter.previous_crate;
     let inherent_impls_only = match edge_name {
@@ -52,14 +52,14 @@ pub(crate) fn resolve_owner_impl<'a>(
     }
 }
 
-fn resolve_owner_impl_based_on_method_info<'a>(
+fn resolve_owner_impl_based_on_method_info<'a, V: AsVertex<Vertex<'a>> + 'a>(
     adapter: &RustdocAdapter<'a>,
-    contexts: ContextIterator<'a, Vertex<'a>>,
+    contexts: ContextIterator<'a, V>,
     current_crate: &'a IndexedCrate<'a>,
     previous_crate: Option<&'a IndexedCrate<'a>>,
     inherent_impls_only: bool,
     method_vertex_info: &impl VertexInfo,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     // Is the method's `name` property required to be some value, either statically or dynamically?
     // If so, we can use an index to look up a specific item directly.
     //
@@ -77,7 +77,6 @@ fn resolve_owner_impl_based_on_method_info<'a>(
             )
         })
     } else if let Some(candidate) = method_vertex_info.statically_required_property("name") {
-        let candidate = candidate.cloned();
         resolve_neighbors_with(contexts, move |vertex| {
             resolve_impl_based_on_method_name_candidate(
                 vertex,

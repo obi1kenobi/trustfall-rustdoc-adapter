@@ -1,6 +1,6 @@
 use rustdoc_types::{GenericBound::TraitBound, Id, ItemEnum, VariantKind};
 use trustfall::provider::{
-    resolve_neighbors_with, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
+    resolve_neighbors_with, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
     VertexIterator,
 };
 
@@ -8,10 +8,10 @@ use crate::{adapter::supported_item_kind, attributes::Attribute, IndexedCrate};
 
 use super::{optimizations, origin::Origin, vertex::Vertex, RustdocAdapter};
 
-pub(super) fn resolve_crate_diff_edge<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_crate_diff_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "current" => resolve_neighbors_with(contexts, |vertex| {
             let crate_tuple = vertex.as_crate_diff().expect("vertex was not a CrateDiff");
@@ -27,12 +27,12 @@ pub(super) fn resolve_crate_diff_edge<'a>(
     }
 }
 
-pub(super) fn resolve_crate_edge<'a>(
+pub(super) fn resolve_crate_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     adapter: &RustdocAdapter<'a>,
-    contexts: ContextIterator<'a, Vertex<'a>>,
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
     resolve_info: &ResolveEdgeInfo,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "item" => optimizations::item_lookup::resolve_crate_items(adapter, contexts, resolve_info),
         "root_module" => {
@@ -62,12 +62,12 @@ pub(super) fn resolve_crate_edge<'a>(
     }
 }
 
-pub(super) fn resolve_importable_edge<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_importable_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
     current_crate: &'a IndexedCrate<'a>,
     previous_crate: Option<&'a IndexedCrate<'a>>,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "canonical_path" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
@@ -109,10 +109,10 @@ pub(super) fn resolve_importable_edge<'a>(
     }
 }
 
-pub(super) fn resolve_item_edge<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_item_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "span" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
@@ -136,12 +136,12 @@ pub(super) fn resolve_item_edge<'a>(
     }
 }
 
-pub(super) fn resolve_impl_owner_edge<'a>(
+pub(super) fn resolve_impl_owner_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     adapter: &RustdocAdapter<'a>,
-    contexts: ContextIterator<'a, Vertex<'a>>,
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
     resolve_info: &ResolveEdgeInfo,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "impl" | "inherent_impl" => optimizations::impl_lookup::resolve_owner_impl(
             adapter,
@@ -153,10 +153,10 @@ pub(super) fn resolve_impl_owner_edge<'a>(
     }
 }
 
-pub(super) fn resolve_function_like_edge<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_function_like_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "parameter" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
@@ -185,12 +185,12 @@ pub(super) fn resolve_function_like_edge<'a>(
     }
 }
 
-pub(super) fn resolve_module_edge<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_module_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
     current_crate: &'a IndexedCrate<'a>,
     previous_crate: Option<&'a IndexedCrate<'a>>,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "item" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
@@ -217,12 +217,12 @@ pub(super) fn resolve_module_edge<'a>(
     }
 }
 
-pub(super) fn resolve_struct_edge<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_struct_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
     current_crate: &'a IndexedCrate<'a>,
     previous_crate: Option<&'a IndexedCrate<'a>>,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "field" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
@@ -254,12 +254,12 @@ pub(super) fn resolve_struct_edge<'a>(
     }
 }
 
-pub(super) fn resolve_variant_edge<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
     current_crate: &'a IndexedCrate<'a>,
     previous_crate: Option<&'a IndexedCrate<'a>>,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "field" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
@@ -297,12 +297,12 @@ pub(super) fn resolve_variant_edge<'a>(
     }
 }
 
-pub(super) fn resolve_enum_edge<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_enum_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
     current_crate: &'a IndexedCrate<'a>,
     previous_crate: Option<&'a IndexedCrate<'a>>,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "variant" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
@@ -325,10 +325,10 @@ pub(super) fn resolve_enum_edge<'a>(
     }
 }
 
-pub(super) fn resolve_struct_field_edge<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_struct_field_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "raw_type" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
@@ -339,12 +339,12 @@ pub(super) fn resolve_struct_field_edge<'a>(
     }
 }
 
-pub(super) fn resolve_impl_edge<'a>(
+pub(super) fn resolve_impl_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     adapter: &RustdocAdapter<'a>,
-    contexts: ContextIterator<'a, Vertex<'a>>,
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
     resolve_info: &ResolveEdgeInfo,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     let current_crate = adapter.current_crate;
     let previous_crate = adapter.previous_crate;
     match edge_name {
@@ -422,12 +422,12 @@ pub(super) fn resolve_impl_edge<'a>(
     }
 }
 
-pub(super) fn resolve_trait_edge<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
     current_crate: &'a IndexedCrate<'a>,
     previous_crate: Option<&'a IndexedCrate<'a>>,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "supertrait" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
@@ -533,10 +533,10 @@ pub(super) fn resolve_trait_edge<'a>(
     }
 }
 
-pub(super) fn resolve_implemented_trait_edge<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_implemented_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "trait" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
@@ -550,10 +550,10 @@ pub(super) fn resolve_implemented_trait_edge<'a>(
     }
 }
 
-pub(super) fn resolve_attribute_edge<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_attribute_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "content" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
@@ -567,10 +567,10 @@ pub(super) fn resolve_attribute_edge<'a>(
     }
 }
 
-pub(super) fn resolve_attribute_meta_item_edge<'a>(
-    contexts: ContextIterator<'a, Vertex<'a>>,
+pub(super) fn resolve_attribute_meta_item_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
     edge_name: &str,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "argument" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;

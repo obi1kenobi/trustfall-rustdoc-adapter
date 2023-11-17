@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap};
 use rustdoc_types::{Id, Impl, Item, ItemEnum, Type};
 use trustfall::{
     provider::{
-        resolve_neighbors_with, CandidateValue, ContextIterator, ContextOutcomeIterator,
+        resolve_neighbors_with, AsVertex, CandidateValue, ContextIterator, ContextOutcomeIterator,
         ResolveEdgeInfo, VertexInfo, VertexIterator,
     },
     FieldValue,
@@ -15,11 +15,11 @@ use crate::{
     IndexedCrate, RustdocAdapter,
 };
 
-pub(crate) fn resolve_impl_methods<'a>(
+pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
     adapter: &RustdocAdapter<'a>,
-    contexts: ContextIterator<'a, Vertex<'a>>,
+    contexts: ContextIterator<'a, V>,
     resolve_info: &ResolveEdgeInfo,
-) -> ContextOutcomeIterator<'a, Vertex<'a>, VertexIterator<'a, Vertex<'a>>> {
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     let current_crate = adapter.current_crate;
     let previous_crate = adapter.previous_crate;
 
@@ -36,7 +36,6 @@ pub(crate) fn resolve_impl_methods<'a>(
             resolve_method_from_candidate_value(current_crate, previous_crate, vertex, candidate)
         })
     } else if let Some(candidate) = neighbor_info.statically_required_property("name") {
-        let candidate = candidate.cloned();
         return resolve_neighbors_with(contexts, move |vertex| {
             resolve_method_from_candidate_value(
                 current_crate,
