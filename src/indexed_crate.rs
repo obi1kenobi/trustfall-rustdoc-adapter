@@ -337,6 +337,17 @@ fn new_trait(manual_trait_item: &ManualTraitItem, id: Id, crate_id: u32) -> Item
         inner: rustdoc_types::ItemEnum::Trait(rustdoc_types::Trait {
             is_auto: manual_trait_item.is_auto,
             is_unsafe: manual_trait_item.is_unsafe,
+            is_object_safe: matches!(
+                manual_trait_item.name,
+                "Debug"
+                    | "PartialEq"
+                    | "PartialOrd"
+                    | "Send"
+                    | "Sync"
+                    | "Unpin"
+                    | "UnwindSafe"
+                    | "RefUnwindSafe"
+            ),
             // The `item`, `generics`, `bounds` and `implementations`
             // are not currently present in the schema,
             // so it is safe to fill them with empty containers,
