@@ -749,8 +749,6 @@ type Impl implements Item {
 
   """
   The trait being implemented. Inherent impls don't have a trait.
-
-  TODO: implement me
   """
   implemented_trait: ImplementedTrait
 
