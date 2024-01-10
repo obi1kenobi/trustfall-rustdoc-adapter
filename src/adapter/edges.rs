@@ -112,6 +112,8 @@ pub(super) fn resolve_importable_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_item_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
+    current_crate: &'a IndexedCrate<'a>,
+    previous_crate: Option<&'a IndexedCrate<'a>>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "span" => resolve_neighbors_with(contexts, move |vertex| {
@@ -130,6 +132,22 @@ pub(super) fn resolve_item_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 item.attrs
                     .iter()
                     .map(move |attr| origin.make_attribute_vertex(Attribute::new(attr.as_str()))),
+            )
+        }),
+        "link" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let item = vertex.as_item().expect("vertex was not an Item");
+
+            let parent_crate = match origin {
+                Origin::CurrentCrate => current_crate,
+                Origin::PreviousCrate => previous_crate.expect("no baseline provided"),
+            };
+
+            Box::new(
+                item.links
+                    .values()
+                    .filter_map(move |id| parent_crate.inner.index.get(id))
+                    .map(move |item| origin.make_item_vertex(item)),
             )
         }),
         _ => unreachable!("resolve_item_edge {edge_name}"),

@@ -180,9 +180,14 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             | "PlainVariant" | "TupleVariant" | "StructVariant" | "Trait" | "Function"
             | "Method" | "Impl" | "GlobalValue" | "Constant" | "Static" | "AssociatedType"
             | "AssociatedConstant" | "Module"
-                if matches!(edge_name.as_ref(), "span" | "attribute") =>
+                if matches!(edge_name.as_ref(), "span" | "attribute" | "link") =>
             {
-                edges::resolve_item_edge(contexts, edge_name)
+                edges::resolve_item_edge(
+                    contexts,
+                    edge_name,
+                    self.current_crate,
+                    self.previous_crate,
+                )
             }
             "ImplOwner" | "Struct" | "Enum"
                 if matches!(edge_name.as_ref(), "impl" | "inherent_impl") =>
