@@ -345,9 +345,8 @@ pub(super) fn resolve_union_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                         .index
                 }
             };
-            let field_ids_iter: Box<dyn Iterator<Item = &Id>> = Box::new(union_item.fields.iter());
 
-            Box::new(field_ids_iter.map(move |field_id| {
+            Box::new(union_item.fields.iter().map(move |field_id| {
                 origin.make_item_vertex(item_index.get(field_id).expect("missing item"))
             }))
         }),
