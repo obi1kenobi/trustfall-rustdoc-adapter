@@ -284,6 +284,7 @@ pub(crate) fn supported_item_kind(item: &Item) -> bool {
             | rustdoc_types::ItemEnum::StructField(..)
             | rustdoc_types::ItemEnum::Enum(..)
             | rustdoc_types::ItemEnum::Variant(..)
+            | rustdoc_types::ItemEnum::Union(..)
             | rustdoc_types::ItemEnum::Function(..)
             | rustdoc_types::ItemEnum::Impl(..)
             | rustdoc_types::ItemEnum::Trait(..)
