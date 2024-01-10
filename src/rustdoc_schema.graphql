@@ -89,6 +89,13 @@ interface Item {
 
   attribute: [Attribute!]
   span: Span
+
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
 }
 
 """
@@ -142,6 +149,13 @@ type Module implements Item & Importable {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
 
   # edges from Importable
   importable_path: [ImportablePath!]
@@ -205,6 +219,13 @@ type Struct implements Item & Importable & ImplOwner {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
 
   # edges from Importable
   importable_path: [ImportablePath!]
@@ -288,6 +309,13 @@ type StructField implements Item {
   span: Span
   attribute: [Attribute!]
 
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
+
   # own edges
   raw_type: RawType
 }
@@ -344,6 +372,13 @@ type Enum implements Item & Importable & ImplOwner {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
 
   # edges from Importable
   importable_path: [ImportablePath!]
@@ -427,6 +462,13 @@ interface Variant implements Item {
   span: Span
   attribute: [Attribute!]
 
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
+
   # own edges
   field: [StructField!]
 }
@@ -480,6 +522,13 @@ type PlainVariant implements Item & Variant {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
 
   # edges from Variant
   field: [StructField!]
@@ -535,6 +584,13 @@ type TupleVariant implements Item & Variant {
   span: Span
   attribute: [Attribute!]
 
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
+
   # edges from Variant
   field: [StructField!]
 }
@@ -588,6 +644,13 @@ type StructVariant implements Item & Variant {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
 
   # edges from Variant
   field: [StructField!]
@@ -659,6 +722,13 @@ interface ImplOwner implements Item & Importable {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
 
   # edges from Importable
   importable_path: [ImportablePath!]
@@ -745,6 +815,13 @@ type Impl implements Item {
   span: Span
   attribute: [Attribute!]
 
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
+
   # own edges
 
   """
@@ -824,6 +901,13 @@ type Trait implements Item & Importable {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
 
   # edges from Importable
   importable_path: [ImportablePath!]
@@ -1053,6 +1137,13 @@ type Function implements Item & FunctionLike & Importable {
   span: Span
   attribute: [Attribute!]
 
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
+
   # edges from FunctionLike
   parameter: [FunctionParameter!]
   abi: FunctionAbi!
@@ -1172,6 +1263,13 @@ interface GlobalValue implements Item & Importable {
   span: Span
   attribute: [Attribute!]
 
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
+
   # edges from Importable
   importable_path: [ImportablePath!]
   canonical_path: Path
@@ -1284,6 +1382,13 @@ type Constant implements Item & Importable & GlobalValue {
   span: Span
   attribute: [Attribute!]
 
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
+
   # edges from Importable
   importable_path: [ImportablePath!]
   canonical_path: Path
@@ -1341,6 +1446,13 @@ type Static implements Item & Importable & GlobalValue {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
 
   # edges from Importable
   importable_path: [ImportablePath!]
@@ -1499,6 +1611,13 @@ type AssociatedType implements Item {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
 }
 
 """
@@ -1588,6 +1707,13 @@ type AssociatedConstant implements Item {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  """
+  Other items that this item's doc comment links to.
+
+  Corresponds to the `links` field in rustdoc JSON.
+  """
+  link: [Item!]
 }
 
 """
