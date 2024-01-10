@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use rustdoc_types::{
     Abi, Constant, Crate, Enum, Function, Impl, Item, Module, Path, Span, Static, Struct, Trait,
-    Type, Variant, VariantKind,
+    Type, Union, Variant, VariantKind,
 };
 use trustfall::provider::Typename;
 
@@ -145,6 +145,13 @@ impl<'a> Vertex<'a> {
     pub(super) fn as_enum(&self) -> Option<&'a Enum> {
         self.as_item().and_then(|item| match &item.inner {
             rustdoc_types::ItemEnum::Enum(e) => Some(e),
+            _ => None,
+        })
+    }
+
+    pub(super) fn as_union(&self) -> Option<&'a Union> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::Union(u) => Some(u),
             _ => None,
         })
     }

@@ -170,6 +170,18 @@ pub(super) fn resolve_enum_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     }
 }
 
+pub(super) fn resolve_union_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    match property_name {
+        "fields_stripped" => {
+            resolve_property_with(contexts, field_property!(as_union, fields_stripped))
+        }
+        _ => unreachable!("Union property {property_name}"),
+    }
+}
+
 pub(super) fn resolve_path_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,

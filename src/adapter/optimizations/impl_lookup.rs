@@ -189,13 +189,14 @@ fn resolve_owner_impl_slow_path<'a>(
     };
 
     // Get the IDs of all the impl blocks.
-    // Relies on the fact that only structs and enums can have impls,
-    // so we know that the vertex must represent either a struct or an enum.
+    // Relies on the fact that only structs, enums, and unions can have impls,
+    // so we know that the vertex must represent either a struct, enum, or union.
     let impl_ids = vertex
         .as_struct()
         .map(|s| &s.impls)
         .or_else(|| vertex.as_enum().map(|e| &e.impls))
-        .expect("vertex was neither a struct nor an enum");
+        .or_else(|| vertex.as_union().map(|u| &u.impls))
+        .expect("vertex was neither a struct, enum, or union");
 
     Box::new(impl_ids.iter().filter_map(move |item_id| {
         let next_item = item_index.get(item_id);
