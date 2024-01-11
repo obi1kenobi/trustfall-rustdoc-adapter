@@ -48,6 +48,7 @@ impl<'a> Typename for Vertex<'a> {
                 rustdoc_types::ItemEnum::Module { .. } => "Module",
                 rustdoc_types::ItemEnum::Struct(..) => "Struct",
                 rustdoc_types::ItemEnum::Enum(..) => "Enum",
+                rustdoc_types::ItemEnum::Union(..) => "Union",
                 rustdoc_types::ItemEnum::Function(..) => "Function",
                 rustdoc_types::ItemEnum::Variant(variant) => match variant.kind {
                     VariantKind::Plain => "PlainVariant",
