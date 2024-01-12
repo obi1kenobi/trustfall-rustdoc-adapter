@@ -1,0 +1,5 @@
+# Pinning our toolchain ensures ./scripts/regenerate_test_rustdocs.sh always
+# emits the desired format.
+
+[toolchain]
+channel = "1.75"
