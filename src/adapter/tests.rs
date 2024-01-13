@@ -1392,3 +1392,268 @@ fn trait_associated_items_public_api_eligible() {
         results
     );
 }
+
+#[test]
+fn unions() {
+    let path = "./localdata/test_data/unions/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    // Part 1: make sure unions have correct visibility (similart to importable_paths
+    // test case)
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Union {
+                name @output
+                importable_path {
+                    path @output
+                    doc_hidden @output
+                    deprecated @output
+                    public_api @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        path: Vec<String>,
+        doc_hidden: bool,
+        deprecated: bool,
+        public_api: bool,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "PublicImportable".into(),
+            path: vec!["unions".into(), "PublicImportable".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "ModuleHidden".into(),
+            path: vec!["unions".into(), "hidden".into(), "ModuleHidden".into()],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        Output {
+            name: "DeprecatedModuleHidden".into(),
+            path: vec![
+                "unions".into(),
+                "hidden".into(),
+                "DeprecatedModuleHidden".into(),
+            ],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "ModuleDeprecatedModuleHidden".into(),
+            path: vec![
+                "unions".into(),
+                "hidden".into(),
+                "deprecated".into(),
+                "ModuleDeprecatedModuleHidden".into(),
+            ],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "Hidden".into(),
+            path: vec!["unions".into(), "submodule".into(), "Hidden".into()],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        Output {
+            name: "DeprecatedHidden".into(),
+            path: vec![
+                "unions".into(),
+                "submodule".into(),
+                "DeprecatedHidden".into(),
+            ],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "ModuleDeprecated".into(),
+            path: vec![
+                "unions".into(),
+                "deprecated".into(),
+                "ModuleDeprecated".into(),
+            ],
+            doc_hidden: false,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "ModuleDeprecatedHidden".into(),
+            path: vec![
+                "unions".into(),
+                "deprecated".into(),
+                "ModuleDeprecatedHidden".into(),
+            ],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "ModuleHidden".into(),
+            path: vec!["unions".into(), "UsedVisible".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "Hidden".into(),
+            path: vec!["unions".into(), "UsedHidden".into()],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        Output {
+            name: "ModuleDeprecated".into(),
+            path: vec!["unions".into(), "UsedModuleDeprecated".into()],
+            doc_hidden: false,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "ModuleDeprecatedHidden".into(),
+            path: vec!["unions".into(), "UsedModuleDeprecatedHidden".into()],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "PublicImportable".into(),
+            path: vec![
+                "unions".into(),
+                "reexports".into(),
+                "DeprecatedReexport".into(),
+            ],
+            doc_hidden: false,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "PublicImportable".into(),
+            path: vec!["unions".into(), "reexports".into(), "HiddenReexport".into()],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        Output {
+            name: "ModuleDeprecated".into(),
+            path: vec![
+                "unions".into(),
+                "reexports".into(),
+                "HiddenDeprecatedReexport".into(),
+            ],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+
+    // Part 2: make sure union data is properly queryable
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Module {
+                name @filter(op: "=", value: ["$data"])
+
+                item {
+                    ... on Union {
+                        union_name: name @output
+                        field @fold {
+                            visibility_limit @filter(op: "=", value: ["$public"])
+                            name @output
+                            raw_type {
+                                type_name: name @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}"#;
+
+    let variables: BTreeMap<&str, &str> = btreemap! { "data" => "data" , "public" => "public"};
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct FieldInfo {
+        union_name: String,
+        name: Vec<String>,
+        type_name: Vec<String>,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct::<FieldInfo>().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        FieldInfo {
+            union_name: "NoFieldsPublic".into(),
+            name: vec![],
+            type_name: vec![],
+        },
+        FieldInfo {
+            union_name: "SomeFieldsPublic".into(),
+            name: vec!["y".into()],
+            type_name: vec!["f32".into()],
+        },
+        FieldInfo {
+            union_name: "AllFieldsPublic".into(),
+            name: vec!["x".into(), "y".into()],
+            type_name: vec!["usize".into(), "f32".into()],
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
