@@ -92,8 +92,8 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "Crate" => properties::resolve_crate_property(contexts, property_name),
                 "Item" => properties::resolve_item_property(contexts, property_name),
                 "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant" | "PlainVariant"
-                | "TupleVariant" | "StructVariant" | "Trait" | "Function" | "Method" | "Impl"
-                | "GlobalValue" | "Constant" | "Static" | "AssociatedType"
+                | "TupleVariant" | "StructVariant" | "Union" | "Trait" | "Function" | "Method"
+                | "Impl" | "GlobalValue" | "Constant" | "Static" | "AssociatedType"
                 | "AssociatedConstant" | "Module"
                     if matches!(
                         property_name.as_ref(),
@@ -113,6 +113,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "Module" => properties::resolve_module_property(contexts, property_name),
                 "Struct" => properties::resolve_struct_property(contexts, property_name),
                 "Enum" => properties::resolve_enum_property(contexts, property_name),
+                "Union" => properties::resolve_union_property(contexts, property_name),
                 "Span" => properties::resolve_span_property(contexts, property_name),
                 "Path" => properties::resolve_path_property(contexts, property_name),
                 "ImportablePath" => {
@@ -165,7 +166,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         match type_name.as_ref() {
             "CrateDiff" => edges::resolve_crate_diff_edge(contexts, edge_name),
             "Crate" => edges::resolve_crate_edge(self, contexts, edge_name, resolve_info),
-            "Importable" | "ImplOwner" | "Struct" | "Enum" | "Trait" | "Function"
+            "Importable" | "ImplOwner" | "Struct" | "Enum" | "Union" | "Trait" | "Function"
             | "GlobalValue" | "Constant" | "Static" | "Module"
                 if matches!(edge_name.as_ref(), "importable_path" | "canonical_path") =>
             {
@@ -177,14 +178,14 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 )
             }
             "Item" | "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant"
-            | "PlainVariant" | "TupleVariant" | "StructVariant" | "Trait" | "Function"
-            | "Method" | "Impl" | "GlobalValue" | "Constant" | "Static" | "AssociatedType"
-            | "AssociatedConstant" | "Module"
+            | "PlainVariant" | "TupleVariant" | "Union" | "StructVariant" | "Trait"
+            | "Function" | "Method" | "Impl" | "GlobalValue" | "Constant" | "Static"
+            | "AssociatedType" | "AssociatedConstant" | "Module"
                 if matches!(edge_name.as_ref(), "span" | "attribute") =>
             {
                 edges::resolve_item_edge(contexts, edge_name)
             }
-            "ImplOwner" | "Struct" | "Enum"
+            "ImplOwner" | "Struct" | "Enum" | "Union"
                 if matches!(edge_name.as_ref(), "impl" | "inherent_impl") =>
             {
                 edges::resolve_impl_owner_edge(self, contexts, edge_name, resolve_info)
@@ -215,6 +216,12 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 )
             }
             "Enum" => edges::resolve_enum_edge(
+                contexts,
+                edge_name,
+                self.current_crate,
+                self.previous_crate,
+            ),
+            "Union" => edges::resolve_union_edge(
                 contexts,
                 edge_name,
                 self.current_crate,
@@ -254,7 +261,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                             actual_type_name,
                             "PlainVariant" | "TupleVariant" | "StructVariant"
                         ),
-                        "ImplOwner" => matches!(actual_type_name, "Struct" | "Enum"),
+                        "ImplOwner" => matches!(actual_type_name, "Struct" | "Enum" | "Union"),
                         "GlobalValue" => matches!(actual_type_name, "Constant" | "Static",),
                         _ => {
                             // The remaining types are final (don't have any subtypes)
@@ -277,6 +284,7 @@ pub(crate) fn supported_item_kind(item: &Item) -> bool {
             | rustdoc_types::ItemEnum::StructField(..)
             | rustdoc_types::ItemEnum::Enum(..)
             | rustdoc_types::ItemEnum::Variant(..)
+            | rustdoc_types::ItemEnum::Union(..)
             | rustdoc_types::ItemEnum::Function(..)
             | rustdoc_types::ItemEnum::Impl(..)
             | rustdoc_types::ItemEnum::Trait(..)
