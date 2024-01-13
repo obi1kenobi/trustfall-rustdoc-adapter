@@ -2,6 +2,7 @@
 //! - `foo`
 //! - `Bar`
 //! - `Baz`
+//! - `Onion`
 
 mod nested {
     mod deeper {
@@ -11,6 +12,10 @@ mod nested {
 
         pub enum Baz {
             First,
+        }
+
+        pub union Onion {
+            pub field: usize
         }
     }
 

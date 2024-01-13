@@ -829,6 +829,9 @@ mod tests {
                 "Baz" => btreeset![
                     "glob_of_glob_reexport::Baz",
                 ],
+                "Onion" => btreeset![
+                    "glob_of_glob_reexport::Onion",
+                ],
             };
 
             assert_exported_items_match(test_crate, &expected_items);
@@ -846,6 +849,9 @@ mod tests {
                 ],
                 "First" => btreeset![
                     "glob_of_renamed_reexport::RenamedFirst",
+                ],
+                "Onion" => btreeset![
+                    "glob_of_renamed_reexport::RenamedOnion",
                 ],
             };
 
