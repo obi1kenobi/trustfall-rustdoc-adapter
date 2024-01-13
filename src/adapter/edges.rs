@@ -325,6 +325,35 @@ pub(super) fn resolve_enum_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     }
 }
 
+pub(super) fn resolve_union_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    edge_name: &str,
+    current_crate: &'a IndexedCrate<'a>,
+    previous_crate: Option<&'a IndexedCrate<'a>>,
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
+    match edge_name {
+        "field" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let union_item = vertex.as_union().expect("vertex was not an Union");
+
+            let item_index = match origin {
+                Origin::CurrentCrate => &current_crate.inner.index,
+                Origin::PreviousCrate => {
+                    &previous_crate
+                        .expect("no previous crate provided")
+                        .inner
+                        .index
+                }
+            };
+
+            Box::new(union_item.fields.iter().map(move |field_id| {
+                origin.make_item_vertex(item_index.get(field_id).expect("missing item"))
+            }))
+        }),
+        _ => unreachable!("resolve_union_edge {edge_name}"),
+    }
+}
+
 pub(super) fn resolve_struct_field_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
