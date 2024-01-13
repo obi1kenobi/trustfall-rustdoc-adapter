@@ -19,6 +19,10 @@ mod private {
         Hidden,
     }
 
+    union PrivateUnion {
+        foo: usize
+    }
+
     trait SomeTrait {
         #[doc(hidden)]
         #[deprecated]
