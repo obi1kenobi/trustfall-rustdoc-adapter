@@ -905,7 +905,13 @@ type Trait implements Item & Importable {
 
   # own properties
   unsafe: Boolean!
-  object_safe: Boolean!
+
+  """
+  This property is added for forward-compatibility with queries over rustdoc v28.
+  It was added to rustdoc JSON output in v28, and did not exist prior to that.
+  In versions prior to v28, it will always have a value of `null`.
+  """
+  object_safe: Boolean
 
   # edges from Item
   span: Span

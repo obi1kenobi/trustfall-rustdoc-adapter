@@ -459,7 +459,7 @@ pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "unsafe" => resolve_property_with(contexts, field_property!(as_trait, is_unsafe)),
-        "object_safe" => resolve_property_with(contexts, field_property!(as_trait, is_object_safe)),
+        "object_safe" => resolve_property_with(contexts, |_| FieldValue::Null),
         _ => unreachable!("Trait property {property_name}"),
     }
 }
