@@ -13,3 +13,6 @@ localdata/
 
 # lockfiles of test crates
 test_crates/**/Cargo.lock
+
+# ide
+.idea
