@@ -905,6 +905,9 @@ type Trait implements Item & Importable {
   unsafe: Boolean!
   object_safe: Boolean!
 
+  # can be used as a trait object
+  object_safe: Boolean!
+
   # edges from Item
   span: Span
   attribute: [Attribute!]
