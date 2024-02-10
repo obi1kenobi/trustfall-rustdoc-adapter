@@ -903,6 +903,7 @@ type Trait implements Item & Importable {
 
   # own properties
   unsafe: Boolean!
+  object_safe: Boolean!
 
   # edges from Item
   span: Span
