@@ -1,0 +1,10 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "rustdoc-v28"
+    schedule:
+      interval: "weekly"
+      day: "saturday"
+      time: "01:12"
+      timezone: "America/New_York"
