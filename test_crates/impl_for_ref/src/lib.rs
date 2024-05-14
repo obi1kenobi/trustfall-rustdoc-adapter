@@ -1,5 +1,13 @@
+use dummy_ext::DummyExternalTrait;
+pub trait Trait {}
+
 pub struct StringHolder {
     content: String,
+}
+
+impl Trait for StringHolder {}
+impl DummyExternalTrait for StringHolder {
+    fn do_something(&self) {}
 }
 
 impl<'a> PartialEq<StringHolder> for &'a str {
