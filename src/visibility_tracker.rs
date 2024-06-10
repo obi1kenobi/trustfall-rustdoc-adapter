@@ -340,7 +340,7 @@ fn get_names_for_item<'a>(
         }
         ItemEnum::Variant(..)
         | ItemEnum::Function(..)
-        | ItemEnum::Constant(..)
+        | ItemEnum::Constant { .. }
         | ItemEnum::Static(..) => {
             let item_name = item.name.as_deref().expect("item did not have a name");
             [Some(NamespacedName::Values(item_name)), None]

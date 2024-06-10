@@ -533,7 +533,7 @@ pub(crate) fn resolve_constant_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
         "expr" => resolve_property_with(
             contexts,
             field_property!(as_item, inner, {
-                let ItemEnum::Constant(c) = &inner else {
+                let ItemEnum::Constant { const_: c, .. } = &inner else {
                     unreachable!("expected to have a Constant")
                 };
                 c.expr.clone().into()
@@ -542,7 +542,7 @@ pub(crate) fn resolve_constant_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
         "value" => resolve_property_with(
             contexts,
             field_property!(as_item, inner, {
-                let ItemEnum::Constant(c) = &inner else {
+                let ItemEnum::Constant { const_: c, .. } = &inner else {
                     unreachable!("expected to have a Constant")
                 };
                 c.value.clone().into()
@@ -551,7 +551,7 @@ pub(crate) fn resolve_constant_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
         "is_literal" => resolve_property_with(
             contexts,
             field_property!(as_item, inner, {
-                let ItemEnum::Constant(c) = &inner else {
+                let ItemEnum::Constant { const_: c, .. } = &inner else {
                     unreachable!("expected to have a Constant")
                 };
                 c.is_literal.into()

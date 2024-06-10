@@ -58,7 +58,7 @@ impl<'a> Typename for Vertex<'a> {
                 rustdoc_types::ItemEnum::StructField(..) => "StructField",
                 rustdoc_types::ItemEnum::Impl(..) => "Impl",
                 rustdoc_types::ItemEnum::Trait(..) => "Trait",
-                rustdoc_types::ItemEnum::Constant(..) => "Constant",
+                rustdoc_types::ItemEnum::Constant { .. } => "Constant",
                 rustdoc_types::ItemEnum::Static(..) => "Static",
                 rustdoc_types::ItemEnum::AssocType { .. } => "AssociatedType",
                 _ => unreachable!("unexpected item.inner for item: {item:?}"),
@@ -215,7 +215,7 @@ impl<'a> Vertex<'a> {
 
     pub(super) fn as_constant(&self) -> Option<&'a Constant> {
         self.as_item().and_then(|item| match &item.inner {
-            rustdoc_types::ItemEnum::Constant(c) => Some(c),
+            rustdoc_types::ItemEnum::Constant { const_, .. } => Some(const_),
             _ => None,
         })
     }

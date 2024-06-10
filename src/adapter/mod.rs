@@ -288,7 +288,7 @@ pub(crate) fn supported_item_kind(item: &Item) -> bool {
             | rustdoc_types::ItemEnum::Function(..)
             | rustdoc_types::ItemEnum::Impl(..)
             | rustdoc_types::ItemEnum::Trait(..)
-            | rustdoc_types::ItemEnum::Constant(..)
+            | rustdoc_types::ItemEnum::Constant { .. }
             | rustdoc_types::ItemEnum::Static(..)
             | rustdoc_types::ItemEnum::AssocType { .. }
             | rustdoc_types::ItemEnum::Module { .. }
