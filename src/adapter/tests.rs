@@ -100,6 +100,69 @@ fn impl_for_ref() {
 }
 
 #[test]
+fn impl_name_for_impl_owners() {
+    let path = "./localdata/test_data/impl_for_ref/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = RustdocAdapter::new(&indexed_crate, None);
+
+    let query = r#"
+        {
+            Crate {
+            item {
+                    ... on ImplOwner {
+                    name @output
+                    impl {
+                        implemented_trait {
+                            name @output(name: "impls")
+                        }
+                      }
+                    }
+                }
+            }
+        }
+        "#;
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        impls: Option<String>,
+    }
+
+    let vars: BTreeMap<&str, &str> = Default::default();
+    let mut results: Vec<_> = trustfall::execute_query(&schema, adapter.into(), query, vars)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+
+    results.sort_unstable();
+
+    // OK
+    assert!(results.contains(&Output {
+        name: "StringHolder".to_string(),
+        impls: Some("PartialEq".to_string())
+    }));
+
+    // Ok
+    assert!(results.contains(&Output {
+        name: "StringHolder".to_string(),
+        impls: Some("Trait".to_string())
+    }));
+
+    // Fails !
+    assert!(results.contains(&Output {
+        name: "StringHolder".to_string(),
+        impls: Some("DummyExternalTrait".to_string())
+    }));
+}
+#[test]
 fn rustdoc_finds_supertrait() {
     let path = "./localdata/test_data/supertrait/rustdoc.json";
     let content = std::fs::read_to_string(path)
