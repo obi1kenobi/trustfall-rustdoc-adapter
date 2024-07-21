@@ -150,6 +150,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     properties::resolve_associated_constant_property(contexts, property_name)
                 }
                 "Constant" => properties::resolve_constant_property(contexts, property_name),
+                "Discriminant" => {
+                    properties::resolve_discriminant_property(contexts, property_name)
+                }
                 _ => unreachable!("resolve_property {type_name} {property_name}"),
             }
         }

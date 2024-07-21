@@ -1657,3 +1657,63 @@ fn unions() {
 
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn enum_discriminants() {
+    let path = "./localdata/test_data/enum_discriminants/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = RustdocAdapter::new(&indexed_crate, None);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Enum {
+                variant {
+                    discriminant {
+                        expr @output
+                        value @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables: BTreeMap<&str, &str> = btreemap! {};
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        expr: String,
+        value: String,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.into(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![
+            Output {
+                expr: "1".into(),
+                value: "1".into(),
+            },
+            Output {
+                expr: "{ _ }".into(),
+                value: "2".into(),
+            },
+        ],
+        results
+    );
+}

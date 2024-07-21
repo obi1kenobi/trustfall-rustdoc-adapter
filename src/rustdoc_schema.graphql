@@ -429,6 +429,15 @@ interface Variant implements Item {
 
   # own edges
   field: [StructField!]
+  discriminant: Discriminant
+}
+
+"""
+https://docs.rs/rustdoc-types/latest/rustdoc_types/struct.Discriminant.html
+"""
+type Discriminant {
+  expr: String!
+  value: String!
 }
 
 """
@@ -483,6 +492,7 @@ type PlainVariant implements Item & Variant {
 
   # edges from Variant
   field: [StructField!]
+  discriminant: Discriminant
 }
 
 """
@@ -537,6 +547,7 @@ type TupleVariant implements Item & Variant {
 
   # edges from Variant
   field: [StructField!]
+  discriminant: Discriminant
 }
 
 """
@@ -591,6 +602,7 @@ type StructVariant implements Item & Variant {
 
   # edges from Variant
   field: [StructField!]
+  discriminant: Discriminant
 }
 
 """

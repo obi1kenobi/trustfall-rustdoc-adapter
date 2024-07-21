@@ -293,6 +293,18 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 })),
             }
         }),
+        "discriminant" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let item = vertex.as_variant().expect("vertex was not a Variant");
+
+            if let Some(discriminant) = &item.discriminant {
+                Box::new(std::iter::once(
+                    origin.make_discriminant_vertex(discriminant.clone()),
+                ))
+            } else {
+                Box::new(std::iter::empty())
+            }
+        }),
         _ => unreachable!("resolve_variant_edge {edge_name}"),
     }
 }

@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use rustdoc_types::{
-    Abi, Constant, Crate, Enum, Function, Impl, Item, Module, Path, Span, Static, Struct, Trait,
-    Type, Union, Variant, VariantKind,
+    Abi, Constant, Crate, Discriminant, Enum, Function, Impl, Item, Module, Path, Span, Static,
+    Struct, Trait, Type, Union, Variant, VariantKind,
 };
 use trustfall::provider::Typename;
 
@@ -36,6 +36,7 @@ pub enum VertexKind<'a> {
     ImplementedTrait(&'a Path, &'a Item),
     FunctionParameter(&'a str),
     FunctionAbi(&'a Abi),
+    Discriminant(Discriminant),
 }
 
 impl<'a> Typename for Vertex<'a> {
@@ -77,6 +78,7 @@ impl<'a> Typename for Vertex<'a> {
             },
             VertexKind::FunctionParameter(..) => "FunctionParameter",
             VertexKind::FunctionAbi(..) => "FunctionAbi",
+            VertexKind::Discriminant(..) => "Discriminant",
         }
     }
 }
@@ -254,6 +256,13 @@ impl<'a> Vertex<'a> {
             _ => None,
         }
     }
+
+    pub(super) fn as_discriminant(&self) -> Option<rustdoc_types::Discriminant> {
+        match &self.kind {
+            VertexKind::Discriminant(discriminant) => Some(discriminant.clone()),
+            _ => None,
+        }
+    }
 }
 
 impl<'a> From<&'a Item> for VertexKind<'a> {
@@ -277,5 +286,11 @@ impl<'a> From<&'a Span> for VertexKind<'a> {
 impl<'a> From<&'a Abi> for VertexKind<'a> {
     fn from(a: &'a Abi) -> Self {
         Self::FunctionAbi(a)
+    }
+}
+
+impl<'a> From<Discriminant> for VertexKind<'a> {
+    fn from(d: Discriminant) -> Self {
+        Self::Discriminant(d)
     }
 }
