@@ -1674,6 +1674,7 @@ fn enum_discriminants() {
     Crate {
         item {
             ... on Enum {
+                name @output
                 variant {
                     discriminant {
                         expr @output
@@ -1692,6 +1693,7 @@ fn enum_discriminants() {
 
     #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
     struct Output {
+        name: String,
         expr: String,
         value: String,
     }
@@ -1706,12 +1708,34 @@ fn enum_discriminants() {
     similar_asserts::assert_eq!(
         vec![
             Output {
+                name: "A".into(),
                 expr: "1".into(),
                 value: "1".into(),
             },
             Output {
+                name: "A".into(),
+                expr: "99".into(),
+                value: "99".into(),
+            },
+            Output {
+                name: "A".into(),
                 expr: "{ _ }".into(),
                 value: "2".into(),
+            },
+            Output {
+                name: "Fieldful".into(),
+                expr: "9".into(),
+                value: "9".into(),
+            },
+            Output {
+                name: "FieldlessWithDiscrimants".into(),
+                expr: "10".into(),
+                value: "10".into(),
+            },
+            Output {
+                name: "FieldlessWithDiscrimants".into(),
+                expr: "20".into(),
+                value: "20".into(),
             },
         ],
         results
