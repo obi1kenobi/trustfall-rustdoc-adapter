@@ -99,7 +99,7 @@ impl Origin {
 
     pub(super) fn make_discriminant_vertex<'a>(
         &self,
-        discriminant: rustdoc_types::Discriminant,
+        discriminant: &'a rustdoc_types::Discriminant,
     ) -> Vertex<'a> {
         Vertex {
             origin: *self,

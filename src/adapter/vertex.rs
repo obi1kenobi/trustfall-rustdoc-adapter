@@ -36,7 +36,7 @@ pub enum VertexKind<'a> {
     ImplementedTrait(&'a Path, &'a Item),
     FunctionParameter(&'a str),
     FunctionAbi(&'a Abi),
-    Discriminant(Discriminant),
+    Discriminant(&'a Discriminant),
 }
 
 impl<'a> Typename for Vertex<'a> {
@@ -257,9 +257,9 @@ impl<'a> Vertex<'a> {
         }
     }
 
-    pub(super) fn as_discriminant(&self) -> Option<rustdoc_types::Discriminant> {
+    pub(super) fn as_discriminant(&self) -> Option<&'a rustdoc_types::Discriminant> {
         match &self.kind {
-            VertexKind::Discriminant(discriminant) => Some(discriminant.clone()),
+            VertexKind::Discriminant(discriminant) => Some(discriminant),
             _ => None,
         }
     }
@@ -289,8 +289,8 @@ impl<'a> From<&'a Abi> for VertexKind<'a> {
     }
 }
 
-impl<'a> From<Discriminant> for VertexKind<'a> {
-    fn from(d: Discriminant) -> Self {
+impl<'a> From<&'a Discriminant> for VertexKind<'a> {
+    fn from(d: &'a Discriminant) -> Self {
         Self::Discriminant(d)
     }
 }

@@ -299,7 +299,7 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 
             if let Some(discriminant) = &item.discriminant {
                 Box::new(std::iter::once(
-                    origin.make_discriminant_vertex(discriminant.clone()),
+                    origin.make_discriminant_vertex(discriminant),
                 ))
             } else {
                 Box::new(std::iter::empty())
