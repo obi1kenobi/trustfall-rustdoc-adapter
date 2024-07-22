@@ -444,7 +444,7 @@ type Discriminant {
   """
   The expression that produced the discriminant. Preserves the original formatting seen in source code (e.g. suffixes, hexadecimal, and underscores).
 
-  In some cases, when the value is to complex, this may be "`{ _ }`".
+  In some cases, when the value is too complex, this may be a placeholder value such as `"{ _ }"`.
   """
   expr: String!
 
