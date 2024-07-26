@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use rustdoc_types::{
-    Abi, Constant, Crate, Discriminant, Enum, Function, Impl, Item, Module, Path, Span, Static,
-    Struct, Trait, Type, Union, Variant, VariantKind,
+    Abi, Constant, Crate, Enum, Function, Impl, Item, Module, Path, Span, Static, Struct, Trait,
+    Type, Union, Variant, VariantKind,
 };
 use trustfall::provider::Typename;
 
@@ -12,7 +12,7 @@ use crate::{
     IndexedCrate,
 };
 
-use super::origin::Origin;
+use super::{enum_variant::EnumVariant, origin::Origin};
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
@@ -36,7 +36,8 @@ pub enum VertexKind<'a> {
     ImplementedTrait(&'a Path, &'a Item),
     FunctionParameter(&'a str),
     FunctionAbi(&'a Abi),
-    Discriminant(&'a Discriminant),
+    Discriminant(String),
+    Variant(EnumVariant<'a>),
 }
 
 impl<'a> Typename for Vertex<'a> {
@@ -44,24 +45,25 @@ impl<'a> Typename for Vertex<'a> {
     /// intended to fulfill resolution requests for the __typename property.
     #[inline]
     fn typename(&self) -> &'static str {
-        match self.kind {
+        match &self.kind {
             VertexKind::Item(item) => match &item.inner {
                 rustdoc_types::ItemEnum::Module { .. } => "Module",
                 rustdoc_types::ItemEnum::Struct(..) => "Struct",
                 rustdoc_types::ItemEnum::Enum(..) => "Enum",
                 rustdoc_types::ItemEnum::Union(..) => "Union",
                 rustdoc_types::ItemEnum::Function(..) => "Function",
-                rustdoc_types::ItemEnum::Variant(variant) => match variant.kind {
-                    VariantKind::Plain => "PlainVariant",
-                    VariantKind::Tuple(..) => "TupleVariant",
-                    VariantKind::Struct { .. } => "StructVariant",
-                },
                 rustdoc_types::ItemEnum::StructField(..) => "StructField",
                 rustdoc_types::ItemEnum::Impl(..) => "Impl",
                 rustdoc_types::ItemEnum::Trait(..) => "Trait",
                 rustdoc_types::ItemEnum::Constant(..) => "Constant",
                 rustdoc_types::ItemEnum::Static(..) => "Static",
                 rustdoc_types::ItemEnum::AssocType { .. } => "AssociatedType",
+                // TODO: How are we even here???
+                rustdoc_types::ItemEnum::Variant(variant) => match variant.kind {
+                    VariantKind::Plain => "PlainVariant",
+                    VariantKind::Tuple(..) => "TupleVariant",
+                    VariantKind::Struct { .. } => "StructVariant",
+                },
                 _ => unreachable!("unexpected item.inner for item: {item:?}"),
             },
             VertexKind::Span(..) => "Span",
@@ -79,6 +81,11 @@ impl<'a> Typename for Vertex<'a> {
             VertexKind::FunctionParameter(..) => "FunctionParameter",
             VertexKind::FunctionAbi(..) => "FunctionAbi",
             VertexKind::Discriminant(..) => "Discriminant",
+            VertexKind::Variant(ev) => match ev.variant().unwrap().kind {
+                VariantKind::Plain => "PlainVariant",
+                VariantKind::Tuple(..) => "TupleVariant",
+                VariantKind::Struct { .. } => "StructVariant",
+            },
         }
     }
 }
@@ -167,10 +174,17 @@ impl<'a> Vertex<'a> {
     }
 
     pub(super) fn as_variant(&self) -> Option<&'a Variant> {
-        self.as_item().and_then(|item| match &item.inner {
-            rustdoc_types::ItemEnum::Variant(v) => Some(v),
+        match &self.kind {
+            VertexKind::Variant(variant) => variant.variant(),
             _ => None,
-        })
+        }
+    }
+
+    pub(super) fn as_enum_variant(&self) -> Option<&'a EnumVariant> {
+        match &self.kind {
+            VertexKind::Variant(variant) => Some(variant),
+            _ => None,
+        }
     }
 
     pub(super) fn as_path(&self) -> Option<&'a [String]> {
@@ -257,9 +271,9 @@ impl<'a> Vertex<'a> {
         }
     }
 
-    pub(super) fn as_discriminant(&self) -> Option<&'a rustdoc_types::Discriminant> {
+    pub(super) fn as_discriminant(&self) -> Option<&String> {
         match &self.kind {
-            VertexKind::Discriminant(discriminant) => Some(discriminant),
+            VertexKind::Discriminant(variant) => Some(variant),
             _ => None,
         }
     }
@@ -286,11 +300,5 @@ impl<'a> From<&'a Span> for VertexKind<'a> {
 impl<'a> From<&'a Abi> for VertexKind<'a> {
     fn from(a: &'a Abi) -> Self {
         Self::FunctionAbi(a)
-    }
-}
-
-impl<'a> From<&'a Discriminant> for VertexKind<'a> {
-    fn from(d: &'a Discriminant) -> Self {
-        Self::Discriminant(d)
     }
 }

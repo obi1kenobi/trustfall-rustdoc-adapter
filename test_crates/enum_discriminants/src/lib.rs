@@ -1,3 +1,5 @@
+#![allow(incomplete_features)]
+#![feature(repr128)]
 /// Some examples from <https://doc.rust-lang.org/reference/items/enumerations.html#implicit-discriminants>
 
 #[repr(C)]
@@ -27,3 +29,10 @@ pub enum Fieldful {
     Unit2 = 9
 }
 
+#[repr(i128)]
+pub enum Pathological {
+    Min = i128::MIN,
+    MinPlusOne,
+    MinPlusTwo,
+    Max = i128::MAX,
+}

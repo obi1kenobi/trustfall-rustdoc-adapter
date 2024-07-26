@@ -566,8 +566,13 @@ pub(crate) fn resolve_discriminant_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     property_name: &str,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
-        "expr" => resolve_property_with(contexts, field_property!(as_discriminant, expr)),
-        "value" => resolve_property_with(contexts, field_property!(as_discriminant, value)),
-        _ => unreachable!("AssociatedConstant property {property_name}"),
+        "value" => resolve_property_with(contexts, |vertex| {
+            vertex
+                .as_discriminant()
+                .expect("vertex was not a Discriminant")
+                .clone()
+                .into()
+        }),
+        _ => unreachable!("Discriminant property {property_name}"),
     }
 }

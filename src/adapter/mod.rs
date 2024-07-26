@@ -17,6 +17,7 @@ use self::{
 };
 
 mod edges;
+mod enum_variant;
 mod optimizations;
 mod origin;
 mod properties;

@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{rc::Rc, sync::Arc};
 
 use rustdoc_types::{Abi, Item, Span};
 
@@ -7,7 +7,10 @@ use crate::{
     indexed_crate::ImportablePath,
 };
 
-use super::vertex::{Vertex, VertexKind};
+use super::{
+    enum_variant::{EnumVariant, LazyDiscriminants},
+    vertex::{Vertex, VertexKind},
+};
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy)]
@@ -97,13 +100,22 @@ impl Origin {
         }
     }
 
-    pub(super) fn make_discriminant_vertex<'a>(
+    pub(super) fn make_discriminant_vertex<'a>(&self, value: String) -> Vertex<'a> {
+        Vertex {
+            origin: *self,
+            kind: VertexKind::Discriminant(value),
+        }
+    }
+
+    pub(super) fn make_variant_vertex<'a>(
         &self,
-        discriminant: &'a rustdoc_types::Discriminant,
+        item: &'a Item,
+        discriminants: Arc<LazyDiscriminants<'a>>,
+        index: usize,
     ) -> Vertex<'a> {
         Vertex {
             origin: *self,
-            kind: discriminant.into(),
+            kind: VertexKind::Variant(EnumVariant::new(item, discriminants, index)),
         }
     }
 }

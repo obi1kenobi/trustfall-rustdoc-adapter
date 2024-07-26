@@ -1677,7 +1677,6 @@ fn enum_discriminants() {
                 name @output
                 variant {
                     discriminant {
-                        expr @output
                         value @output
                     }
                 }
@@ -1694,7 +1693,6 @@ fn enum_discriminants() {
     #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
     struct Output {
         name: String,
-        expr: String,
         value: String,
     }
 
@@ -1709,34 +1707,80 @@ fn enum_discriminants() {
         vec![
             Output {
                 name: "A".into(),
-                expr: "1".into(),
+                value: "0".into(),
+            },
+            Output {
+                name: "A".into(),
                 value: "1".into(),
             },
             Output {
                 name: "A".into(),
-                expr: "99".into(),
-                value: "99".into(),
+                value: "100".into(),
             },
             Output {
                 name: "A".into(),
-                expr: "{ _ }".into(),
+                value: "2".into(),
+            },
+            Output {
+                name: "A".into(),
+                value: "3".into(),
+            },
+            Output {
+                name: "A".into(),
+                value: "99".into(),
+            },
+            Output {
+                name: "Fieldful".into(),
+                value: "0".into(),
+            },
+            Output {
+                name: "Fieldful".into(),
+                value: "1".into(),
+            },
+            Output {
+                name: "Fieldful".into(),
                 value: "2".into(),
             },
             Output {
                 name: "Fieldful".into(),
-                expr: "9".into(),
                 value: "9".into(),
             },
             Output {
                 name: "FieldlessWithDiscrimants".into(),
-                expr: "10".into(),
                 value: "10".into(),
             },
             Output {
                 name: "FieldlessWithDiscrimants".into(),
-                expr: "20".into(),
+                value: "11".into(),
+            },
+            Output {
+                name: "FieldlessWithDiscrimants".into(),
                 value: "20".into(),
             },
+            Output {
+                name: "FieldlessWithDiscrimants".into(),
+                value: "21".into(),
+            },
+            Output {
+                name: "FieldlessWithDiscrimants".into(),
+                value: "22".into(),
+            },
+            Output {
+                name: "Pathological".into(),
+                value: "-170141183460469231731687303715884105726".into(),
+            },
+            Output {
+                name: "Pathological".into(),
+                value: "-170141183460469231731687303715884105727".into(),
+            },
+            Output {
+                name: "Pathological".into(),
+                value: "-170141183460469231731687303715884105728".into(),
+            },
+            Output {
+                name: "Pathological".into(),
+                value: "170141183460469231731687303715884105727".into(),
+            }
         ],
         results
     );
