@@ -1,14 +1,15 @@
 use rustdoc_types::{Item, ItemEnum, Variant};
 use std::fmt;
 use std::num::ParseIntError;
-use std::sync::Arc;
-use std::{str::FromStr, sync::OnceLock};
+use std::rc::Rc;
+use std::cell::OnceCell;
+use std::str::FromStr;
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub(super) struct EnumVariant<'a> {
     item: &'a Item,
-    discriminants: Arc<LazyDiscriminants<'a>>,
+    discriminants: Rc<LazyDiscriminants<'a>>,
     index: usize,
 }
 
@@ -16,14 +17,14 @@ pub(super) struct EnumVariant<'a> {
 #[derive(Debug, Clone)]
 pub(super) struct LazyDiscriminants<'a> {
     variants: Vec<&'a Variant>,
-    discriminants: OnceLock<Vec<String>>,
+    discriminants: OnceCell<Vec<String>>,
 }
 
 impl<'a> LazyDiscriminants<'a> {
     pub(super) fn new(variants: Vec<&'a Variant>) -> Self {
         Self {
             variants,
-            discriminants: OnceLock::new(),
+            discriminants: OnceCell::new(),
         }
     }
 
@@ -36,7 +37,7 @@ impl<'a> LazyDiscriminants<'a> {
 impl<'a> EnumVariant<'a> {
     pub(super) fn new(
         item: &'a Item,
-        discriminants: Arc<LazyDiscriminants<'a>>,
+        discriminants: Rc<LazyDiscriminants<'a>>,
         index: usize,
     ) -> Self {
         Self {

@@ -1,4 +1,4 @@
-use std::{rc::Rc, sync::Arc};
+use std::rc::Rc;
 
 use rustdoc_types::{Abi, Item, Span};
 
@@ -110,7 +110,7 @@ impl Origin {
     pub(super) fn make_variant_vertex<'a>(
         &self,
         item: &'a Item,
-        discriminants: Arc<LazyDiscriminants<'a>>,
+        discriminants: Rc<LazyDiscriminants<'a>>,
         index: usize,
     ) -> Vertex<'a> {
         Vertex {

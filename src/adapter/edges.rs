@@ -1,5 +1,5 @@
 use rustdoc_types::{GenericBound::TraitBound, Id, ItemEnum, Variant, VariantKind};
-use std::sync::Arc;
+use std::rc::Rc;
 use trustfall::provider::{
     resolve_neighbors_with, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
     VertexIterator,
@@ -340,7 +340,7 @@ pub(super) fn resolve_enum_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                         }
                     })
                     .collect();
-                Arc::new(LazyDiscriminants::new(variants))
+                Rc::new(LazyDiscriminants::new(variants))
             };
 
             Box::new(
