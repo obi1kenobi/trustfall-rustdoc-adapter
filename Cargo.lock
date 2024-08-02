@@ -222,9 +222,9 @@ checksum = "e5ea92a5b6195c6ef2a0295ea818b312502c6fc94dde986c5553242e18fd4ce2"
 
 [[package]]
 name = "rustdoc-types"
-version = "0.28.0"
+version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92b1b819622d1b7f20e0bd80d548cb0eb3bb157748411afc83335573a2de1f50"
+checksum = "5df53bab0198f33fc88c110aaabdb2df2cfee4b8a72aeaf942088e12bb305142"
 dependencies = [
  "serde",
 ]
@@ -340,7 +340,7 @@ dependencies = [
 
 [[package]]
 name = "trustfall-rustdoc-adapter"
-version = "32.0.0"
+version = "33.0.0"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
