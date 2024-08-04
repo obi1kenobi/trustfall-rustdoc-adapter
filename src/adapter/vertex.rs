@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{borrow::Cow, rc::Rc};
 
 use rustdoc_types::{
     Abi, Constant, Crate, Enum, Function, Impl, Item, Module, Path, Span, Static, Struct, Trait,
@@ -36,7 +36,7 @@ pub enum VertexKind<'a> {
     ImplementedTrait(&'a Path, &'a Item),
     FunctionParameter(&'a str),
     FunctionAbi(&'a Abi),
-    Discriminant(String),
+    Discriminant(Cow<'a, str>),
     Variant(EnumVariant<'a>),
 }
 
@@ -52,18 +52,17 @@ impl<'a> Typename for Vertex<'a> {
                 rustdoc_types::ItemEnum::Enum(..) => "Enum",
                 rustdoc_types::ItemEnum::Union(..) => "Union",
                 rustdoc_types::ItemEnum::Function(..) => "Function",
+                rustdoc_types::ItemEnum::Variant(variant) => match variant.kind {
+                    VariantKind::Plain => "PlainVariant",
+                    VariantKind::Tuple(..) => "TupleVariant",
+                    VariantKind::Struct { .. } => "StructVariant",
+                },
                 rustdoc_types::ItemEnum::StructField(..) => "StructField",
                 rustdoc_types::ItemEnum::Impl(..) => "Impl",
                 rustdoc_types::ItemEnum::Trait(..) => "Trait",
                 rustdoc_types::ItemEnum::Constant(..) => "Constant",
                 rustdoc_types::ItemEnum::Static(..) => "Static",
                 rustdoc_types::ItemEnum::AssocType { .. } => "AssociatedType",
-                // TODO: How are we even here???
-                rustdoc_types::ItemEnum::Variant(variant) => match variant.kind {
-                    VariantKind::Plain => "PlainVariant",
-                    VariantKind::Tuple(..) => "TupleVariant",
-                    VariantKind::Struct { .. } => "StructVariant",
-                },
                 _ => unreachable!("unexpected item.inner for item: {item:?}"),
             },
             VertexKind::Span(..) => "Span",
@@ -271,7 +270,7 @@ impl<'a> Vertex<'a> {
         }
     }
 
-    pub(super) fn as_discriminant(&self) -> Option<&String> {
+    pub(super) fn as_discriminant(&self) -> Option<&Cow<'a, str>> {
         match &self.kind {
             VertexKind::Discriminant(variant) => Some(variant),
             _ => None,

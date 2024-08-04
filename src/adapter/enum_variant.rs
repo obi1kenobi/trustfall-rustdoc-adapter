@@ -1,23 +1,25 @@
 use rustdoc_types::{Item, ItemEnum, Variant};
+use std::borrow::Cow;
+use std::cell::OnceCell;
 use std::fmt;
 use std::num::ParseIntError;
 use std::rc::Rc;
-use std::cell::OnceCell;
 use std::str::FromStr;
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub(super) struct EnumVariant<'a> {
     item: &'a Item,
-    discriminants: Rc<LazyDiscriminants<'a>>,
-    index: usize,
+    // HACK: to get around closure bounds seen in ./edges.rs:301
+    pub(super) discriminants: Rc<LazyDiscriminants<'a>>,
+    pub(super) index: usize,
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub(super) struct LazyDiscriminants<'a> {
     variants: Vec<&'a Variant>,
-    discriminants: OnceCell<Vec<String>>,
+    discriminants: OnceCell<Vec<Cow<'a, str>>>,
 }
 
 impl<'a> LazyDiscriminants<'a> {
@@ -28,7 +30,7 @@ impl<'a> LazyDiscriminants<'a> {
         }
     }
 
-    pub(super) fn get_discriminants(&self) -> &Vec<String> {
+    pub(super) fn get_discriminants(&self) -> &Vec<Cow<'a, str>> {
         self.discriminants
             .get_or_init(|| assign_discriminants(&self.variants))
     }
@@ -54,12 +56,13 @@ impl<'a> EnumVariant<'a> {
         }
     }
 
-    pub(super) fn discriminant(&'a self) -> &'a String {
-        self.discriminants
-            .get_discriminants()
-            .get(self.index)
-            .unwrap()
-    }
+    // HACK: to get around closure bounds seen in ./edges.rs:301
+    // pub(super) fn discriminant(&'a self) -> &'a Cow<'a, str> {
+    //     self.discriminants
+    //         .get_discriminants()
+    //         .get(self.index)
+    //         .unwrap()
+    // }
 }
 
 enum DiscriminantValue {
@@ -161,16 +164,16 @@ impl FromStr for DiscriminantValue {
 }
 
 /// <https://doc.rust-lang.org/reference/items/enumerations.html#assigning-discriminant-values>
-pub(super) fn assign_discriminants(variants: &Vec<&Variant>) -> Vec<String> {
+pub(super) fn assign_discriminants<'a>(variants: &Vec<&'a Variant>) -> Vec<Cow<'a, str>> {
     let mut last: DiscriminantValue = DiscriminantValue::I64(0);
-    let mut discriminants: Vec<String> = Vec::with_capacity(variants.len());
+    let mut discriminants: Vec<Cow<'a, str>> = Vec::with_capacity(variants.len());
     for v in variants {
         discriminants.push(match &v.discriminant {
             Some(d) => {
                 last = DiscriminantValue::from_str(&d.value).unwrap();
-                d.value.clone()
+                Cow::Borrowed(&d.value)
             }
-            None => last.to_string(),
+            None => Cow::Owned(last.to_string()),
         });
         if !last.max() {
             last = last.increment();

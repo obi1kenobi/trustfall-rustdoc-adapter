@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{borrow::Cow, rc::Rc};
 
 use rustdoc_types::{Abi, Item, Span};
 
@@ -100,7 +100,7 @@ impl Origin {
         }
     }
 
-    pub(super) fn make_discriminant_vertex<'a>(&self, value: String) -> Vertex<'a> {
+    pub(super) fn make_discriminant_vertex<'a>(&self, value: Cow<'a, str>) -> Vertex<'a> {
         Vertex {
             origin: *self,
             kind: VertexKind::Discriminant(value),

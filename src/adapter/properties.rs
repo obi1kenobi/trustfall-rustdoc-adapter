@@ -570,7 +570,7 @@ pub(crate) fn resolve_discriminant_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             vertex
                 .as_discriminant()
                 .expect("vertex was not a Discriminant")
-                .clone()
+                .to_string()
                 .into()
         }),
         _ => unreachable!("Discriminant property {property_name}"),

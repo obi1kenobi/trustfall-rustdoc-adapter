@@ -298,9 +298,19 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
         }),
         "discriminant" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let enum_var = vertex.as_enum_variant().expect("vertex was not a Variant");
+            // HACK: to get around closure bounds
+            let enum_var = match &vertex.kind {
+                super::VertexKind::Variant(var) => var,
+                _ => unreachable!("vertex was not a Variant"),
+            };
+            let discriminant = enum_var
+                .discriminants
+                .get_discriminants()
+                .get(enum_var.index)
+                .unwrap()
+                .clone();
             Box::new(std::iter::once(
-                origin.make_discriminant_vertex(enum_var.discriminant().clone()),
+                origin.make_discriminant_vertex(discriminant),
             ))
         }),
         _ => unreachable!("resolve_variant_edge {edge_name}"),
