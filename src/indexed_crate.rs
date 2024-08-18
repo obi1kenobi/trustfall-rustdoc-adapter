@@ -1,11 +1,12 @@
 use std::{
     borrow::Borrow,
+    cell::RefCell,
     collections::{BTreeSet, HashMap},
 };
 
 use rustdoc_types::{Crate, Id, Item};
 
-use crate::{adapter::supported_item_kind, visibility_tracker::VisibilityTracker};
+use crate::{adapter::supported_item_kind, sealed_trait, visibility_tracker::VisibilityTracker};
 
 /// The rustdoc for a crate, together with associated indexed data to speed up common operations.
 ///
@@ -24,6 +25,11 @@ pub struct IndexedCrate<'a> {
 
     /// index: impl owner + impl'd item name -> list of (impl itself, the named item))
     pub(crate) impl_index: Option<HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>>,
+
+    /// Caching whether a trait by the given `Id`` is known to be sealed, or known to be unsealed.
+    ///
+    /// If the `Id` isn't present in the cache, the trait's sealed status has not yet been computed.
+    sealed_trait_cache: RefCell<HashMap<&'a Id, bool>>,
 
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
     /// even if they are implemented by a type in that crate. This also includes
@@ -49,6 +55,7 @@ impl<'a> IndexedCrate<'a> {
             manually_inlined_builtin_traits: create_manually_inlined_builtin_traits(crate_),
             imports_index: None,
             impl_index: None,
+            sealed_trait_cache: Default::default(),
         };
 
         let mut imports_index: HashMap<Path, Vec<(&Item, Modifiers)>> =
@@ -152,6 +159,63 @@ impl<'a> IndexedCrate<'a> {
         } else {
             Default::default()
         }
+    }
+
+    /// Return `true` if our analysis indicates the trait is sealed, and `false` otherwise.
+    ///
+    /// Our analysis is conservative: it has false-negatives but no false-positives.
+    /// If this method returns `true`, the trait is *definitely* sealed or else you've found a bug.
+    /// It may be possible to construct traits that *technically* are sealed for which our analysis
+    /// returns `false`.
+    ///
+    /// The goal of this method is to reflect author intent, not technicalities.
+    /// When Rustaceans seal traits on purpose, they do so with a limited number of techniques
+    /// that are well-defined and immediately recognizable to readers in the community:
+    /// - <https://predr.ag/blog/definitive-guide-to-sealed-traits-in-rust/>
+    /// - <https://jack.wrenn.fyi/blog/private-trait-methods/>
+    ///
+    /// The analysis here looks for such techniques, which are always applied at the type signature
+    /// level. It does not inspect function bodies or do interprocedural analysis.
+    ///
+    /// ## Panics
+    ///
+    /// This method will panic if the provided `id` is not an item in this crate,
+    /// or does not correspond to a trait in this crate.
+    ///
+    /// ## Re-entrancy
+    ///
+    /// This method is re-entrant: calling it may cause additional calls to itself, inquiring about
+    /// the sealed-ness of a trait's supertraits.
+    ///
+    /// We rely on rustc to reject supertrait cycles in order to prevent infinite loops.
+    /// Here's a supertrait cycle that must be rejected by rustc:
+    /// ```compile_fail
+    /// pub trait First: Third {}
+    ///
+    /// pub trait Second: First {}
+    ///
+    /// pub trait Third: Second {}
+    /// ```
+    pub fn is_trait_sealed(&self, id: &'a Id) -> bool {
+        let cache_ref = self.sealed_trait_cache.borrow();
+        if let Some(cached) = cache_ref.get(id) {
+            return *cached;
+        }
+
+        // Explicitly drop the ref, because this method is re-entrant
+        // and may need to write in a subsequent re-entrant call.
+        drop(cache_ref);
+
+        let trait_item = &self.inner.index[id];
+        let decision = sealed_trait::is_trait_sealed(self, trait_item);
+
+        // Unfortunately there's no easy way to avoid the double-hashing here.
+        // This method is re-entrant (we may need to decide if a supertrait is sealed *first*),
+        // and the borrow-checker doesn't like holding the `entry()` API's mut borrow
+        // while resolving the answer in `.or_insert_with()`.
+        self.sealed_trait_cache.borrow_mut().insert(id, decision);
+
+        decision
     }
 }
 
