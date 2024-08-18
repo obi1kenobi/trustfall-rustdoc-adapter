@@ -7,9 +7,9 @@ use trustfall::{
     FieldValue,
 };
 
-use crate::attributes::Attribute;
+use crate::{attributes::Attribute, IndexedCrate};
 
-use super::vertex::Vertex;
+use super::{origin::Origin, vertex::Vertex};
 
 pub(super) fn resolve_crate_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
@@ -456,10 +456,23 @@ pub(super) fn resolve_raw_type_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
+    current_crate: &'a IndexedCrate<'a>,
+    previous_crate: Option<&'a IndexedCrate<'a>>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "unsafe" => resolve_property_with(contexts, field_property!(as_trait, is_unsafe)),
         "object_safe" => resolve_property_with(contexts, field_property!(as_trait, is_object_safe)),
+        "sealed" => resolve_property_with(contexts, move |vertex| {
+            let trait_item = vertex.as_item().expect("not an Item");
+            let origin = vertex.origin;
+
+            let indexed_crate = match origin {
+                Origin::CurrentCrate => current_crate,
+                Origin::PreviousCrate => previous_crate.expect("no previous crate provided"),
+            };
+
+            indexed_crate.is_trait_sealed(&trait_item.id).into()
+        }),
         _ => unreachable!("Trait property {property_name}"),
     }
 }
