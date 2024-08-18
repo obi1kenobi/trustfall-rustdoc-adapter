@@ -12,6 +12,21 @@ use trustfall::{Schema, TryIntoStruct};
 
 use crate::{IndexedCrate, RustdocAdapter};
 
+#[allow(dead_code)]
+mod type_level_invariants {
+    use crate::{IndexedCrate, RustdocAdapter};
+
+    fn ensure_send_and_sync<T: Send + Sync>(_value: &T) {}
+
+    fn ensure_indexed_crate_is_sync(value: &IndexedCrate<'_>) {
+        ensure_send_and_sync(value);
+    }
+
+    fn ensure_adapter_is_sync(value: &RustdocAdapter<'_>) {
+        ensure_send_and_sync(value);
+    }
+}
+
 #[test]
 fn rustdoc_json_format_version() {
     let path = "./localdata/test_data/reexport/rustdoc.json";

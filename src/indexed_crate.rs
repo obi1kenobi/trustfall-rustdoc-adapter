@@ -1,6 +1,5 @@
 use std::{
     borrow::Borrow,
-    cell::RefCell,
     collections::{BTreeSet, HashMap},
 };
 
@@ -26,11 +25,6 @@ pub struct IndexedCrate<'a> {
     /// index: impl owner + impl'd item name -> list of (impl itself, the named item))
     pub(crate) impl_index: Option<HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>>,
 
-    /// Caching whether a trait by the given `Id`` is known to be sealed, or known to be unsealed.
-    ///
-    /// If the `Id` isn't present in the cache, the trait's sealed status has not yet been computed.
-    sealed_trait_cache: RefCell<HashMap<&'a Id, bool>>,
-
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
     /// even if they are implemented by a type in that crate. This also includes
     /// Rust's built-in traits like `Debug, Send, Eq` etc.
@@ -55,7 +49,6 @@ impl<'a> IndexedCrate<'a> {
             manually_inlined_builtin_traits: create_manually_inlined_builtin_traits(crate_),
             imports_index: None,
             impl_index: None,
-            sealed_trait_cache: Default::default(),
         };
 
         let mut imports_index: HashMap<Path, Vec<(&Item, Modifiers)>> =
@@ -171,8 +164,7 @@ impl<'a> IndexedCrate<'a> {
     /// The goal of this method is to reflect author intent, not technicalities.
     /// When Rustaceans seal traits on purpose, they do so with a limited number of techniques
     /// that are well-defined and immediately recognizable to readers in the community:
-    /// - <https://predr.ag/blog/definitive-guide-to-sealed-traits-in-rust/>
-    /// - <https://jack.wrenn.fyi/blog/private-trait-methods/>
+    /// <https://predr.ag/blog/definitive-guide-to-sealed-traits-in-rust/>
     ///
     /// The analysis here looks for such techniques, which are always applied at the type signature
     /// level. It does not inspect function bodies or do interprocedural analysis.
@@ -197,25 +189,8 @@ impl<'a> IndexedCrate<'a> {
     /// pub trait Third: Second {}
     /// ```
     pub fn is_trait_sealed(&self, id: &'a Id) -> bool {
-        let cache_ref = self.sealed_trait_cache.borrow();
-        if let Some(cached) = cache_ref.get(id) {
-            return *cached;
-        }
-
-        // Explicitly drop the ref, because this method is re-entrant
-        // and may need to write in a subsequent re-entrant call.
-        drop(cache_ref);
-
         let trait_item = &self.inner.index[id];
-        let decision = sealed_trait::is_trait_sealed(self, trait_item);
-
-        // Unfortunately there's no easy way to avoid the double-hashing here.
-        // This method is re-entrant (we may need to decide if a supertrait is sealed *first*),
-        // and the borrow-checker doesn't like holding the `entry()` API's mut borrow
-        // while resolving the answer in `.or_insert_with()`.
-        self.sealed_trait_cache.borrow_mut().insert(id, decision);
-
-        decision
+        sealed_trait::is_trait_sealed(self, trait_item)
     }
 }
 
