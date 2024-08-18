@@ -18,13 +18,11 @@ pub(crate) fn is_trait_sealed<'a>(indexed_crate: &IndexedCrate<'a>, trait_item: 
     }
 
     // Does the trait have a method that:
-    // - does not have a default impl, and either:
-    //   a. takes at least one non-`self` argument that is pub-in-priv, or
-    //   b. has a generic parameter that causes it to be generic-sealed
-    // If so, the trait is method-sealed or generic-sealed, per:
+    // - does not have a default impl, and
+    // - takes at least one non-`self` argument that is pub-in-priv
+    //
+    // If so, the trait is method-sealed, per:
     // https://predr.ag/blog/definitive-guide-to-sealed-traits-in-rust/#sealing-traits-via-method-signatures
-    // https://jack.wrenn.fyi/blog/private-trait-methods/
-    // https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&gist=3393c3ae143cb75c9da7bfe6e8ff8084
     if is_method_sealed(indexed_crate, trait_inner) {
         return true;
     }
@@ -108,71 +106,10 @@ fn is_method_sealed<'a>(indexed_crate: &IndexedCrate<'a>, trait_inner: &'a Trait
                     }
                 }
             }
-
-            // Check for generics-sealed methods, as described in:
-            // https://jack.wrenn.fyi/blog/private-trait-methods/
-            // https://www.reddit.com/r/rust/comments/12cj6as/comment/jf21zsm/
-            for generic_param in &func.generics.params {
-                match &generic_param.kind {
-                    rustdoc_types::GenericParamDefKind::Type {
-                        bounds, default, ..
-                    } => {
-                        // If the generic parameter has a default, it can't be used to seal.
-                        if default.is_none() {
-                            for bound in bounds {
-                                if is_generic_type_bound_sealed(indexed_crate, bound) {
-                                    return true;
-                                }
-                            }
-                        }
-                    }
-                    _ => continue,
-                }
-            }
         }
     }
 
     false
-}
-
-fn is_generic_type_bound_sealed<'a>(
-    indexed_crate: &IndexedCrate<'a>,
-    bound: &'a rustdoc_types::GenericBound,
-) -> bool {
-    match bound {
-        rustdoc_types::GenericBound::TraitBound {
-            trait_: trait_path, ..
-        } => {
-            // For the bound to be sealing, it needs to:
-            // - point to a pub-in-priv trait in this crate.
-            // - all supertraits of the pub-in-priv trait must also be pub-in-priv
-            let Some(item) = indexed_crate.inner.index.get(&trait_path.id) else {
-                // Not an item in this crate.
-                return false;
-            };
-            if !is_pub_in_priv_item(indexed_crate, &item.id) {
-                return false;
-            }
-
-            let trait_item = unwrap_trait(item);
-
-            // Check all supertraits to ensure they are pub-in-priv as well.
-            for trait_bounds in &trait_item.bounds {
-                if let rustdoc_types::GenericBound::TraitBound {
-                    trait_: inner_trait_path,
-                    ..
-                } = trait_bounds
-                {
-                    if !is_local_pub_in_priv_path(indexed_crate, inner_trait_path) {
-                        return false;
-                    }
-                }
-            }
-
-            true
-        }
-        _ => false,
-    }
 }
 
 fn is_local_pub_in_priv_path<'a>(
