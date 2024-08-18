@@ -34,13 +34,23 @@ pub trait NotMethodSealedBecauseOfDefaultImpl {
 /// This trait is *not* sealed. Its supertrait is also not sealed.
 pub trait NotTransitivelySealed: NotMethodSealedBecauseOfDefaultImpl {}
 
-/// This trait's method is generic-sealed: downstream implementors are not able
-/// to write the trait bound since the internal marker trait is pub-in-priv.
-pub trait GenericSealed {
+/// This trait's method is generic-sealed, but the trait itself is *not* sealed!
+/// Downstream users aren't able to call this method because
+/// type-privacy will prevent inference of `IM` since the marker trait is pub-in-priv.
+/// But downstream implementations are possible:
+///
+/// ```rust
+/// struct Foo;
+///
+/// impl sealed_traits::TraitUnsealedButMethodGenericSealed for Foo {
+///     fn method<IM>(&self) {}
+/// }
+/// ```
+pub trait TraitUnsealedButMethodGenericSealed {
     fn method<IM: private::InternalMarker>(&self);
 }
 
-/// This trait is *not* sealed. Its method cannot be overridden,
+/// This trait is *not* sealed. Its method cannot be called, but can be overridden and
 /// but implementing it is not required since the trait offers a default impl.
 pub trait NotGenericSealedBecauseOfDefaultImpl {
     fn private_method<IM: private::InternalMarker>(&self) {}
@@ -65,7 +75,7 @@ pub mod generic_seal {
         pub trait Marker: super::Super {}
     }
 
-    /// This trait is *not* generic-sealed.
+    /// This trait is *not* generic-sealed, and neither is its method.
     ///
     /// While the `Marker` trait bound is pub-in-priv, it has a public supertrait `Super`.
     /// The `Super` bound can be used downstream to implement this trait:
@@ -77,6 +87,17 @@ pub mod generic_seal {
     ///
     /// impl NotGenericSealedBecauseOfPubSupertrait for Example {
     ///     fn method<IM: Super>(&self) {}
+    /// }
+    /// ```
+    ///
+    /// An unbounded `IM` implementation is also allowed:
+    /// ```rust
+    /// use sealed_traits::generic_seal::NotGenericSealedBecauseOfPubSupertrait;
+    ///
+    /// struct Example;
+    ///
+    /// impl NotGenericSealedBecauseOfPubSupertrait for Example {
+    ///     fn method<IM>(&self) {}
     /// }
     /// ```
     pub trait NotGenericSealedBecauseOfPubSupertrait {
