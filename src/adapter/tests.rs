@@ -239,8 +239,8 @@ fn rustdoc_sealed_traits() {
             sealed: false,
         },
         Output {
-            name: "GenericSealed".into(),
-            sealed: true,
+            name: "TraitUnsealedButMethodGenericSealed".into(),
+            sealed: false,
         },
         Output {
             name: "NotGenericSealedBecauseOfDefaultImpl".into(),
