@@ -152,6 +152,7 @@ jobs:
     needs:
       - ci-everything
       - should-publish
+    continue-on-error: true
     if: needs.should-publish.outputs.is_new_version == 'yes'
     steps:
       - name: Checkout
