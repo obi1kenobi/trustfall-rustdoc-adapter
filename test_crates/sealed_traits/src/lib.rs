@@ -15,6 +15,12 @@ pub trait TransitivelyTraitSealed: DirectlyTraitSealed {}
 /// This trait is sealed, and happens to have more than one supertrait.
 pub trait SealedTraitWithStdSupertrait: AsRef<()> + private::Sealed {}
 
+trait PrivateSealed {}
+
+/// This trait is sealed with a supertrait that is private, not pub-in-priv.
+#[allow(private_bounds)]
+pub trait SealedWithPrivateSupertrait: PrivateSealed {}
+
 pub trait Unsealed {}
 
 /// This trait is sealed because its argument type is pub-in-priv,
