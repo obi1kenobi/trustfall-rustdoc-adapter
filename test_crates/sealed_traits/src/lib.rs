@@ -12,6 +12,9 @@ pub trait DirectlyTraitSealed: private::Sealed {}
 /// This trait is sealed since nobody can implement its supertrait.
 pub trait TransitivelyTraitSealed: DirectlyTraitSealed {}
 
+/// This trait is sealed, and happens to have more than one supertrait.
+pub trait SealedTraitWithStdSupertrait: AsRef<()> + private::Sealed {}
+
 pub trait Unsealed {}
 
 /// This trait is sealed because its argument type is pub-in-priv,
