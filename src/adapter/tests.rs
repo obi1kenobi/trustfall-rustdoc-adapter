@@ -234,6 +234,10 @@ fn rustdoc_sealed_traits() {
             sealed: true,
         },
         Output {
+            name: "SealedTraitWithStdSupertrait".into(),
+            sealed: true,
+        },
+        Output {
             name: "Unsealed".into(),
             sealed: false,
         },
