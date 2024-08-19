@@ -56,7 +56,7 @@ fn has_sealed_supertrait<'a>(indexed_crate: &IndexedCrate<'a>, inner: &'a Trait)
                         // TODO: Once we have the ability to do cross-crate analysis, consider
                         //       whether this external trait is sealed. That can have
                         //       some interesting SemVer implications as well.
-                        return false;
+                        continue;
                     }
                 }
             }
