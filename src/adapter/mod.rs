@@ -120,7 +120,10 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     properties::resolve_importable_path_property(contexts, property_name)
                 }
                 "FunctionLike" | "Function" | "Method"
-                    if matches!(property_name.as_ref(), "const" | "unsafe" | "async") =>
+                    if matches!(
+                        property_name.as_ref(),
+                        "const" | "unsafe" | "async" | "has_body"
+                    ) =>
                 {
                     properties::resolve_function_like_property(contexts, property_name)
                 }
