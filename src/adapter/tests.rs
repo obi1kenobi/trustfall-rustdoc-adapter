@@ -238,6 +238,14 @@ fn rustdoc_sealed_traits() {
             sealed: true,
         },
         Output {
+            name: "PrivateSealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "SealedWithPrivateSupertrait".into(),
+            sealed: true,
+        },
+        Output {
             name: "Unsealed".into(),
             sealed: false,
         },
