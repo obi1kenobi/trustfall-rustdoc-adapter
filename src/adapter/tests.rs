@@ -1868,7 +1868,7 @@ fn function_has_body() {
         },
         Output {
             name: "trait_with_body".into(),
-            has_body: false,
+            has_body: true,
         },
         Output {
             name: "extern_no_body".into(),

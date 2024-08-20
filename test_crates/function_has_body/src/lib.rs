@@ -9,7 +9,7 @@ impl Foo {
 pub trait Bar {
     fn trait_no_body();
 
-    fn trait_with_body();
+    fn trait_with_body() {}
 }
 
 extern "C" {
