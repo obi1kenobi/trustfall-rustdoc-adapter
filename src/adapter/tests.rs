@@ -1818,8 +1818,6 @@ fn function_has_body() {
     let indexed_crate = IndexedCrate::new(&crate_);
     let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
 
-    // Part 1: make sure unions have correct visibility (similart to importable_paths
-
     let query = r#"
 {
     Crate {
