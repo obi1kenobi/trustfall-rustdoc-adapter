@@ -1806,3 +1806,78 @@ fn unions() {
 
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn function_has_body() {
+    let path = "./localdata/test_data/function_has_body/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    // Part 1: make sure unions have correct visibility (similart to importable_paths
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+                has_body @output
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        has_body: bool,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "top_level".into(),
+            has_body: true,
+        },
+        Output {
+            name: "inside_impl_block".into(),
+            has_body: true,
+        },
+        Output {
+            name: "trait_no_body".into(),
+            has_body: false,
+        },
+        Output {
+            name: "trait_with_body".into(),
+            has_body: false,
+        },
+        Output {
+            name: "extern_no_body".into(),
+            has_body: false,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
