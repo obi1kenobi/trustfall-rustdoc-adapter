@@ -247,6 +247,10 @@ pub(super) fn resolve_function_like_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             contexts,
             field_property!(as_function, header, { header.unsafe_.into() }),
         ),
+        "has_body" => resolve_property_with(
+            contexts,
+            field_property!(as_function, has_body, { (*has_body).into() }),
+        ),
         _ => unreachable!("FunctionLike property {property_name}"),
     }
 }
