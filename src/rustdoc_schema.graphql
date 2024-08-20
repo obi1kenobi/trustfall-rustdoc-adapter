@@ -1011,6 +1011,7 @@ interface FunctionLike {
   const: Boolean!
   unsafe: Boolean!
   async: Boolean!
+  has_body: Boolean!
 
   # own edges
   parameter: [FunctionParameter!]
@@ -1123,6 +1124,7 @@ type Function implements Item & FunctionLike & Importable {
   const: Boolean!
   unsafe: Boolean!
   async: Boolean!
+  has_body: Boolean!
 
   # own properties
   """
@@ -1211,6 +1213,7 @@ type Method implements Item & FunctionLike {
   const: Boolean!
   unsafe: Boolean!
   async: Boolean!
+  has_body: Boolean!
 
   # edge from Item
   span: Span
