@@ -50,8 +50,19 @@ Modify the `src/rustdoc_schema.graphql` file to declare the new information you 
 
 Crawl `src/adapter/mod.rs` to find the part that handle the query fragment you modified.
 
-- If the information is trivial, you can simply expose it from the `rustdoc` types using the `field_property!()` macro.
-- Sometimes, this information is not core to rustdoc types (e.g. sealed types). You can implement your own logic into `resolve_property_with`.
+- Properties
+
+  - If the information is trivial, you can simply expose it from the `rustdoc` types using the `field_property!()` macro.
+
+  - Sometimes, this information is not core to rustdoc types (e.g. sealed types). You can implement your own logic into `resolve_property_with`.
+
+- Edges
+
+  TODO
+
+- Vertex
+
+  TODO
 
 Create a test crate in `test_crates` with `cargo new <test_crate_name> --lib` and add query tests in `src/adapter/tests.rs`.
 
