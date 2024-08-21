@@ -635,6 +635,7 @@ dependencies = [
  "criterion",
  "itertools 0.12.1",
  "maplit",
+ "rayon",
  "rustdoc-types",
  "serde",
  "serde_json",
