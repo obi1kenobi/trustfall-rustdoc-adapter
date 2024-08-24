@@ -1,3 +1,6 @@
+#[cfg(feature = "rustc-hash")]
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+#[cfg(not(feature = "rustc-hash"))]
 use std::collections::{HashMap, HashSet};
 
 use rustdoc_types::{Crate, GenericArgs, Id, Item, ItemEnum, TypeAlias, Visibility};
