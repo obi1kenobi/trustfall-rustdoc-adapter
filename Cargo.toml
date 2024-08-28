@@ -13,6 +13,14 @@ readme = "./README.md"
 [dependencies]
 trustfall = "0.7.1"
 rustdoc-types = "0.28.0"
+rayon = { version = "1.10.0", optional = true }
+
+[features]
+default = []
+# Enable rayon for speeding up building `IndexedCrate`, this massively improves
+# performance on big crates, but may impact performance on small crates and
+# definitely increases the memory usage
+rayon = ["dep:rayon"]
 
 [[bench]]
 name = "indexed_crate"
