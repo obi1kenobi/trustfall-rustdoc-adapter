@@ -17,7 +17,7 @@ impl<'a> VisibilityTracker<'a> {
     pub(crate) fn from_crate(crate_: &'a Crate) -> Self {
         let mut visible_parent_ids = compute_parent_ids_for_public_items(crate_);
 
-        // Sort and deduplicate parent ids
+        // Sort and deduplicate parent ids.
         // This ensures a consistent order, since queries can observe this order directly.
         visible_parent_ids.iter_mut().for_each(|(_id, parent_ids)| {
             parent_ids.sort_unstable_by_key(|id| id.0.as_str());
