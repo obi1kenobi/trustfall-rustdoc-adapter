@@ -88,6 +88,12 @@ jobs:
       - name: test
         run: cargo test
 
+      - name: compile with rayon
+        run: cargo test --no-run --features rayon
+
+      - name: test with rayon
+        run: cargo test --features rayon
+
   publish:
     name: Publish to crates.io
     runs-on: ubuntu-latest

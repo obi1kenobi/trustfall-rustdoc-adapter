@@ -3,6 +3,8 @@ use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
 };
 
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
 use rustdoc_types::{Crate, Id, Item};
 
 use crate::{adapter::supported_item_kind, sealed_trait, visibility_tracker::VisibilityTracker};
@@ -46,6 +48,29 @@ pub struct IndexedCrate<'a> {
 /// It also has some nice operations for pushing a value to the list, or extending the list with
 /// many values.
 struct MapList<K, V>(HashMap<K, Vec<V>>);
+
+#[cfg(feature = "rayon")]
+impl<K: std::cmp::Eq + std::hash::Hash + Send, V: Send> FromParallelIterator<(K, V)>
+    for MapList<K, V>
+{
+    #[inline]
+    fn from_par_iter<I>(par_iter: I) -> Self
+    where
+        I: IntoParallelIterator<Item = (K, V)>,
+    {
+        par_iter
+            .into_par_iter()
+            .fold(Self::new, |mut map, (key, value)| {
+                map.insert(key, value);
+                map
+            })
+            // Reduce left is faster than reduce right (about 19% less time in our benchmarks)
+            .reduce(Self::new, |mut l, r| {
+                l.merge(r);
+                l
+            })
+    }
+}
 
 impl<K: std::cmp::Eq + std::hash::Hash, V> FromIterator<(K, V)> for MapList<K, V> {
     #[inline]
@@ -91,6 +116,26 @@ impl<K: std::cmp::Eq + std::hash::Hash, V> MapList<K, V> {
             }
         }
     }
+
+    #[inline]
+    #[cfg(feature = "rayon")]
+    pub fn insert_many(&mut self, key: K, mut value: Vec<V>) {
+        match self.0.entry(key) {
+            Entry::Occupied(mut entry) => entry.get_mut().append(&mut value),
+            Entry::Vacant(entry) => {
+                entry.insert(value);
+            }
+        }
+    }
+
+    #[inline]
+    #[cfg(feature = "rayon")]
+    pub fn merge(&mut self, other: Self) {
+        self.0.reserve(other.0.len());
+        for (key, value) in other.0 {
+            self.insert_many(key, value);
+        }
+    }
 }
 
 /// Build the impl index
@@ -98,6 +143,9 @@ impl<K: std::cmp::Eq + std::hash::Hash, V> MapList<K, V> {
 /// When compiled using the `rayon` feature, build it in parallel. Specifically, this paralelizes
 /// the work of gathering all of the impls for the items in the index.
 fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item, &Item)> {
+    #[cfg(feature = "rayon")]
+    let iter = index.par_iter();
+    #[cfg(not(feature = "rayon"))]
     let iter = index.iter();
     iter.filter_map(|(id, item)| {
         let impls = match &item.inner {
@@ -107,6 +155,9 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
             _ => return None,
         };
 
+        #[cfg(feature = "rayon")]
+        let iter = impls.par_iter();
+        #[cfg(not(feature = "rayon"))]
         let iter = impls.iter();
 
         Some((id, iter.filter_map(|impl_id| index.get(impl_id))))
@@ -136,6 +187,9 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
                 })
                 .unwrap_or(&[]);
 
+            #[cfg(feature = "rayon")]
+            let trait_items = trait_items.par_iter();
+            #[cfg(not(feature = "rayon"))]
             let trait_items = trait_items.iter();
 
             let trait_provided_items = trait_items
@@ -159,6 +213,9 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
                     )
                 });
 
+            #[cfg(feature = "rayon")]
+            let impl_items = impl_inner.items.par_iter();
+            #[cfg(not(feature = "rayon"))]
             let impl_items = impl_inner.items.iter();
 
             impl_items
@@ -187,23 +244,32 @@ impl<'a> IndexedCrate<'a> {
         //
         // This is inlined because we need access to `value`, but `value` is not a valid
         // `IndexedCrate` yet. Do not extract into a separate function.
+        #[cfg(feature = "rayon")]
+        let iter = crate_.index.par_iter();
+        #[cfg(not(feature = "rayon"))]
+        let iter = crate_.index.iter();
+
         value.imports_index = Some(
-            crate_
-                .index
-                .iter()
-                .filter_map(|(_id, item)| {
-                    if !supported_item_kind(item) {
-                        return None;
-                    }
-                    let importable_paths = value.publicly_importable_names(&item.id);
-                    Some(importable_paths.into_iter().map(move |importable_path| {
-                        (importable_path.path, (item, importable_path.modifiers))
-                    }))
-                })
-                .flatten()
-                .collect::<MapList<_, _>>()
-                .into_inner(),
+            iter.filter_map(|(_id, item)| {
+                if !supported_item_kind(item) {
+                    return None;
+                }
+                let importable_paths = value.publicly_importable_names(&item.id);
+
+                #[cfg(feature = "rayon")]
+                let iter = importable_paths.into_par_iter();
+                #[cfg(not(feature = "rayon"))]
+                let iter = importable_paths.into_iter();
+
+                Some(iter.map(move |importable_path| {
+                    (importable_path.path, (item, importable_path.modifiers))
+                }))
+            })
+            .flatten()
+            .collect::<MapList<_, _>>()
+            .into_inner(),
         );
+
         value.impl_index = Some(build_impl_index(&crate_.index).into_inner());
 
         value
