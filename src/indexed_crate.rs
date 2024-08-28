@@ -186,7 +186,7 @@ impl<'a> IndexedCrate<'a> {
         // Build the imports index
         //
         // This is inlined because we need access to `value`, but `value` is not a valid
-        // `IndexedCrate` yet, do not extract into a separate function.
+        // `IndexedCrate` yet. Do not extract into a separate function.
         value.imports_index = Some(
             crate_
                 .index
