@@ -16,3 +16,8 @@ test_crates/**/Cargo.lock
 
 # ide
 .idea
+
+# Benchmarks and profiling related data
+flamegraph.svg
+perf.data
+perf.data.old
