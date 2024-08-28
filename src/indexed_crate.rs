@@ -1,6 +1,6 @@
 use std::{
     borrow::Borrow,
-    collections::{BTreeSet, HashMap},
+    collections::{hash_map::Entry, HashMap, HashSet},
 };
 
 use rustdoc_types::{Crate, Id, Item};
@@ -41,6 +41,138 @@ pub struct IndexedCrate<'a> {
     pub(crate) manually_inlined_builtin_traits: HashMap<Id, Item>,
 }
 
+/// Map a Key to a List (Vec) of values
+///
+/// It also has some nice operations for pushing a value to the list, or extending the list with
+/// many values.
+struct MapList<K, V>(HashMap<K, Vec<V>>);
+
+impl<K: std::cmp::Eq + std::hash::Hash, V> FromIterator<(K, V)> for MapList<K, V> {
+    #[inline]
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        // We could use Iterator::size_hint here to preallocate some space, but I couldn't measure
+        // a perf inprovement from that.
+        let mut map = Self::new();
+        for (key, value) in iter {
+            map.insert(key, value);
+        }
+        map
+    }
+}
+
+impl<K: std::cmp::Eq + std::hash::Hash, V> Extend<(K, V)> for MapList<K, V> {
+    #[inline]
+    fn extend<T: IntoIterator<Item = (K, V)>>(&mut self, iter: T) {
+        // We could use Iterator::size_hint here to reserve some space, but I measured a 2%-3%
+        // regression when doing that.
+        for (key, value) in iter.into_iter() {
+            self.insert(key, value);
+        }
+    }
+}
+
+impl<K: std::cmp::Eq + std::hash::Hash, V> MapList<K, V> {
+    #[inline]
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    #[inline]
+    pub fn into_inner(self) -> HashMap<K, Vec<V>> {
+        self.0
+    }
+
+    #[inline]
+    pub fn insert(&mut self, key: K, value: V) {
+        match self.0.entry(key) {
+            Entry::Occupied(mut entry) => entry.get_mut().push(value),
+            Entry::Vacant(entry) => {
+                entry.insert(vec![value]);
+            }
+        }
+    }
+}
+
+/// Build the impl index
+///
+/// When compiled using the `rayon` feature, build it in parallel. Specifically, this paralelizes
+/// the work of gathering all of the impls for the items in the index.
+fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item, &Item)> {
+    let iter = index.iter();
+    iter.filter_map(|(id, item)| {
+        let impls = match &item.inner {
+            rustdoc_types::ItemEnum::Struct(s) => s.impls.as_slice(),
+            rustdoc_types::ItemEnum::Enum(e) => e.impls.as_slice(),
+            rustdoc_types::ItemEnum::Union(u) => u.impls.as_slice(),
+            _ => return None,
+        };
+
+        let iter = impls.iter();
+
+        Some((id, iter.filter_map(|impl_id| index.get(impl_id))))
+    })
+    .flat_map(|(id, impl_items)| {
+        impl_items.flat_map(move |impl_item| {
+            let impl_inner = match &impl_item.inner {
+                rustdoc_types::ItemEnum::Impl(impl_inner) => impl_inner,
+                _ => unreachable!("expected impl but got another item type: {impl_item:?}"),
+            };
+            let trait_provided_methods: HashSet<_> = impl_inner
+                .provided_trait_methods
+                .iter()
+                .map(|x| x.as_str())
+                .collect();
+
+            let trait_items = impl_inner
+                .trait_
+                .as_ref()
+                .and_then(|trait_path| index.get(&trait_path.id))
+                .map(move |trait_item| {
+                    if let rustdoc_types::ItemEnum::Trait(trait_item) = &trait_item.inner {
+                        trait_item.items.as_slice()
+                    } else {
+                        &[]
+                    }
+                })
+                .unwrap_or(&[]);
+
+            let trait_items = trait_items.iter();
+
+            let trait_provided_items = trait_items
+                .filter_map(|id| index.get(id))
+                .filter(move |item| {
+                    item.name
+                        .as_deref()
+                        .map(|name| trait_provided_methods.contains(name))
+                        .unwrap_or_default()
+                })
+                .map(move |provided_item| {
+                    (
+                        ImplEntry::new(
+                            id,
+                            provided_item
+                                .name
+                                .as_deref()
+                                .expect("item should have had a name"),
+                        ),
+                        (impl_item, provided_item),
+                    )
+                });
+
+            let impl_items = impl_inner.items.iter();
+
+            impl_items
+                .filter_map(move |item_id| {
+                    let item = index.get(item_id)?;
+                    let item_name = item.name.as_deref()?;
+                    Some((ImplEntry::new(id, item_name), (impl_item, item)))
+                })
+                .chain(trait_provided_items)
+        })
+    })
+    .collect()
+}
+
 impl<'a> IndexedCrate<'a> {
     pub fn new(crate_: &'a Crate) -> Self {
         let mut value = Self {
@@ -51,95 +183,28 @@ impl<'a> IndexedCrate<'a> {
             impl_index: None,
         };
 
-        let mut imports_index: HashMap<Path, Vec<(&Item, Modifiers)>> =
-            HashMap::with_capacity(crate_.index.len());
-        for item in crate_
-            .index
-            .values()
-            .filter(|item| supported_item_kind(item))
-        {
-            for importable_path in value.publicly_importable_names(&item.id) {
-                let modifiers = importable_path.modifiers;
-
-                imports_index
-                    .entry(importable_path.path)
-                    .or_default()
-                    .push((item, modifiers));
-            }
-        }
-        let index_size = imports_index.len();
-        value.imports_index = Some(imports_index);
-
-        let mut impl_index: HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>> =
-            HashMap::with_capacity(index_size);
-        for (id, impl_items) in crate_.index.iter().filter_map(|(id, item)| {
-            let impls = match &item.inner {
-                rustdoc_types::ItemEnum::Struct(s) => &s.impls,
-                rustdoc_types::ItemEnum::Enum(e) => &e.impls,
-                rustdoc_types::ItemEnum::Union(u) => &u.impls,
-                _ => return None,
-            };
-
-            let impl_items = impls.iter().filter_map(|impl_id| crate_.index.get(impl_id));
-
-            Some((id, impl_items))
-        }) {
-            for impl_item in impl_items {
-                let impl_inner = match &impl_item.inner {
-                    rustdoc_types::ItemEnum::Impl(impl_inner) => impl_inner,
-                    _ => unreachable!("expected impl but got another item type: {impl_item:?}"),
-                };
-                let trait_provided_methods: BTreeSet<_> = impl_inner
-                    .provided_trait_methods
-                    .iter()
-                    .map(|x| x.as_str())
-                    .collect();
-                if let Some(trait_item) = impl_inner
-                    .trait_
-                    .as_ref()
-                    .and_then(|trait_path| crate_.index.get(&trait_path.id))
-                {
-                    if let rustdoc_types::ItemEnum::Trait(trait_item) = &trait_item.inner {
-                        for provided_item in trait_item
-                            .items
-                            .iter()
-                            .filter_map(|id| crate_.index.get(id))
-                            .filter(|item| {
-                                item.name
-                                    .as_deref()
-                                    .map(|name| trait_provided_methods.contains(name))
-                                    .unwrap_or_default()
-                            })
-                        {
-                            impl_index
-                                .entry(ImplEntry::new(
-                                    id,
-                                    provided_item
-                                        .name
-                                        .as_deref()
-                                        .expect("item should have had a name"),
-                                ))
-                                .or_default()
-                                .push((impl_item, provided_item));
-                        }
+        // Build the imports index
+        //
+        // This is inlined because we need access to `value`, but `value` is not a valid
+        // `IndexedCrate` yet. Do not extract into a separate function.
+        value.imports_index = Some(
+            crate_
+                .index
+                .iter()
+                .filter_map(|(_id, item)| {
+                    if !supported_item_kind(item) {
+                        return None;
                     }
-                }
-
-                for contained_item in impl_inner
-                    .items
-                    .iter()
-                    .filter_map(|item_id| crate_.index.get(item_id))
-                {
-                    if let Some(contained_item_name) = contained_item.name.as_deref() {
-                        impl_index
-                            .entry(ImplEntry::new(id, contained_item_name))
-                            .or_default()
-                            .push((impl_item, contained_item));
-                    }
-                }
-            }
-        }
-        value.impl_index = Some(impl_index);
+                    let importable_paths = value.publicly_importable_names(&item.id);
+                    Some(importable_paths.into_iter().map(move |importable_path| {
+                        (importable_path.path, (item, importable_path.modifiers))
+                    }))
+                })
+                .flatten()
+                .collect::<MapList<_, _>>()
+                .into_inner(),
+        );
+        value.impl_index = Some(build_impl_index(&crate_.index).into_inner());
 
         value
     }
