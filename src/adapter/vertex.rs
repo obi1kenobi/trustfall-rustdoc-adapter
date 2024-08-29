@@ -2,7 +2,7 @@ use std::{borrow::Cow, rc::Rc};
 
 use rustdoc_types::{
     Abi, Constant, Crate, Enum, Function, Impl, Item, Module, Path, Span, Static, Struct, Trait,
-    Type, Union, Variant, VariantKind,
+    Type, Union, VariantKind,
 };
 use trustfall::provider::Typename;
 

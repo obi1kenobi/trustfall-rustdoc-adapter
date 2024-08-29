@@ -66,11 +66,12 @@ impl<'a> EnumVariant<'a> {
         }
     }
 
-    pub(super) fn discriminant(&'a self) -> &'a Cow<'a, str> {
+    pub(super) fn discriminant(&'a self) -> Cow<'a, str> {
         self.discriminants
             .get_discriminants()
             .get(self.index)
             .expect("self.index should exist in self.discriminants")
+            .clone()
     }
 
     #[inline]

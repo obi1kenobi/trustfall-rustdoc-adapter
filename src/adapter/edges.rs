@@ -306,7 +306,7 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 .expect("vertex was not a Variant");
             let discriminant = enum_var.discriminant();
             Box::new(std::iter::once(
-                origin.make_discriminant_vertex(std::borrow::Cow::Borrowed(discriminant)),
+                origin.make_discriminant_vertex(discriminant),
             ))
         }),
         _ => unreachable!("resolve_variant_edge {edge_name}"),
