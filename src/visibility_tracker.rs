@@ -2,6 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use rustdoc_types::{Crate, GenericArgs, Id, Item, ItemEnum, TypeAlias, Visibility};
 
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
 use crate::{attributes::Attribute, ImportablePath};
 
 #[derive(Debug, Clone)]
@@ -17,9 +20,14 @@ impl<'a> VisibilityTracker<'a> {
     pub(crate) fn from_crate(crate_: &'a Crate) -> Self {
         let mut visible_parent_ids = compute_parent_ids_for_public_items(crate_);
 
+        #[cfg(feature = "rayon")]
+        let iter = visible_parent_ids.par_iter_mut();
+        #[cfg(not(feature = "rayon"))]
+        let iter = visible_parent_ids.iter_mut();
+
         // Sort and deduplicate parent ids.
         // This ensures a consistent order, since queries can observe this order directly.
-        visible_parent_ids.iter_mut().for_each(|(_id, parent_ids)| {
+        iter.for_each(|(_id, parent_ids)| {
             parent_ids.sort_unstable_by_key(|id| id.0.as_str());
             parent_ids.dedup_by_key(|id| id.0.as_str());
         });
