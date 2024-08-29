@@ -66,7 +66,7 @@ impl<'a> EnumVariant<'a> {
         }
     }
 
-    pub(super) fn discriminant(&'a self) -> Cow<'a, str> {
+    pub(super) fn discriminant(&self) -> Cow<'a, str> {
         self.discriminants
             .get_discriminants()
             .get(self.index)
