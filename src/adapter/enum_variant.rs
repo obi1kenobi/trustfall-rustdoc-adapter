@@ -1,38 +1,48 @@
 use rustdoc_types::{Item, ItemEnum, Variant};
 use std::borrow::Cow;
 use std::cell::OnceCell;
-use std::fmt;
+use std::fmt::{self, Debug};
 use std::num::ParseIntError;
 use std::rc::Rc;
 use std::str::FromStr;
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
-pub(super) struct EnumVariant<'a> {
+pub struct EnumVariant<'a> {
     item: &'a Item,
-    // HACK: to get around closure bounds seen in ./edges.rs:301
-    pub(super) discriminants: Rc<LazyDiscriminants<'a>>,
-    pub(super) index: usize,
+    discriminants: Rc<LazyDiscriminants<'a>>,
+    index: usize,
 }
 
 #[non_exhaustive]
-#[derive(Debug, Clone)]
 pub(super) struct LazyDiscriminants<'a> {
     variants: Vec<&'a Variant>,
     discriminants: OnceCell<Vec<Cow<'a, str>>>,
+    len: usize,
+}
+
+impl<'a> Debug for LazyDiscriminants<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f
+            .debug_struct("LazyDiscriminants")
+            .field("discriminants", &self.discriminants)
+            .field("len", &self.len)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a> LazyDiscriminants<'a> {
-    pub(super) fn new(variants: Vec<&'a Variant>) -> Self {
+    pub(super) fn new(variants: Vec<&'a Variant>, len: usize) -> Self {
         Self {
             variants,
             discriminants: OnceCell::new(),
+            len,
         }
     }
 
     pub(super) fn get_discriminants(&self) -> &Vec<Cow<'a, str>> {
         self.discriminants
-            .get_or_init(|| assign_discriminants(&self.variants))
+            .get_or_init(|| assign_discriminants(&self.variants, self.len))
     }
 }
 
@@ -49,20 +59,24 @@ impl<'a> EnumVariant<'a> {
         }
     }
 
-    pub(super) fn variant(&self) -> Option<&'a Variant> {
+    pub(super) fn variant(&self) -> &'a Variant {
         match &self.item.inner {
-            ItemEnum::Variant(v) => Some(v),
-            _ => None,
+            ItemEnum::Variant(v) => v,
+            _ => unreachable!("Item was not a Variant"),
         }
     }
 
-    // HACK: to get around closure bounds seen in ./edges.rs:301
-    // pub(super) fn discriminant(&'a self) -> &'a Cow<'a, str> {
-    //     self.discriminants
-    //         .get_discriminants()
-    //         .get(self.index)
-    //         .unwrap()
-    // }
+    pub(super) fn discriminant(&'a self) -> &'a Cow<'a, str> {
+        self.discriminants
+            .get_discriminants()
+            .get(self.index)
+            .expect("self.index should exist in self.discriminants")
+    }
+
+    #[inline]
+    pub(super) fn item(&self) -> &'a Item {
+        self.item
+    }
 }
 
 enum DiscriminantValue {
@@ -164,9 +178,9 @@ impl FromStr for DiscriminantValue {
 }
 
 /// <https://doc.rust-lang.org/reference/items/enumerations.html#assigning-discriminant-values>
-pub(super) fn assign_discriminants<'a>(variants: &Vec<&'a Variant>) -> Vec<Cow<'a, str>> {
+pub(super) fn assign_discriminants<'a>(variants: &Vec<&'a Variant>, len: usize) -> Vec<Cow<'a, str>> {
     let mut last: DiscriminantValue = DiscriminantValue::I64(0);
-    let mut discriminants: Vec<Cow<'a, str>> = Vec::with_capacity(variants.len());
+    let mut discriminants: Vec<Cow<'a, str>> = Vec::with_capacity(len);
     for v in variants {
         discriminants.push(match &v.discriminant {
             Some(d) => {
@@ -232,7 +246,7 @@ mod tests {
                 kind: VariantKind::Plain,
             },
         ];
-        let actual = assign_discriminants(&variants);
+        let actual = assign_discriminants(&variants, variants.len());
         let expected: Vec<String> = vec![
             "0".into(),
             "1".into(),
@@ -293,7 +307,7 @@ mod tests {
             },
             &explicit_4,
         ];
-        let actual = assign_discriminants(&variants);
+        let actual = assign_discriminants(&variants, variants.len());
         let expected: Vec<String> = vec![
             "9223372036854775807".into(),
             "9223372036854775808".into(),

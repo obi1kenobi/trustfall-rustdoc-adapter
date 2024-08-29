@@ -1,4 +1,4 @@
-use rustdoc_types::{GenericBound::TraitBound, Id, ItemEnum, Variant, VariantKind};
+use rustdoc_types::{GenericBound::TraitBound, Id, ItemEnum, VariantKind};
 use std::rc::Rc;
 use trustfall::provider::{
     resolve_neighbors_with, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
@@ -266,7 +266,10 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     match edge_name {
         "field" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let item = vertex.as_variant().expect("vertex was not a Variant");
+            let item = vertex
+                .as_variant()
+                .expect("vertex was not a Variant")
+                .variant();
             let item_index = match origin {
                 Origin::CurrentCrate => &current_crate.inner.index,
                 Origin::PreviousCrate => {
@@ -296,21 +299,14 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 })),
             }
         }),
-        "discriminant" => resolve_neighbors_with(contexts, move |vertex| {
+        "discriminant" => resolve_neighbors_with(contexts, move |vertex: &'_ Vertex<'a>| {
             let origin = vertex.origin;
-            // HACK: to get around closure bounds
-            let enum_var = match &vertex.kind {
-                super::VertexKind::Variant(var) => var,
-                _ => unreachable!("vertex was not a Variant"),
-            };
-            let discriminant = enum_var
-                .discriminants
-                .get_discriminants()
-                .get(enum_var.index)
-                .unwrap()
-                .clone();
+            let enum_var = vertex
+                .as_variant()
+                .expect("vertex was not a Variant");
+            let discriminant = enum_var.discriminant();
             Box::new(std::iter::once(
-                origin.make_discriminant_vertex(discriminant),
+                origin.make_discriminant_vertex(std::borrow::Cow::Borrowed(discriminant)),
             ))
         }),
         _ => unreachable!("resolve_variant_edge {edge_name}"),
@@ -339,7 +335,8 @@ pub(super) fn resolve_enum_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             };
 
             let discriminants = {
-                let variants: Vec<&Variant> = enum_item
+                let len = enum_item.variants.len();
+                let variants = enum_item
                     .variants
                     .iter()
                     .map(move |field_id| {
@@ -350,7 +347,7 @@ pub(super) fn resolve_enum_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                         }
                     })
                     .collect();
-                Rc::new(LazyDiscriminants::new(variants))
+                Rc::new(LazyDiscriminants::new(variants, len))
             };
 
             Box::new(

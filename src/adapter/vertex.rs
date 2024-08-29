@@ -80,7 +80,7 @@ impl<'a> Typename for Vertex<'a> {
             VertexKind::FunctionParameter(..) => "FunctionParameter",
             VertexKind::FunctionAbi(..) => "FunctionAbi",
             VertexKind::Discriminant(..) => "Discriminant",
-            VertexKind::Variant(ev) => match ev.variant().unwrap().kind {
+            VertexKind::Variant(ev) => match ev.variant().kind {
                 VariantKind::Plain => "PlainVariant",
                 VariantKind::Tuple(..) => "TupleVariant",
                 VariantKind::Struct { .. } => "StructVariant",
@@ -172,14 +172,7 @@ impl<'a> Vertex<'a> {
         })
     }
 
-    pub(super) fn as_variant(&self) -> Option<&'a Variant> {
-        match &self.kind {
-            VertexKind::Variant(variant) => variant.variant(),
-            _ => None,
-        }
-    }
-
-    pub(super) fn as_enum_variant(&self) -> Option<&'a EnumVariant> {
+    pub(super) fn as_variant(&self) -> Option<&'_ EnumVariant<'a>> {
         match &self.kind {
             VertexKind::Variant(variant) => Some(variant),
             _ => None,
