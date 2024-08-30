@@ -113,3 +113,158 @@ pub mod generic_seal {
         fn method<IM: private::Marker>(&self);
     }
 }
+
+/// Traits whose supertraits have blanket impls, where the blanket bounds
+/// can be satisfied in a downstream crate, are not sealed.
+mod blanket_impls {
+    pub trait FullBlanket {}
+    impl<T> FullBlanket for T {}
+
+    // This trait is both crate-private and inside a private module.
+    pub(crate) trait PrivateBlanket {}
+    impl<T> PrivateBlanket for T {}
+
+    pub trait RefBlanket {}
+    impl<T> RefBlanket for &T {}
+
+    pub trait ExternalSupertraitsBlanket {}
+    impl<T: std::fmt::Debug + Clone> ExternalSupertraitsBlanket for T {}
+
+    // The iterator trait is special because we don't manually inline it into rustdoc info.
+    // See `MANUAL_TRAIT_ITEMS` inside `indexed_crate.rs` for more details.
+    pub trait IteratorBlanket {}
+    impl<T: Iterator> IteratorBlanket for T {}
+
+    pub trait BlanketOverLocalUnsealedTrait {}
+    impl<T: super::Unsealed> BlanketOverLocalUnsealedTrait for T {}
+
+    pub trait BlanketOverSealedTrait {}
+    impl<T: super::DirectlyTraitSealed> BlanketOverSealedTrait for T {}
+
+    pub trait BlanketOverSealedAndUnsealedTrait {}
+    impl<T: super::Unsealed + super::DirectlyTraitSealed> BlanketOverSealedAndUnsealedTrait for T {}
+
+    // The blanket impl here is over everything,
+    // because `FullBlanket` has a blanket impl for everything.
+    pub trait TransitiveBlanket {}
+    impl<T: FullBlanket> TransitiveBlanket for T {}
+
+    pub trait BlanketOverArc {}
+    impl<T> BlanketOverArc for std::sync::Arc<T> {}
+}
+
+/// Not sealed due to blanket impl.
+///
+/// Proof:
+/// ```rust
+/// struct Example;
+///
+/// impl sealed_traits::BlanketUnsealed for Example {}
+/// ```
+#[allow(private_bounds)]
+pub trait BlanketUnsealed: blanket_impls::FullBlanket + blanket_impls::PrivateBlanket {}
+
+/// Not sealed due to blanket impl.
+///
+/// Proof:
+/// ```rust
+/// struct Example;
+///
+/// impl sealed_traits::RefBlanketUnsealed for &Example {}
+/// ```
+pub trait RefBlanketUnsealed: blanket_impls::RefBlanket {}
+
+/// Not sealed due to blanket impl.
+///
+/// Proof:
+/// ```rust
+/// #[derive(Debug, Clone)]
+/// struct Example;
+///
+/// impl sealed_traits::ExternalSupertraitsBlanketUnsealed for Example {}
+/// ```
+pub trait ExternalSupertraitsBlanketUnsealed: blanket_impls::ExternalSupertraitsBlanket {}
+
+/// Not sealed due to blanket impl.
+///
+/// Proof:
+/// ```rust
+/// struct ExampleIter;
+///
+/// impl Iterator for ExampleIter {
+///     type Item = ();
+///
+///     fn next(&mut self) -> Option<Self::Item> {
+///         None
+///     }
+/// }
+///
+/// impl sealed_traits::IteratorBlanketUnsealed for ExampleIter {}
+/// ```
+pub trait IteratorBlanketUnsealed: blanket_impls::IteratorBlanket {}
+
+/// Not sealed due to blanket impl.
+///
+/// Proof:
+/// ```rust
+/// struct Example;
+///
+/// impl sealed_traits::Unsealed for Example {}
+///
+/// impl sealed_traits::BlanketOverLocalUnsealedTraitUnsealed for Example {}
+/// ```
+pub trait BlanketOverLocalUnsealedTraitUnsealed: blanket_impls::BlanketOverLocalUnsealedTrait {}
+
+/// This one is sealed, since the blanket is over a sealed trait which we cannot impl.
+///
+/// Proof, in two parts:
+///
+/// We cannot implement the supertrait ourselves:
+/// ```compile_fail
+/// struct Example;
+///
+/// // The next line won't work, since the item is pub-in-priv
+/// // so the trait is sealed and inaccessible.
+/// impl sealed_traits::blanket_impls::BlanketOverSealedTrait for Example {}
+///
+/// impl sealed_traits::BlanketOverSealedTraitSealed for Example {}
+/// ```
+///
+/// And we cannot implement the trait in the blanket bound:
+/// ```compile_fail
+/// struct Example;
+///
+/// // the next line won't work
+/// impl sealed_traits::DirectlyTraitSealed for Example {}
+///
+/// impl sealed_traits::BlanketOverSealedTraitSealed for Example {}
+/// ```
+pub trait BlanketOverSealedTraitSealed: blanket_impls::BlanketOverSealedTrait {}
+
+/// This trait is sealed because the bound on the blanket impl
+/// includes a trait we cannot impl. The proof is the same as above.
+pub trait BlanketSealedOverMultiple: blanket_impls::BlanketOverSealedAndUnsealedTrait {}
+
+/// This trait is not sealed, since its supertrait has a blanket impl whose bound
+/// is always satisfied due to its own blanket impl.
+///
+/// Proof:
+/// ```rust
+/// struct Example;
+///
+/// impl sealed_traits::TransitiveBlanketUnsealed for Example {}
+/// ```
+pub trait TransitiveBlanketUnsealed: blanket_impls::TransitiveBlanket {}
+
+/// This trait is sealed.
+/// - Its supertrait has a blanket impl over `Arc<T>`.
+/// - In order for a crate to implement a trait for a type, the crate needs to define
+///   either the trait or the type. A downstream crate doesn't define either.
+///
+/// Proof:
+/// ```compile_fail
+/// struct Example;
+///
+/// impl sealed_traits::BlanketOverArcUnsealed for std::sync::Arc<Example> {}
+/// ```
+pub trait BlanketOverArcUnsealed: blanket_impls::BlanketOverArc {}
