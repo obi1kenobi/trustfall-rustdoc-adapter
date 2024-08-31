@@ -290,7 +290,6 @@ fn blanket_type_might_cover_types_in_downstream_crate(blanket_type: &rustdoc_typ
         rustdoc_types::Type::DynTrait { .. } |
         rustdoc_types::Type::Primitive { .. } |
         rustdoc_types::Type::FunctionPointer { .. } |
-        rustdoc_types::Type::Pat { .. } |
         rustdoc_types::Type::ImplTrait { .. } |
         rustdoc_types::Type::Infer { .. } |
         rustdoc_types::Type::QualifiedPath { .. } => {
