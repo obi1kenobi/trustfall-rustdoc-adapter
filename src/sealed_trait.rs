@@ -213,8 +213,7 @@ fn get_impl_target_if_blanket_impl(
             rustdoc_types::Type::DynTrait { .. } |      // e.g. `dyn Iterator`
             rustdoc_types::Type::Tuple { .. } |         // e.g. `(T,)`
             rustdoc_types::Type::Slice { .. } |         // e.g. `[T]`
-            rustdoc_types::Type::Array { .. } |         // e.g. `[T; 1]`
-            rustdoc_types::Type::Pat { .. } => {        // unstable feature, syntax isn't finalized
+            rustdoc_types::Type::Array { .. } => {      // e.g. `[T; 1]`
                 // These are all specific types that simply have a generic parameter.
                 // They are not blanket implementations.
                 return None;
@@ -260,7 +259,7 @@ fn is_bounded_on_local_sealed_trait_without_blankets(
 
             has_no_externally_satisfiable_blanket_impls(indexed_crate, item)
         }
-        rustdoc_types::GenericBound::Outlives(_) | rustdoc_types::GenericBound::Use(_) => {
+        rustdoc_types::GenericBound::Outlives(_) => {
             // Other kinds of generic bounds aren't relevant here.
             false
         }
