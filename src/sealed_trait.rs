@@ -260,7 +260,7 @@ fn is_bounded_on_local_sealed_trait_without_blankets(
 
             has_no_externally_satisfiable_blanket_impls(indexed_crate, item)
         }
-        rustdoc_types::GenericBound::Outlives(_) | rustdoc_types::GenericBound::Use(_) => {
+        rustdoc_types::GenericBound::Outlives(_) => {
             // Other kinds of generic bounds aren't relevant here.
             false
         }
