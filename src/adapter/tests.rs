@@ -297,6 +297,122 @@ fn rustdoc_sealed_traits() {
             name: "NotGenericSealedBecauseOfPubSupertrait".into(),
             sealed: false,
         },
+        Output {
+            name: "FullBlanket".into(),
+            sealed: true,
+        },
+        Output {
+            name: "PrivateBlanket".into(),
+            sealed: true,
+        },
+        Output {
+            name: "RefBlanket".into(),
+            sealed: true,
+        },
+        Output {
+            name: "ExternalSupertraitsBlanket".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketWithWhereClause".into(),
+            sealed: true,
+        },
+        Output {
+            name: "IteratorBlanket".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverLocalUnsealedTrait".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverSealedTrait".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverSealedAndUnsealedTrait".into(),
+            sealed: true,
+        },
+        Output {
+            name: "TransitiveBlanket".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverArc".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverTuple".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverSlice".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverArray".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverPointer".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketUnsealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "RefBlanketUnsealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "ExternalSupertraitsBlanketUnsealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "BlanketWithWhereClauseUnsealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "IteratorBlanketUnsealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "BlanketOverLocalUnsealedTraitUnsealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "BlanketOverSealedTraitSealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketSealedOverMultiple".into(),
+            sealed: true,
+        },
+        Output {
+            name: "TransitiveBlanketUnsealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "BlanketOverArcSealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverTupleSealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverSliceSealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverArraySealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverPointerSealed".into(),
+            sealed: true,
+        },
     ];
     expected_results.sort_unstable();
 
