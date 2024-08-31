@@ -301,9 +301,7 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
         }),
         "discriminant" => resolve_neighbors_with(contexts, move |vertex: &'_ Vertex<'a>| {
             let origin = vertex.origin;
-            let enum_var = vertex
-                .as_variant()
-                .expect("vertex was not a Variant");
+            let enum_var = vertex.as_variant().expect("vertex was not a Variant");
             let discriminant = enum_var.discriminant();
             Box::new(std::iter::once(
                 origin.make_discriminant_vertex(discriminant),
@@ -335,7 +333,6 @@ pub(super) fn resolve_enum_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             };
 
             let discriminants = {
-                let len = enum_item.variants.len();
                 let variants = enum_item
                     .variants
                     .iter()
@@ -347,7 +344,7 @@ pub(super) fn resolve_enum_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                         }
                     })
                     .collect();
-                Rc::new(LazyDiscriminants::new(variants, len))
+                Rc::new(LazyDiscriminants::new(variants))
             };
 
             Box::new(

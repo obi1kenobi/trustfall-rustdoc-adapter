@@ -16,33 +16,30 @@ pub struct EnumVariant<'a> {
 
 #[non_exhaustive]
 pub(super) struct LazyDiscriminants<'a> {
+    // TODO: Consider replacing Vec with an impl Iterator for performance
     variants: Vec<&'a Variant>,
     discriminants: OnceCell<Vec<Cow<'a, str>>>,
-    len: usize,
 }
 
 impl<'a> Debug for LazyDiscriminants<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f
-            .debug_struct("LazyDiscriminants")
+        f.debug_struct("LazyDiscriminants")
             .field("discriminants", &self.discriminants)
-            .field("len", &self.len)
             .finish_non_exhaustive()
     }
 }
 
 impl<'a> LazyDiscriminants<'a> {
-    pub(super) fn new(variants: Vec<&'a Variant>, len: usize) -> Self {
+    pub(super) fn new(variants: Vec<&'a Variant>) -> Self {
         Self {
             variants,
             discriminants: OnceCell::new(),
-            len,
         }
     }
 
     pub(super) fn get_discriminants(&self) -> &Vec<Cow<'a, str>> {
         self.discriminants
-            .get_or_init(|| assign_discriminants(&self.variants, self.len))
+            .get_or_init(|| assign_discriminants(&self.variants))
     }
 }
 
@@ -179,9 +176,9 @@ impl FromStr for DiscriminantValue {
 }
 
 /// <https://doc.rust-lang.org/reference/items/enumerations.html#assigning-discriminant-values>
-pub(super) fn assign_discriminants<'a>(variants: &Vec<&'a Variant>, len: usize) -> Vec<Cow<'a, str>> {
+pub(super) fn assign_discriminants<'a>(variants: &[&'a Variant]) -> Vec<Cow<'a, str>> {
     let mut last: DiscriminantValue = DiscriminantValue::I64(0);
-    let mut discriminants: Vec<Cow<'a, str>> = Vec::with_capacity(len);
+    let mut discriminants: Vec<Cow<'a, str>> = Vec::with_capacity(variants.len());
     for v in variants {
         discriminants.push(match &v.discriminant {
             Some(d) => {
@@ -247,7 +244,7 @@ mod tests {
                 kind: VariantKind::Plain,
             },
         ];
-        let actual = assign_discriminants(&variants, variants.len());
+        let actual = assign_discriminants(&variants);
         let expected: Vec<String> = vec![
             "0".into(),
             "1".into(),
@@ -308,7 +305,7 @@ mod tests {
             },
             &explicit_4,
         ];
-        let actual = assign_discriminants(&variants, variants.len());
+        let actual = assign_discriminants(&variants);
         let expected: Vec<String> = vec![
             "9223372036854775807".into(),
             "9223372036854775808".into(),
