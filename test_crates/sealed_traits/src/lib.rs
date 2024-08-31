@@ -130,6 +130,10 @@ mod blanket_impls {
     pub trait ExternalSupertraitsBlanket {}
     impl<T: std::fmt::Debug + Clone> ExternalSupertraitsBlanket for T {}
 
+    // In Rust this is syntax sugar for `impl<T: Clone>`, but let's make sure rustdoc thinks so too.
+    pub trait BlanketWithWhereClause {}
+    impl<T> BlanketWithWhereClause for T where T: Clone {}
+
     // The iterator trait is special because we don't manually inline it into rustdoc info.
     // See `MANUAL_TRAIT_ITEMS` inside `indexed_crate.rs` for more details.
     pub trait IteratorBlanket {}
@@ -151,6 +155,18 @@ mod blanket_impls {
 
     pub trait BlanketOverArc {}
     impl<T> BlanketOverArc for std::sync::Arc<T> {}
+
+    pub trait BlanketOverTuple {}
+    impl<T> BlanketOverTuple for (T,) {}
+
+    pub trait BlanketOverSlice {}
+    impl<T> BlanketOverSlice for [T] {}
+
+    pub trait BlanketOverArray {}
+    impl<T> BlanketOverArray for [T; 1] {}
+
+    pub trait BlanketOverPointer {}
+    impl<T> BlanketOverPointer for *const T {}
 }
 
 /// Not sealed due to blanket impl.
@@ -184,6 +200,18 @@ pub trait RefBlanketUnsealed: blanket_impls::RefBlanket {}
 /// impl sealed_traits::ExternalSupertraitsBlanketUnsealed for Example {}
 /// ```
 pub trait ExternalSupertraitsBlanketUnsealed: blanket_impls::ExternalSupertraitsBlanket {}
+
+/// Not sealed due to blanket impl.
+///
+/// Proof:
+/// ```rust
+/// #[derive(Clone)]
+/// struct Example;
+///
+/// impl sealed_traits::BlanketWithWhereClauseUnsealed for Example {}
+/// ```
+pub trait BlanketWithWhereClauseUnsealed: blanket_impls::BlanketWithWhereClause {}
+
 
 /// Not sealed due to blanket impl.
 ///
@@ -265,6 +293,46 @@ pub trait TransitiveBlanketUnsealed: blanket_impls::TransitiveBlanket {}
 /// ```compile_fail
 /// struct Example;
 ///
-/// impl sealed_traits::BlanketOverArcUnsealed for std::sync::Arc<Example> {}
+/// impl sealed_traits::BlanketOverArcSealed for std::sync::Arc<Example> {}
 /// ```
-pub trait BlanketOverArcUnsealed: blanket_impls::BlanketOverArc {}
+pub trait BlanketOverArcSealed: blanket_impls::BlanketOverArc {}
+
+/// Sealed since tuples/slices/arrays/pointers are always considered foreign types.
+///
+/// Proof:
+/// ```compile_fail
+/// struct Example;
+///
+/// impl sealed_traits::BlanketOverTupleSealed for (Example,) {}
+/// ```
+pub trait BlanketOverTupleSealed: blanket_impls::BlanketOverTuple {}
+
+/// Sealed since tuples/slices/arrays/pointers are always considered foreign types.
+///
+/// Proof:
+/// ```compile_fail
+/// struct Example;
+///
+/// impl sealed_traits::BlanketOverSliceSealed for [Example] {}
+/// ```
+pub trait BlanketOverSliceSealed: blanket_impls::BlanketOverSlice {}
+
+/// Sealed since tuples/slices/arrays/pointers are always considered foreign types.
+///
+/// Proof:
+/// ```compile_fail
+/// struct Example;
+///
+/// impl sealed_traits::BlanketOverArraySealed for [Example; 1] {}
+/// ```
+pub trait BlanketOverArraySealed: blanket_impls::BlanketOverArray {}
+
+/// Sealed since tuples/slices/arrays/pointers are always considered foreign types.
+///
+/// Proof:
+/// ```compile_fail
+/// struct Example;
+///
+/// impl sealed_traits::BlanketOverPointerSealed for *const Example {}
+/// ```
+pub trait BlanketOverPointerSealed: blanket_impls::BlanketOverPointer {}
