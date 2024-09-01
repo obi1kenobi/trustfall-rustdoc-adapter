@@ -1674,9 +1674,10 @@ fn enum_discriminants() {
     Crate {
         item {
             ... on Enum {
-                name @output
+                enum_name: name @output
                 variant {
-                    discriminant {
+                    variant_name: name @output
+                    discriminant @optional {
                         value @output
                     }
                 }
@@ -1692,8 +1693,9 @@ fn enum_discriminants() {
 
     #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
     struct Output {
-        name: String,
-        value: String,
+        enum_name: String,
+        variant_name: String,
+        value: Option<String>,
     }
 
     let mut results: Vec<Output> =
@@ -1706,81 +1708,115 @@ fn enum_discriminants() {
     similar_asserts::assert_eq!(
         vec![
             Output {
-                name: "A".into(),
-                value: "0".into(),
+                enum_name: "A".into(),
+                variant_name: "Five".into(),
+                value: Some("100".into(),),
             },
             Output {
-                name: "A".into(),
-                value: "1".into(),
+                enum_name: "A".into(),
+                variant_name: "Four".into(),
+                value: Some("99".into(),),
             },
             Output {
-                name: "A".into(),
-                value: "100".into(),
+                enum_name: "A".into(),
+                variant_name: "One".into(),
+                value: Some("1".into(),),
             },
             Output {
-                name: "A".into(),
-                value: "2".into(),
+                enum_name: "A".into(),
+                variant_name: "Three".into(),
+                value: Some("3".into(),),
             },
             Output {
-                name: "A".into(),
-                value: "3".into(),
+                enum_name: "A".into(),
+                variant_name: "Two".into(),
+                value: Some("2".into(),),
             },
             Output {
-                name: "A".into(),
-                value: "99".into(),
+                enum_name: "A".into(),
+                variant_name: "Zero".into(),
+                value: Some("0".into(),),
             },
             Output {
-                name: "Fieldful".into(),
-                value: "0".into(),
+                enum_name: "Fieldful".into(),
+                variant_name: "Struct".into(),
+                value: Some("2".into(),),
             },
             Output {
-                name: "Fieldful".into(),
-                value: "1".into(),
+                enum_name: "Fieldful".into(),
+                variant_name: "Tuple".into(),
+                value: Some("1".into(),),
             },
             Output {
-                name: "Fieldful".into(),
-                value: "2".into(),
+                enum_name: "Fieldful".into(),
+                variant_name: "Unit".into(),
+                value: Some("0".into(),),
             },
             Output {
-                name: "Fieldful".into(),
-                value: "9".into(),
+                enum_name: "Fieldful".into(),
+                variant_name: "Unit2".into(),
+                value: Some("9".into(),),
             },
             Output {
-                name: "FieldlessWithDiscrimants".into(),
-                value: "10".into(),
+                enum_name: "FieldfulNoRepr".into(),
+                variant_name: "Struct".into(),
+                value: Some("2".into(),),
             },
             Output {
-                name: "FieldlessWithDiscrimants".into(),
-                value: "11".into(),
+                enum_name: "FieldfulNoRepr".into(),
+                variant_name: "Tuple".into(),
+                value: Some("1".into(),),
             },
             Output {
-                name: "FieldlessWithDiscrimants".into(),
-                value: "20".into(),
+                enum_name: "FieldfulNoRepr".into(),
+                variant_name: "Unit".into(),
+                value: Some("0".into(),),
             },
             Output {
-                name: "FieldlessWithDiscrimants".into(),
-                value: "21".into(),
+                enum_name: "FieldlessWithDiscrimants".into(),
+                variant_name: "First".into(),
+                value: Some("10".into(),),
             },
             Output {
-                name: "FieldlessWithDiscrimants".into(),
-                value: "22".into(),
+                enum_name: "FieldlessWithDiscrimants".into(),
+                variant_name: "Second".into(),
+                value: Some("20".into(),),
             },
             Output {
-                name: "Pathological".into(),
-                value: "-170141183460469231731687303715884105726".into(),
+                enum_name: "FieldlessWithDiscrimants".into(),
+                variant_name: "Struct".into(),
+                value: Some("21".into(),),
             },
             Output {
-                name: "Pathological".into(),
-                value: "-170141183460469231731687303715884105727".into(),
+                enum_name: "FieldlessWithDiscrimants".into(),
+                variant_name: "Tuple".into(),
+                value: Some("11".into(),),
             },
             Output {
-                name: "Pathological".into(),
-                value: "-170141183460469231731687303715884105728".into(),
+                enum_name: "FieldlessWithDiscrimants".into(),
+                variant_name: "Unit".into(),
+                value: Some("22".into(),),
             },
             Output {
-                name: "Pathological".into(),
-                value: "170141183460469231731687303715884105727".into(),
-            }
+                enum_name: "Pathological".into(),
+                variant_name: "Max".into(),
+                value: Some("170141183460469231731687303715884105727".into(),),
+            },
+            Output {
+                enum_name: "Pathological".into(),
+                variant_name: "Min".into(),
+                value: Some("-170141183460469231731687303715884105728".into(),),
+            },
+            Output {
+                enum_name: "Pathological".into(),
+                variant_name: "MinPlusOne".into(),
+                value: Some("-170141183460469231731687303715884105727".into(),),
+            },
+            Output {
+                enum_name: "Pathological".into(),
+                variant_name: "MinPlusTwo".into(),
+                value: Some("-170141183460469231731687303715884105726".into(),),
+            },
         ],
         results
     );

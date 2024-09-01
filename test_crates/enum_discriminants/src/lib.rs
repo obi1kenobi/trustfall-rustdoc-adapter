@@ -29,6 +29,12 @@ pub enum Fieldful {
     Unit2 = 9
 }
 
+pub enum FieldfulNoRepr {
+    Unit,
+    Tuple(bool),
+    Struct{a: bool},
+}
+
 #[repr(i128)]
 pub enum Pathological {
     Min = i128::MIN,

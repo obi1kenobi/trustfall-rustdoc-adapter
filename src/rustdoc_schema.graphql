@@ -514,6 +514,25 @@ type PlainVariant implements Item & Variant {
 
   # edges from Variant
   field: [StructField!]
+  
+  """
+  The discriminant value of this variant, if its value is well-defined.
+  
+  A discriminant is an integer value that is logically associated with an enum variant,
+  and is used to determine which variant an enum value holds.
+
+  Discriminant values are not always well-defined.
+
+  In order for variants to have well-defined discriminants, their enum must either
+  - define a primitive representation (e.g., `#[repr(u8)]`), or
+  - be "unit-only" i.e. consisting solely of unit variants.
+
+  The variants of such enums may be explicitly assigned a discriminant value, or
+  the discriminant may be defined implicitly:
+  - The first variant has a discriminant of zero, unless explicitly assigned a value.
+  - Subsequent variants have a discriminant one higher than the previous variant,
+    unless explicitly assigned a value.
+  """
   discriminant: Discriminant
 }
 
@@ -569,6 +588,25 @@ type TupleVariant implements Item & Variant {
 
   # edges from Variant
   field: [StructField!]
+
+  """
+  The discriminant value of this variant, if its value is well-defined.
+  
+  A discriminant is an integer value that is logically associated with an enum variant,
+  and is used to determine which variant an enum value holds.
+
+  Discriminant values are not always well-defined.
+
+  In order for variants to have well-defined discriminants, their enum must either
+  - define a primitive representation (e.g., `#[repr(u8)]`), or
+  - be "unit-only" i.e. consisting solely of unit variants.
+
+  The variants of such enums may be explicitly assigned a discriminant value, or
+  the discriminant may be defined implicitly:
+  - The first variant has a discriminant of zero, unless explicitly assigned a value.
+  - Subsequent variants have a discriminant one higher than the previous variant,
+    unless explicitly assigned a value.
+  """
   discriminant: Discriminant
 }
 
@@ -624,6 +662,25 @@ type StructVariant implements Item & Variant {
 
   # edges from Variant
   field: [StructField!]
+
+  """
+  The discriminant value of this variant, if its value is well-defined.
+  
+  A discriminant is an integer value that is logically associated with an enum variant,
+  and is used to determine which variant an enum value holds.
+
+  Discriminant values are not always well-defined.
+
+  In order for variants to have well-defined discriminants, their enum must either
+  - define a primitive representation (e.g., `#[repr(u8)]`), or
+  - be "unit-only" i.e. consisting solely of unit variants.
+
+  The variants of such enums may be explicitly assigned a discriminant value, or
+  the discriminant may be defined implicitly:
+  - The first variant has a discriminant of zero, unless explicitly assigned a value.
+  - Subsequent variants have a discriminant one higher than the previous variant,
+    unless explicitly assigned a value.
+  """
   discriminant: Discriminant
 }
 

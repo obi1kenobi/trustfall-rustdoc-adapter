@@ -117,8 +117,9 @@ impl<'a> Vertex<'a> {
     }
 
     pub(super) fn as_item(&self) -> Option<&'a Item> {
-        match self.kind {
+        match &self.kind {
             VertexKind::Item(item) => Some(item),
+            VertexKind::Variant(variant) => Some(variant.item()),
             _ => None,
         }
     }
