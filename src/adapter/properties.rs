@@ -7,9 +7,9 @@ use trustfall::{
     FieldValue,
 };
 
-use crate::attributes::Attribute;
+use crate::{attributes::Attribute, IndexedCrate};
 
-use super::vertex::Vertex;
+use super::{origin::Origin, vertex::Vertex};
 
 pub(super) fn resolve_crate_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
@@ -247,6 +247,10 @@ pub(super) fn resolve_function_like_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             contexts,
             field_property!(as_function, header, { header.unsafe_.into() }),
         ),
+        "has_body" => resolve_property_with(
+            contexts,
+            field_property!(as_function, has_body, { (*has_body).into() }),
+        ),
         _ => unreachable!("FunctionLike property {property_name}"),
     }
 }
@@ -456,10 +460,23 @@ pub(super) fn resolve_raw_type_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
+    current_crate: &'a IndexedCrate<'a>,
+    previous_crate: Option<&'a IndexedCrate<'a>>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "unsafe" => resolve_property_with(contexts, field_property!(as_trait, is_unsafe)),
         "object_safe" => resolve_property_with(contexts, field_property!(as_trait, is_object_safe)),
+        "sealed" => resolve_property_with(contexts, move |vertex| {
+            let trait_item = vertex.as_item().expect("not an Item");
+            let origin = vertex.origin;
+
+            let indexed_crate = match origin {
+                Origin::CurrentCrate => current_crate,
+                Origin::PreviousCrate => previous_crate.expect("no previous crate provided"),
+            };
+
+            indexed_crate.is_trait_sealed(&trait_item.id).into()
+        }),
         _ => unreachable!("Trait property {property_name}"),
     }
 }
@@ -533,7 +550,7 @@ pub(crate) fn resolve_constant_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
         "expr" => resolve_property_with(
             contexts,
             field_property!(as_item, inner, {
-                let ItemEnum::Constant(c) = &inner else {
+                let ItemEnum::Constant { const_: c, .. } = &inner else {
                     unreachable!("expected to have a Constant")
                 };
                 c.expr.clone().into()
@@ -542,7 +559,7 @@ pub(crate) fn resolve_constant_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
         "value" => resolve_property_with(
             contexts,
             field_property!(as_item, inner, {
-                let ItemEnum::Constant(c) = &inner else {
+                let ItemEnum::Constant { const_: c, .. } = &inner else {
                     unreachable!("expected to have a Constant")
                 };
                 c.value.clone().into()
@@ -551,7 +568,7 @@ pub(crate) fn resolve_constant_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
         "is_literal" => resolve_property_with(
             contexts,
             field_property!(as_item, inner, {
-                let ItemEnum::Constant(c) = &inner else {
+                let ItemEnum::Constant { const_: c, .. } = &inner else {
                     unreachable!("expected to have a Constant")
                 };
                 c.is_literal.into()

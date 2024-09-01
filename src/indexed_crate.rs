@@ -1,11 +1,13 @@
 use std::{
     borrow::Borrow,
-    collections::{BTreeSet, HashMap},
+    collections::{hash_map::Entry, HashMap, HashSet},
 };
 
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
 use rustdoc_types::{Crate, Id, Item};
 
-use crate::{adapter::supported_item_kind, visibility_tracker::VisibilityTracker};
+use crate::{adapter::supported_item_kind, sealed_trait, visibility_tracker::VisibilityTracker};
 
 /// The rustdoc for a crate, together with associated indexed data to speed up common operations.
 ///
@@ -41,6 +43,193 @@ pub struct IndexedCrate<'a> {
     pub(crate) manually_inlined_builtin_traits: HashMap<Id, Item>,
 }
 
+/// Map a Key to a List (Vec) of values
+///
+/// It also has some nice operations for pushing a value to the list, or extending the list with
+/// many values.
+struct MapList<K, V>(HashMap<K, Vec<V>>);
+
+#[cfg(feature = "rayon")]
+impl<K: std::cmp::Eq + std::hash::Hash + Send, V: Send> FromParallelIterator<(K, V)>
+    for MapList<K, V>
+{
+    #[inline]
+    fn from_par_iter<I>(par_iter: I) -> Self
+    where
+        I: IntoParallelIterator<Item = (K, V)>,
+    {
+        par_iter
+            .into_par_iter()
+            .fold(Self::new, |mut map, (key, value)| {
+                map.insert(key, value);
+                map
+            })
+            // Reduce left is faster than reduce right (about 19% less time in our benchmarks)
+            .reduce(Self::new, |mut l, r| {
+                l.merge(r);
+                l
+            })
+    }
+}
+
+impl<K: std::cmp::Eq + std::hash::Hash, V> FromIterator<(K, V)> for MapList<K, V> {
+    #[inline]
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        // We could use Iterator::size_hint here to preallocate some space, but I couldn't measure
+        // a perf inprovement from that.
+        let mut map = Self::new();
+        for (key, value) in iter {
+            map.insert(key, value);
+        }
+        map
+    }
+}
+
+impl<K: std::cmp::Eq + std::hash::Hash, V> Extend<(K, V)> for MapList<K, V> {
+    #[inline]
+    fn extend<T: IntoIterator<Item = (K, V)>>(&mut self, iter: T) {
+        // We could use Iterator::size_hint here to reserve some space, but I measured a 2%-3%
+        // regression when doing that.
+        for (key, value) in iter.into_iter() {
+            self.insert(key, value);
+        }
+    }
+}
+
+impl<K: std::cmp::Eq + std::hash::Hash, V> MapList<K, V> {
+    #[inline]
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    #[inline]
+    pub fn into_inner(self) -> HashMap<K, Vec<V>> {
+        self.0
+    }
+
+    #[inline]
+    pub fn insert(&mut self, key: K, value: V) {
+        match self.0.entry(key) {
+            Entry::Occupied(mut entry) => entry.get_mut().push(value),
+            Entry::Vacant(entry) => {
+                entry.insert(vec![value]);
+            }
+        }
+    }
+
+    #[inline]
+    #[cfg(feature = "rayon")]
+    pub fn insert_many(&mut self, key: K, mut value: Vec<V>) {
+        match self.0.entry(key) {
+            Entry::Occupied(mut entry) => entry.get_mut().append(&mut value),
+            Entry::Vacant(entry) => {
+                entry.insert(value);
+            }
+        }
+    }
+
+    #[inline]
+    #[cfg(feature = "rayon")]
+    pub fn merge(&mut self, other: Self) {
+        self.0.reserve(other.0.len());
+        for (key, value) in other.0 {
+            self.insert_many(key, value);
+        }
+    }
+}
+
+/// Build the impl index
+///
+/// When compiled using the `rayon` feature, build it in parallel. Specifically, this paralelizes
+/// the work of gathering all of the impls for the items in the index.
+fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item, &Item)> {
+    #[cfg(feature = "rayon")]
+    let iter = index.par_iter();
+    #[cfg(not(feature = "rayon"))]
+    let iter = index.iter();
+    iter.filter_map(|(id, item)| {
+        let impls = match &item.inner {
+            rustdoc_types::ItemEnum::Struct(s) => s.impls.as_slice(),
+            rustdoc_types::ItemEnum::Enum(e) => e.impls.as_slice(),
+            rustdoc_types::ItemEnum::Union(u) => u.impls.as_slice(),
+            _ => return None,
+        };
+
+        #[cfg(feature = "rayon")]
+        let iter = impls.par_iter();
+        #[cfg(not(feature = "rayon"))]
+        let iter = impls.iter();
+
+        Some((id, iter.filter_map(|impl_id| index.get(impl_id))))
+    })
+    .flat_map(|(id, impl_items)| {
+        impl_items.flat_map(move |impl_item| {
+            let impl_inner = match &impl_item.inner {
+                rustdoc_types::ItemEnum::Impl(impl_inner) => impl_inner,
+                _ => unreachable!("expected impl but got another item type: {impl_item:?}"),
+            };
+            let trait_provided_methods: HashSet<_> = impl_inner
+                .provided_trait_methods
+                .iter()
+                .map(|x| x.as_str())
+                .collect();
+
+            let trait_items = impl_inner
+                .trait_
+                .as_ref()
+                .and_then(|trait_path| index.get(&trait_path.id))
+                .map(move |trait_item| {
+                    if let rustdoc_types::ItemEnum::Trait(trait_item) = &trait_item.inner {
+                        trait_item.items.as_slice()
+                    } else {
+                        &[]
+                    }
+                })
+                .unwrap_or(&[]);
+
+            #[cfg(feature = "rayon")]
+            let trait_items = trait_items.par_iter();
+            #[cfg(not(feature = "rayon"))]
+            let trait_items = trait_items.iter();
+
+            let trait_provided_items = trait_items
+                .filter_map(|id| index.get(id))
+                .filter(move |item| {
+                    item.name
+                        .as_deref()
+                        .map(|name| trait_provided_methods.contains(name))
+                        .unwrap_or_default()
+                })
+                .map(move |provided_item| {
+                    (
+                        ImplEntry::new(
+                            id,
+                            provided_item
+                                .name
+                                .as_deref()
+                                .expect("item should have had a name"),
+                        ),
+                        (impl_item, provided_item),
+                    )
+                });
+
+            #[cfg(feature = "rayon")]
+            let impl_items = impl_inner.items.par_iter();
+            #[cfg(not(feature = "rayon"))]
+            let impl_items = impl_inner.items.iter();
+
+            impl_items
+                .filter_map(move |item_id| {
+                    let item = index.get(item_id)?;
+                    let item_name = item.name.as_deref()?;
+                    Some((ImplEntry::new(id, item_name), (impl_item, item)))
+                })
+                .chain(trait_provided_items)
+        })
+    })
+    .collect()
+}
+
 impl<'a> IndexedCrate<'a> {
     pub fn new(crate_: &'a Crate) -> Self {
         let mut value = Self {
@@ -51,95 +240,37 @@ impl<'a> IndexedCrate<'a> {
             impl_index: None,
         };
 
-        let mut imports_index: HashMap<Path, Vec<(&Item, Modifiers)>> =
-            HashMap::with_capacity(crate_.index.len());
-        for item in crate_
-            .index
-            .values()
-            .filter(|item| supported_item_kind(item))
-        {
-            for importable_path in value.publicly_importable_names(&item.id) {
-                let modifiers = importable_path.modifiers;
+        // Build the imports index
+        //
+        // This is inlined because we need access to `value`, but `value` is not a valid
+        // `IndexedCrate` yet. Do not extract into a separate function.
+        #[cfg(feature = "rayon")]
+        let iter = crate_.index.par_iter();
+        #[cfg(not(feature = "rayon"))]
+        let iter = crate_.index.iter();
 
-                imports_index
-                    .entry(importable_path.path)
-                    .or_default()
-                    .push((item, modifiers));
-            }
-        }
-        let index_size = imports_index.len();
-        value.imports_index = Some(imports_index);
-
-        let mut impl_index: HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>> =
-            HashMap::with_capacity(index_size);
-        for (id, impl_items) in crate_.index.iter().filter_map(|(id, item)| {
-            let impls = match &item.inner {
-                rustdoc_types::ItemEnum::Struct(s) => &s.impls,
-                rustdoc_types::ItemEnum::Enum(e) => &e.impls,
-                rustdoc_types::ItemEnum::Union(u) => &u.impls,
-                _ => return None,
-            };
-
-            let impl_items = impls.iter().filter_map(|impl_id| crate_.index.get(impl_id));
-
-            Some((id, impl_items))
-        }) {
-            for impl_item in impl_items {
-                let impl_inner = match &impl_item.inner {
-                    rustdoc_types::ItemEnum::Impl(impl_inner) => impl_inner,
-                    _ => unreachable!("expected impl but got another item type: {impl_item:?}"),
-                };
-                let trait_provided_methods: BTreeSet<_> = impl_inner
-                    .provided_trait_methods
-                    .iter()
-                    .map(|x| x.as_str())
-                    .collect();
-                if let Some(trait_item) = impl_inner
-                    .trait_
-                    .as_ref()
-                    .and_then(|trait_path| crate_.index.get(&trait_path.id))
-                {
-                    if let rustdoc_types::ItemEnum::Trait(trait_item) = &trait_item.inner {
-                        for provided_item in trait_item
-                            .items
-                            .iter()
-                            .filter_map(|id| crate_.index.get(id))
-                            .filter(|item| {
-                                item.name
-                                    .as_deref()
-                                    .map(|name| trait_provided_methods.contains(name))
-                                    .unwrap_or_default()
-                            })
-                        {
-                            impl_index
-                                .entry(ImplEntry::new(
-                                    id,
-                                    provided_item
-                                        .name
-                                        .as_deref()
-                                        .expect("item should have had a name"),
-                                ))
-                                .or_default()
-                                .push((impl_item, provided_item));
-                        }
-                    }
+        value.imports_index = Some(
+            iter.filter_map(|(_id, item)| {
+                if !supported_item_kind(item) {
+                    return None;
                 }
+                let importable_paths = value.publicly_importable_names(&item.id);
 
-                for contained_item in impl_inner
-                    .items
-                    .iter()
-                    .filter_map(|item_id| crate_.index.get(item_id))
-                {
-                    if let Some(contained_item_name) = contained_item.name.as_deref() {
-                        impl_index
-                            .entry(ImplEntry::new(id, contained_item_name))
-                            .or_default()
-                            .push((impl_item, contained_item));
-                    }
-                }
-            }
-        }
-        value.impl_index = Some(impl_index);
+                #[cfg(feature = "rayon")]
+                let iter = importable_paths.into_par_iter();
+                #[cfg(not(feature = "rayon"))]
+                let iter = importable_paths.into_iter();
+
+                Some(iter.map(move |importable_path| {
+                    (importable_path.path, (item, importable_path.modifiers))
+                }))
+            })
+            .flatten()
+            .collect::<MapList<_, _>>()
+            .into_inner(),
+        );
+
+        value.impl_index = Some(build_impl_index(&crate_.index).into_inner());
 
         value
     }
@@ -152,6 +283,45 @@ impl<'a> IndexedCrate<'a> {
         } else {
             Default::default()
         }
+    }
+
+    /// Return `true` if our analysis indicates the trait is sealed, and `false` otherwise.
+    ///
+    /// Our analysis is conservative: it has false-negatives but no false-positives.
+    /// If this method returns `true`, the trait is *definitely* sealed or else you've found a bug.
+    /// It may be possible to construct traits that *technically* are sealed for which our analysis
+    /// returns `false`.
+    ///
+    /// The goal of this method is to reflect author intent, not technicalities.
+    /// When Rustaceans seal traits on purpose, they do so with a limited number of techniques
+    /// that are well-defined and immediately recognizable to readers in the community:
+    /// <https://predr.ag/blog/definitive-guide-to-sealed-traits-in-rust/>
+    ///
+    /// The analysis here looks for such techniques, which are always applied at the type signature
+    /// level. It does not inspect function bodies or do interprocedural analysis.
+    ///
+    /// ## Panics
+    ///
+    /// This method will panic if the provided `id` is not an item in this crate,
+    /// or does not correspond to a trait in this crate.
+    ///
+    /// ## Re-entrancy
+    ///
+    /// This method is re-entrant: calling it may cause additional calls to itself, inquiring about
+    /// the sealed-ness of a trait's supertraits.
+    ///
+    /// We rely on rustc to reject supertrait cycles in order to prevent infinite loops.
+    /// Here's a supertrait cycle that must be rejected by rustc:
+    /// ```compile_fail
+    /// pub trait First: Third {}
+    ///
+    /// pub trait Second: First {}
+    ///
+    /// pub trait Third: Second {}
+    /// ```
+    pub fn is_trait_sealed(&self, id: &'a Id) -> bool {
+        let trait_item = &self.inner.index[id];
+        sealed_trait::is_trait_sealed(self, trait_item)
     }
 }
 

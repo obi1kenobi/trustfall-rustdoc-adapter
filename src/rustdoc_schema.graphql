@@ -993,8 +993,23 @@ type Trait implements Item & Importable {
   visibility_limit: String!
 
   # own properties
+  """
+  Whether this trait is defined as `unsafe` and requires the `unsafe` keyword when implementing.
+  """
   unsafe: Boolean!
+
+  """
+  Whether this trait can be used as `dyn Trait`.
+  """
   object_safe: Boolean!
+
+  """
+  Whether downstream crates are prevented from implementing this trait themselves.
+
+  Required implementation items can be added to sealed traits without causing a breaking change,
+  since no implementations of that trait may exist in other crates.
+  """
+  sealed: Boolean!
 
   # edges from Item
   span: Span
@@ -1087,6 +1102,7 @@ interface FunctionLike {
   const: Boolean!
   unsafe: Boolean!
   async: Boolean!
+  has_body: Boolean!
 
   # own edges
   parameter: [FunctionParameter!]
@@ -1199,6 +1215,7 @@ type Function implements Item & FunctionLike & Importable {
   const: Boolean!
   unsafe: Boolean!
   async: Boolean!
+  has_body: Boolean!
 
   # own properties
   """
@@ -1287,6 +1304,7 @@ type Method implements Item & FunctionLike {
   const: Boolean!
   unsafe: Boolean!
   async: Boolean!
+  has_body: Boolean!
 
   # edge from Item
   span: Span

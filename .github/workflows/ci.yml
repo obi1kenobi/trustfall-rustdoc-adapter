@@ -1,5 +1,3 @@
-name: CI
-
 on:
   pull_request:
   push:
@@ -66,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toolchain: ["1.77", "1.78"]
+        toolchain: ["nightly"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -87,6 +85,12 @@ jobs:
 
       - name: test
         run: cargo test
+
+      - name: compile with rayon
+        run: cargo test --no-run --features rayon
+
+      - name: test with rayon
+        run: cargo test --features rayon
 
   publish:
     name: Publish to crates.io

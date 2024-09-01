@@ -121,7 +121,10 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     properties::resolve_importable_path_property(contexts, property_name)
                 }
                 "FunctionLike" | "Function" | "Method"
-                    if matches!(property_name.as_ref(), "const" | "unsafe" | "async") =>
+                    if matches!(
+                        property_name.as_ref(),
+                        "const" | "unsafe" | "async" | "has_body"
+                    ) =>
                 {
                     properties::resolve_function_like_property(contexts, property_name)
                 }
@@ -135,7 +138,12 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "AttributeMetaItem" => {
                     properties::resolve_attribute_meta_item_property(contexts, property_name)
                 }
-                "Trait" => properties::resolve_trait_property(contexts, property_name),
+                "Trait" => properties::resolve_trait_property(
+                    contexts,
+                    property_name,
+                    self.current_crate,
+                    self.previous_crate,
+                ),
                 "ImplementedTrait" => {
                     properties::resolve_implemented_trait_property(contexts, property_name)
                 }
@@ -292,7 +300,7 @@ pub(crate) fn supported_item_kind(item: &Item) -> bool {
             | rustdoc_types::ItemEnum::Function(..)
             | rustdoc_types::ItemEnum::Impl(..)
             | rustdoc_types::ItemEnum::Trait(..)
-            | rustdoc_types::ItemEnum::Constant(..)
+            | rustdoc_types::ItemEnum::Constant { .. }
             | rustdoc_types::ItemEnum::Static(..)
             | rustdoc_types::ItemEnum::AssocType { .. }
             | rustdoc_types::ItemEnum::Module { .. }

@@ -1,3 +1,8 @@
+// The Trustfall API requires the adapter to be passed in as an Arc.
+// Our adapter is not Send/Sync (it doesn't need it),
+// but there's currently nothing we can do about this lint.
+#![allow(clippy::arc_with_non_send_sync)]
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -6,6 +11,21 @@ use maplit::btreemap;
 use trustfall::{Schema, TryIntoStruct};
 
 use crate::{IndexedCrate, RustdocAdapter};
+
+#[allow(dead_code)]
+mod type_level_invariants {
+    use crate::{IndexedCrate, RustdocAdapter};
+
+    fn ensure_send_and_sync<T: Send + Sync>(_value: &T) {}
+
+    fn ensure_indexed_crate_is_sync(value: &IndexedCrate<'_>) {
+        ensure_send_and_sync(value);
+    }
+
+    fn ensure_adapter_is_sync(value: &RustdocAdapter<'_>) {
+        ensure_send_and_sync(value);
+    }
+}
 
 #[test]
 fn rustdoc_json_format_version() {
@@ -152,6 +172,251 @@ fn rustdoc_finds_supertrait() {
         ],
         results
     );
+}
+
+#[test]
+fn rustdoc_sealed_traits() {
+    let path = "./localdata/test_data/sealed_traits/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = RustdocAdapter::new(&indexed_crate, None);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                name @output
+                sealed @output
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        sealed: bool,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.into(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            name: "Sealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "InternalMarker".into(),
+            sealed: true,
+        },
+        Output {
+            name: "DirectlyTraitSealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "TransitivelyTraitSealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "SealedTraitWithStdSupertrait".into(),
+            sealed: true,
+        },
+        Output {
+            name: "PrivateSealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "SealedWithPrivateSupertrait".into(),
+            sealed: true,
+        },
+        Output {
+            name: "Unsealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "MethodSealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "TransitivelyMethodSealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "NotMethodSealedBecauseOfDefaultImpl".into(),
+            sealed: false,
+        },
+        Output {
+            name: "NotTransitivelySealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "TraitUnsealedButMethodGenericSealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "NotGenericSealedBecauseOfDefaultImpl".into(),
+            sealed: false,
+        },
+        Output {
+            name: "IteratorExt".into(),
+            sealed: false,
+        },
+        Output {
+            name: "Iterator".into(),
+            sealed: true,
+        },
+        Output {
+            name: "ShadowedSubIterator".into(),
+            sealed: true,
+        },
+        Output {
+            name: "Super".into(),
+            sealed: false,
+        },
+        Output {
+            name: "Marker".into(),
+            sealed: true,
+        },
+        Output {
+            name: "NotGenericSealedBecauseOfPubSupertrait".into(),
+            sealed: false,
+        },
+        Output {
+            name: "FullBlanket".into(),
+            sealed: true,
+        },
+        Output {
+            name: "PrivateBlanket".into(),
+            sealed: true,
+        },
+        Output {
+            name: "RefBlanket".into(),
+            sealed: true,
+        },
+        Output {
+            name: "ExternalSupertraitsBlanket".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketWithWhereClause".into(),
+            sealed: true,
+        },
+        Output {
+            name: "IteratorBlanket".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverLocalUnsealedTrait".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverSealedTrait".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverSealedAndUnsealedTrait".into(),
+            sealed: true,
+        },
+        Output {
+            name: "TransitiveBlanket".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverArc".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverTuple".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverSlice".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverArray".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverPointer".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketUnsealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "RefBlanketUnsealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "ExternalSupertraitsBlanketUnsealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "BlanketWithWhereClauseUnsealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "IteratorBlanketUnsealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "BlanketOverLocalUnsealedTraitUnsealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "BlanketOverSealedTraitSealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketSealedOverMultiple".into(),
+            sealed: true,
+        },
+        Output {
+            name: "TransitiveBlanketUnsealed".into(),
+            sealed: false,
+        },
+        Output {
+            name: "BlanketOverArcSealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverTupleSealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverSliceSealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverArraySealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "BlanketOverPointerSealed".into(),
+            sealed: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results,);
 }
 
 #[test]
@@ -1651,6 +1916,79 @@ fn unions() {
             union_name: "AllFieldsPublic".into(),
             name: vec!["x".into(), "y".into()],
             type_name: vec!["usize".into(), "f32".into()],
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn function_has_body() {
+    let path = "./localdata/test_data/function_has_body/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+                has_body @output
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        has_body: bool,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "top_level".into(),
+            has_body: true,
+        },
+        Output {
+            name: "inside_impl_block".into(),
+            has_body: true,
+        },
+        Output {
+            name: "trait_no_body".into(),
+            has_body: false,
+        },
+        Output {
+            name: "trait_with_body".into(),
+            has_body: true,
+        },
+        Output {
+            name: "extern_no_body".into(),
+            has_body: false,
         },
     ];
     expected_results.sort_unstable();

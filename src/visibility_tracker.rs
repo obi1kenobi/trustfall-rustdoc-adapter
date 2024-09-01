@@ -2,6 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use rustdoc_types::{Crate, GenericArgs, Id, Item, ItemEnum, TypeAlias, Visibility};
 
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
 use crate::{attributes::Attribute, ImportablePath};
 
 #[derive(Debug, Clone)]
@@ -15,15 +18,19 @@ pub(crate) struct VisibilityTracker<'a> {
 
 impl<'a> VisibilityTracker<'a> {
     pub(crate) fn from_crate(crate_: &'a Crate) -> Self {
-        let visible_parent_ids = compute_parent_ids_for_public_items(crate_)
-            .into_iter()
-            .map(|(key, values)| {
-                // Ensure a consistent order, since queries can observe this order directly.
-                let mut values: Vec<_> = values.into_iter().collect();
-                values.sort_unstable_by_key(|x| &x.0);
-                (key, values)
-            })
-            .collect();
+        let mut visible_parent_ids = compute_parent_ids_for_public_items(crate_);
+
+        #[cfg(feature = "rayon")]
+        let iter = visible_parent_ids.par_iter_mut();
+        #[cfg(not(feature = "rayon"))]
+        let iter = visible_parent_ids.iter_mut();
+
+        // Sort and deduplicate parent ids.
+        // This ensures a consistent order, since queries can observe this order directly.
+        iter.for_each(|(_id, parent_ids)| {
+            parent_ids.sort_unstable_by_key(|id| id.0.as_str());
+            parent_ids.dedup_by_key(|id| id.0.as_str());
+        });
 
         Self {
             inner: crate_,
@@ -249,8 +256,7 @@ struct NameResolution<'a> {
     duplicated_glob_names_in_module: HashMap<&'a Id, HashSet<NamespacedName<'a>>>,
 }
 
-fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<&Id, HashSet<&Id>> {
-    let mut result = Default::default();
+fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<&Id, Vec<&Id>> {
     let root_id = &crate_.root;
 
     if let Some(root_module) = crate_.index.get(root_id) {
@@ -260,6 +266,8 @@ fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<&Id, HashSet<&
             // Avoid cycles by keeping track of which items we're in the middle of visiting.
             let mut currently_visited_items: HashSet<&Id> = Default::default();
 
+            let mut result = Default::default();
+
             visit_root_reachable_public_items(
                 crate_,
                 &mut result,
@@ -268,10 +276,12 @@ fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<&Id, HashSet<&
                 root_module,
                 None,
             );
+
+            return result;
         }
     }
 
-    result
+    Default::default()
 }
 
 fn get_names_for_item<'a>(
@@ -340,7 +350,7 @@ fn get_names_for_item<'a>(
         }
         ItemEnum::Variant(..)
         | ItemEnum::Function(..)
-        | ItemEnum::Constant(..)
+        | ItemEnum::Constant { .. }
         | ItemEnum::Static(..) => {
             let item_name = item.name.as_deref().expect("item did not have a name");
             [Some(NamespacedName::Values(item_name)), None]
@@ -471,7 +481,7 @@ fn resolve_glob_imported_names<'a>(crate_: &'a Crate, traversal_state: &mut Name
 
         // Glob-of-glob import chains might still produce `names` and `duplicated_names` entries
         // that would be shadowed by locally-defined names in this module. Apply the shadowing
-        // rules by removing any conflicing names from both of those collections.
+        // rules by removing any conflicting names from both of those collections.
         if let Some(local_names) = traversal_state.names_defined_in_module.get(module_id) {
             for local_name in local_names.keys() {
                 names.remove(local_name);
@@ -606,7 +616,7 @@ fn register_name<'a>(
 /// Collect all public items that are reachable from the crate root and record their parent Ids.
 fn visit_root_reachable_public_items<'a>(
     crate_: &'a Crate,
-    parents: &mut HashMap<&'a Id, HashSet<&'a Id>>,
+    parents: &mut HashMap<&'a Id, Vec<&'a Id>>,
     traversal_state: &NameResolution<'a>,
     currently_visited_items: &mut HashSet<&'a Id>,
     item: &'a Item,
@@ -628,7 +638,7 @@ fn visit_root_reachable_public_items<'a>(
 
     let item_parents = parents.entry(&item.id).or_default();
     if let Some(parent_id) = parent_id {
-        item_parents.insert(parent_id);
+        item_parents.push(parent_id);
     }
 
     if !currently_visited_items.insert(&item.id) {
