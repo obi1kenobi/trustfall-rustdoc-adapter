@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{borrow::Cow, rc::Rc};
 
 use rustdoc_types::{Abi, Item, Span};
 
@@ -7,7 +7,10 @@ use crate::{
     indexed_crate::ImportablePath,
 };
 
-use super::vertex::{Vertex, VertexKind};
+use super::{
+    enum_variant::{EnumVariant, LazyDiscriminants},
+    vertex::{Vertex, VertexKind},
+};
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy)]
@@ -94,6 +97,25 @@ impl Origin {
         Vertex {
             origin: *self,
             kind: abi.into(),
+        }
+    }
+
+    pub(super) fn make_discriminant_vertex<'a>(&self, value: Cow<'a, str>) -> Vertex<'a> {
+        Vertex {
+            origin: *self,
+            kind: VertexKind::Discriminant(value),
+        }
+    }
+
+    pub(super) fn make_variant_vertex<'a>(
+        &self,
+        item: &'a Item,
+        discriminants: Rc<LazyDiscriminants<'a>>,
+        index: usize,
+    ) -> Vertex<'a> {
+        Vertex {
+            origin: *self,
+            kind: VertexKind::Variant(EnumVariant::new(item, discriminants, index)),
         }
     }
 }

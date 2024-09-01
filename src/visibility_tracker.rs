@@ -8,6 +8,33 @@ use rustdoc_types::{Crate, GenericArgs, Id, Item, ItemEnum, TypeAlias, Visibilit
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
+#[repr(transparent)]
+#[derive(Debug, Hash, PartialEq, Eq)]
+pub(crate) struct IdRef(str);
+
+impl IdRef {
+    fn new(id: &Id) -> &Self {
+        // Safety: due to IdRef being #[repr(transparent)] &str and &IdRef have the same Layout
+        unsafe { std::mem::transmute(id.0.as_str()) }
+    }
+
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::borrow::Borrow<IdRef> for Id {
+    fn borrow(&self) -> &IdRef {
+        IdRef::new(self)
+    }
+}
+
+impl AsRef<IdRef> for Id {
+    fn as_ref(&self) -> &IdRef {
+        IdRef::new(self)
+    }
+}
+
 use crate::{attributes::Attribute, ImportablePath};
 
 #[derive(Debug, Clone)]
@@ -16,7 +43,7 @@ pub(crate) struct VisibilityTracker<'a> {
     inner: &'a Crate,
 
     /// For an Id, give the list of item Ids under which it is publicly visible.
-    visible_parent_ids: HashMap<&'a Id, Vec<&'a Id>>,
+    visible_parent_ids: HashMap<&'a IdRef, Vec<&'a IdRef>>,
 }
 
 impl<'a> VisibilityTracker<'a> {
@@ -31,8 +58,8 @@ impl<'a> VisibilityTracker<'a> {
         // Sort and deduplicate parent ids.
         // This ensures a consistent order, since queries can observe this order directly.
         iter.for_each(|(_id, parent_ids)| {
-            parent_ids.sort_unstable_by_key(|id| id.0.as_str());
-            parent_ids.dedup_by_key(|id| id.0.as_str());
+            parent_ids.sort_unstable_by_key(|id| id.as_str());
+            parent_ids.dedup_by_key(|id| id.as_str());
         });
 
         Self {
@@ -41,7 +68,10 @@ impl<'a> VisibilityTracker<'a> {
         }
     }
 
-    pub(crate) fn collect_publicly_importable_names(&self, id: &'a Id) -> Vec<ImportablePath<'a>> {
+    pub(crate) fn collect_publicly_importable_names(
+        &self,
+        id: &'a IdRef,
+    ) -> Vec<ImportablePath<'a>> {
         let mut already_visited_ids = Default::default();
         let mut result = Default::default();
 
@@ -59,8 +89,8 @@ impl<'a> VisibilityTracker<'a> {
 
     pub(crate) fn collect_publicly_importable_names_inner(
         &self,
-        next_id: &'a Id,
-        already_visited_ids: &mut HashSet<&'a Id>,
+        next_id: &'a IdRef,
+        already_visited_ids: &mut HashSet<&'a IdRef>,
         stack: &mut Vec<&'a str>,
         currently_doc_hidden: bool,
         currently_deprecated: bool,
@@ -158,14 +188,14 @@ impl<'a> VisibilityTracker<'a> {
 
     fn collect_publicly_importable_names_recurse(
         &self,
-        next_id: &'a Id,
-        already_visited_ids: &mut HashSet<&'a Id>,
+        next_id: &'a IdRef,
+        already_visited_ids: &mut HashSet<&'a IdRef>,
         stack: &mut Vec<&'a str>,
         currently_doc_hidden: bool,
         currently_deprecated: bool,
         output: &mut Vec<ImportablePath<'a>>,
     ) {
-        if next_id == &self.inner.root {
+        if next_id == self.inner.root.as_ref() {
             let final_name = stack.iter().rev().copied().collect();
             output.push(ImportablePath::new(
                 final_name,
@@ -187,7 +217,7 @@ impl<'a> VisibilityTracker<'a> {
     }
 
     #[cfg(test)]
-    pub(super) fn visible_parent_ids(&self) -> &HashMap<&'a Id, Vec<&'a Id>> {
+    pub(super) fn visible_parent_ids(&self) -> &HashMap<&'a IdRef, Vec<&'a IdRef>> {
         &self.visible_parent_ids
     }
 }
@@ -216,22 +246,22 @@ struct Definition<'a> {
     /// When the definition is an import, the `current_id` is the Id of the import,
     /// to account for possible renamings.
     /// Otherwise, the `current_id` should be the same as the `underlying_id`.
-    current_id: &'a Id,
+    current_id: &'a IdRef,
 
     /// The actual underlying item this definition resolves to, like a struct or function.
     /// This Id must not point to an import item.
-    final_underlying_id: &'a Id,
+    final_underlying_id: &'a IdRef,
 }
 
 impl<'a> Definition<'a> {
-    fn new(current_id: &'a Id, final_underlying_id: &'a Id) -> Self {
+    fn new(current_id: &'a IdRef, final_underlying_id: &'a IdRef) -> Self {
         Self {
             current_id,
             final_underlying_id,
         }
     }
 
-    fn new_direct(id: &'a Id) -> Self {
+    fn new_direct(id: &'a IdRef) -> Self {
         Self {
             current_id: id,
             final_underlying_id: id,
@@ -245,21 +275,22 @@ impl<'a> Definition<'a> {
 struct NameResolution<'a> {
     /// Module Id -> { name -> (id, is_public) } for items directly defined in that module.
     /// Not just public names, since private names can shadow pub glob-exported names.
-    names_defined_in_module: HashMap<&'a Id, HashMap<NamespacedName<'a>, (Definition<'a>, bool)>>,
+    names_defined_in_module:
+        HashMap<&'a IdRef, HashMap<NamespacedName<'a>, (Definition<'a>, bool)>>,
 
     /// Modules and the glob imports they contain.
-    modules_with_glob_imports: HashMap<&'a Id, HashSet<&'a Id>>,
+    modules_with_glob_imports: HashMap<&'a IdRef, HashSet<&'a IdRef>>,
 
     /// Names that were glob-imported and re-exported into a module, together with
     /// the item Id to which they refer. This is because glob-glob name shadowing doesn't apply
     /// if both names point to the same item.
-    glob_imported_names_in_module: HashMap<&'a Id, HashMap<NamespacedName<'a>, Definition<'a>>>,
+    glob_imported_names_in_module: HashMap<&'a IdRef, HashMap<NamespacedName<'a>, Definition<'a>>>,
 
     /// Names in a module that were glob-imported more than once, and are therefore unusable.
-    duplicated_glob_names_in_module: HashMap<&'a Id, HashSet<NamespacedName<'a>>>,
+    duplicated_glob_names_in_module: HashMap<&'a IdRef, HashSet<NamespacedName<'a>>>,
 }
 
-fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<&Id, Vec<&Id>> {
+fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<&IdRef, Vec<&IdRef>> {
     let root_id = &crate_.root;
 
     if let Some(root_module) = crate_.index.get(root_id) {
@@ -267,7 +298,7 @@ fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<&Id, Vec<&Id>>
             let traversal_state = resolve_crate_names(crate_);
 
             // Avoid cycles by keeping track of which items we're in the middle of visiting.
-            let mut currently_visited_items: HashSet<&Id> = Default::default();
+            let mut currently_visited_items: HashSet<&IdRef> = Default::default();
 
             let mut result = Default::default();
 
@@ -380,9 +411,9 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
                 if imp.glob {
                     result
                         .modules_with_glob_imports
-                        .entry(&item.id)
+                        .entry(item.id.as_ref())
                         .or_default()
-                        .insert(inner_id);
+                        .insert(inner_id.as_ref());
                 } else if let Some(target) = imp.id.as_ref().and_then(|id| crate_.index.get(id)) {
                     if imp.name == "_" {
                         // `_` is a special name which causes the imported item to be available
@@ -419,11 +450,12 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
                         let Some(final_underlying_id) = final_underlying_id else {
                             continue;
                         };
-                        let definition = Definition::new(inner_id, final_underlying_id);
+                        let definition =
+                            Definition::new(inner_id.as_ref(), final_underlying_id.as_ref());
 
                         result
                             .names_defined_in_module
-                            .entry(&item.id)
+                            .entry(item.id.as_ref())
                             .or_default()
                             .insert(
                                 name,
@@ -441,12 +473,12 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
                 for name in get_names_for_item(crate_, inner_item) {
                     result
                         .names_defined_in_module
-                        .entry(&item.id)
+                        .entry(item.id.as_ref())
                         .or_default()
                         .insert(
                             name,
                             (
-                                Definition::new_direct(&inner_item.id),
+                                Definition::new_direct(inner_item.id.as_ref()),
                                 matches!(
                                     inner_item.visibility,
                                     Visibility::Public | Visibility::Default
@@ -465,7 +497,7 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
 
 fn resolve_glob_imported_names<'a>(crate_: &'a Crate, traversal_state: &mut NameResolution<'a>) {
     for (&module_id, globs) in &traversal_state.modules_with_glob_imports {
-        let mut visited: HashSet<&Id> = Default::default();
+        let mut visited: HashSet<&IdRef> = Default::default();
         let mut names = Default::default();
         let mut duplicated_names = Default::default();
 
@@ -507,10 +539,10 @@ fn resolve_glob_imported_names<'a>(crate_: &'a Crate, traversal_state: &mut Name
 
 fn recursively_compute_visited_names_for_glob<'a>(
     crate_: &'a Crate,
-    glob_parent_module_id: &'a Id,
-    glob_id: &'a Id,
+    glob_parent_module_id: &'a IdRef,
+    glob_id: &'a IdRef,
     traversal_state: &NameResolution<'a>,
-    visited: &mut HashSet<&'a Id>,
+    visited: &mut HashSet<&'a IdRef>,
     names: &mut HashMap<NamespacedName<'a>, Definition<'a>>,
     duplicated_names: &mut HashSet<NamespacedName<'a>>,
 ) {
@@ -539,7 +571,7 @@ fn recursively_compute_visited_names_for_glob<'a>(
                 register_name(
                     module_local_items,
                     name,
-                    Definition::new_direct(variant_id),
+                    Definition::new_direct(variant_id.as_ref()),
                     names,
                     duplicated_names,
                 );
@@ -548,7 +580,7 @@ fn recursively_compute_visited_names_for_glob<'a>(
         return;
     }
 
-    let module_id = target_id;
+    let module_id = target_id.as_ref();
     if !visited.insert(module_id) {
         // Already checked this module.
         return;
@@ -619,11 +651,11 @@ fn register_name<'a>(
 /// Collect all public items that are reachable from the crate root and record their parent Ids.
 fn visit_root_reachable_public_items<'a>(
     crate_: &'a Crate,
-    parents: &mut HashMap<&'a Id, Vec<&'a Id>>,
+    parents: &mut HashMap<&'a IdRef, Vec<&'a IdRef>>,
     traversal_state: &NameResolution<'a>,
-    currently_visited_items: &mut HashSet<&'a Id>,
+    currently_visited_items: &mut HashSet<&'a IdRef>,
     item: &'a Item,
-    parent_id: Option<&'a Id>,
+    parent_id: Option<&'a IdRef>,
 ) {
     match item.visibility {
         Visibility::Crate | Visibility::Restricted { .. } => {
@@ -639,18 +671,18 @@ fn visit_root_reachable_public_items<'a>(
         }
     }
 
-    let item_parents = parents.entry(&item.id).or_default();
+    let item_parents = parents.entry(item.id.as_ref()).or_default();
     if let Some(parent_id) = parent_id {
         item_parents.push(parent_id);
     }
 
-    if !currently_visited_items.insert(&item.id) {
+    if !currently_visited_items.insert(item.id.as_ref()) {
         // We found a cycle in the import graph, and we've already processed this item.
         // Nothing more to do here.
         return;
     }
 
-    let next_parent_id = Some(&item.id);
+    let next_parent_id = Some(item.id.as_ref());
     match &item.inner {
         rustdoc_types::ItemEnum::Module(m) => {
             for inner in m.items.iter().filter_map(|id| crate_.index.get(id)) {
@@ -667,7 +699,9 @@ fn visit_root_reachable_public_items<'a>(
             // Explicitly process items imported via globs inside this module,
             // since the logic there is not item-wise: it requires
             // knowledge of the other names defined in the module.
-            if let Some(glob_imports) = traversal_state.glob_imported_names_in_module.get(&item.id)
+            if let Some(glob_imports) = traversal_state
+                .glob_imported_names_in_module
+                .get(item.id.as_ref())
             {
                 for inner_defn in glob_imports.values() {
                     if let Some(inner_item) = crate_.index.get(inner_defn.current_id) {
@@ -809,7 +843,7 @@ fn visit_root_reachable_public_items<'a>(
     }
 
     // We are leaving this item. Remove it from the visited set.
-    let removed = currently_visited_items.remove(&item.id);
+    let removed = currently_visited_items.remove(item.id.as_ref());
     assert!(removed);
 }
 
