@@ -279,7 +279,7 @@ impl<'a> IndexedCrate<'a> {
     pub fn publicly_importable_names(&self, id: &'a Id) -> Vec<ImportablePath<'a>> {
         if self.inner.index.contains_key(id) {
             self.visibility_tracker
-                .collect_publicly_importable_names(id)
+                .collect_publicly_importable_names(id.as_ref())
         } else {
             Default::default()
         }
@@ -593,23 +593,23 @@ mod tests {
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(top_level_function));
+            .contains_key(top_level_function.as_ref()));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(method));
+            .contains_key(method.as_ref()));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(associated_fn));
+            .contains_key(associated_fn.as_ref()));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(field));
+            .contains_key(field.as_ref()));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(const_item));
+            .contains_key(const_item.as_ref()));
 
         // But only `top_level_function` is importable.
         assert_eq!(
@@ -655,23 +655,23 @@ mod tests {
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(top_level_function));
+            .contains_key(top_level_function.as_ref()));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(variant));
+            .contains_key(variant.as_ref()));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(method));
+            .contains_key(method.as_ref()));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(associated_fn));
+            .contains_key(associated_fn.as_ref()));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(const_item));
+            .contains_key(const_item.as_ref()));
 
         // But only `top_level_function` and `Foo::variant` is importable.
         assert_eq!(
@@ -721,27 +721,27 @@ mod tests {
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(top_level_function));
+            .contains_key(top_level_function.as_ref()));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(method));
+            .contains_key(method.as_ref()));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(associated_fn));
+            .contains_key(associated_fn.as_ref()));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(left_field));
+            .contains_key(left_field.as_ref()));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(right_field));
+            .contains_key(right_field.as_ref()));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(const_item));
+            .contains_key(const_item.as_ref()));
 
         // But only `top_level_function` is importable.
         assert_eq!(

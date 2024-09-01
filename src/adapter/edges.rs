@@ -512,7 +512,7 @@ pub(super) fn resolve_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 
             let trait_vertex = vertex.as_trait().expect("not a Trait vertex");
             Box::new(trait_vertex.bounds.iter().filter_map(move |bound| {
-                if let TraitBound { trait_, .. } = bound {
+                if let TraitBound { trait_, .. } = &bound {
                     item_index
                         .get(&trait_.id)
                         .as_ref()
