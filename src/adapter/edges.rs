@@ -1,4 +1,5 @@
 use rustdoc_types::{GenericBound::TraitBound, Id, ItemEnum, VariantKind};
+use std::rc::Rc;
 use trustfall::provider::{
     resolve_neighbors_with, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
     VertexIterator,
@@ -6,7 +7,9 @@ use trustfall::provider::{
 
 use crate::{adapter::supported_item_kind, attributes::Attribute, IndexedCrate};
 
-use super::{optimizations, origin::Origin, vertex::Vertex, RustdocAdapter};
+use super::{
+    enum_variant::LazyDiscriminants, optimizations, origin::Origin, vertex::Vertex, RustdocAdapter,
+};
 
 pub(super) fn resolve_crate_diff_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
@@ -263,7 +266,10 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     match edge_name {
         "field" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let item = vertex.as_variant().expect("vertex was not a Variant");
+            let item = vertex
+                .as_variant()
+                .expect("vertex was not a Variant")
+                .variant();
             let item_index = match origin {
                 Origin::CurrentCrate => &current_crate.inner.index,
                 Origin::PreviousCrate => {
@@ -293,6 +299,14 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 })),
             }
         }),
+        "discriminant" => resolve_neighbors_with(contexts, move |vertex: &'_ Vertex<'a>| {
+            let origin = vertex.origin;
+            let enum_var = vertex.as_variant().expect("vertex was not a Variant");
+            let discriminant = enum_var.discriminant();
+            Box::new(std::iter::once(
+                origin.make_discriminant_vertex(discriminant),
+            ))
+        }),
         _ => unreachable!("resolve_variant_edge {edge_name}"),
     }
 }
@@ -317,9 +331,35 @@ pub(super) fn resolve_enum_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                         .index
                 }
             };
-            Box::new(enum_item.variants.iter().map(move |field_id| {
-                origin.make_item_vertex(item_index.get(field_id).expect("missing item"))
-            }))
+
+            let discriminants = {
+                let variants = enum_item
+                    .variants
+                    .iter()
+                    .map(move |field_id| {
+                        let inner = &item_index.get(field_id).expect("missing item").inner;
+                        match inner {
+                            ItemEnum::Variant(v) => v,
+                            _ => unreachable!("Item {inner:?} not a Variant"),
+                        }
+                    })
+                    .collect();
+                Rc::new(LazyDiscriminants::new(variants))
+            };
+
+            Box::new(
+                enum_item
+                    .variants
+                    .iter()
+                    .enumerate()
+                    .map(move |(index, field_id)| {
+                        origin.make_variant_vertex(
+                            item_index.get(field_id).expect("missing item"),
+                            discriminants.clone(),
+                            index,
+                        )
+                    }),
+            )
         }),
         _ => unreachable!("resolve_enum_edge {edge_name}"),
     }
