@@ -490,6 +490,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a66a03ae7c801facd77a29370b4faec201768915ac14a721ba36f20bc9c209b"
 
 [[package]]
+name = "rustc-hash"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "583034fd73374156e66797ed8e5b0d5690409c9226b22d87cb7f19821c05d152"
+
+[[package]]
 name = "rustdoc-types"
 version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -636,6 +642,7 @@ dependencies = [
  "itertools 0.12.1",
  "maplit",
  "rayon",
+ "rustc-hash",
  "rustdoc-types",
  "serde",
  "serde_json",
