@@ -1995,3 +1995,167 @@ fn function_has_body() {
 
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn enum_discriminants() {
+    let path = "./localdata/test_data/enum_discriminants/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = RustdocAdapter::new(&indexed_crate, None);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Enum {
+                enum_name: name @output
+                variant {
+                    variant_name: name @output
+                    discriminant @optional {
+                        value @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables: BTreeMap<&str, &str> = btreemap! {};
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        enum_name: String,
+        variant_name: String,
+        value: Option<String>,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.into(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![
+            Output {
+                enum_name: "A".into(),
+                variant_name: "Five".into(),
+                value: Some("100".into(),),
+            },
+            Output {
+                enum_name: "A".into(),
+                variant_name: "Four".into(),
+                value: Some("99".into(),),
+            },
+            Output {
+                enum_name: "A".into(),
+                variant_name: "One".into(),
+                value: Some("1".into(),),
+            },
+            Output {
+                enum_name: "A".into(),
+                variant_name: "Three".into(),
+                value: Some("3".into(),),
+            },
+            Output {
+                enum_name: "A".into(),
+                variant_name: "Two".into(),
+                value: Some("2".into(),),
+            },
+            Output {
+                enum_name: "A".into(),
+                variant_name: "Zero".into(),
+                value: Some("0".into(),),
+            },
+            Output {
+                enum_name: "Fieldful".into(),
+                variant_name: "Struct".into(),
+                value: Some("2".into(),),
+            },
+            Output {
+                enum_name: "Fieldful".into(),
+                variant_name: "Tuple".into(),
+                value: Some("1".into(),),
+            },
+            Output {
+                enum_name: "Fieldful".into(),
+                variant_name: "Unit".into(),
+                value: Some("0".into(),),
+            },
+            Output {
+                enum_name: "Fieldful".into(),
+                variant_name: "Unit2".into(),
+                value: Some("9".into(),),
+            },
+            Output {
+                enum_name: "FieldfulNoRepr".into(),
+                variant_name: "Struct".into(),
+                value: Some("2".into(),),
+            },
+            Output {
+                enum_name: "FieldfulNoRepr".into(),
+                variant_name: "Tuple".into(),
+                value: Some("1".into(),),
+            },
+            Output {
+                enum_name: "FieldfulNoRepr".into(),
+                variant_name: "Unit".into(),
+                value: Some("0".into(),),
+            },
+            Output {
+                enum_name: "FieldlessWithDiscrimants".into(),
+                variant_name: "First".into(),
+                value: Some("10".into(),),
+            },
+            Output {
+                enum_name: "FieldlessWithDiscrimants".into(),
+                variant_name: "Second".into(),
+                value: Some("20".into(),),
+            },
+            Output {
+                enum_name: "FieldlessWithDiscrimants".into(),
+                variant_name: "Struct".into(),
+                value: Some("21".into(),),
+            },
+            Output {
+                enum_name: "FieldlessWithDiscrimants".into(),
+                variant_name: "Tuple".into(),
+                value: Some("11".into(),),
+            },
+            Output {
+                enum_name: "FieldlessWithDiscrimants".into(),
+                variant_name: "Unit".into(),
+                value: Some("22".into(),),
+            },
+            Output {
+                enum_name: "Pathological".into(),
+                variant_name: "Max".into(),
+                value: Some("170141183460469231731687303715884105727".into(),),
+            },
+            Output {
+                enum_name: "Pathological".into(),
+                variant_name: "Min".into(),
+                value: Some("-170141183460469231731687303715884105728".into(),),
+            },
+            Output {
+                enum_name: "Pathological".into(),
+                variant_name: "MinPlusOne".into(),
+                value: Some("-170141183460469231731687303715884105727".into(),),
+            },
+            Output {
+                enum_name: "Pathological".into(),
+                variant_name: "MinPlusTwo".into(),
+                value: Some("-170141183460469231731687303715884105726".into(),),
+            },
+        ],
+        results
+    );
+}

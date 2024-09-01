@@ -1,8 +1,8 @@
-use std::rc::Rc;
+use std::{borrow::Cow, rc::Rc};
 
 use rustdoc_types::{
     Abi, Constant, Crate, Enum, Function, Impl, Item, Module, Path, Span, Static, Struct, Trait,
-    Type, Union, Variant, VariantKind,
+    Type, Union, VariantKind,
 };
 use trustfall::provider::Typename;
 
@@ -12,7 +12,7 @@ use crate::{
     IndexedCrate,
 };
 
-use super::origin::Origin;
+use super::{enum_variant::EnumVariant, origin::Origin};
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
@@ -36,6 +36,8 @@ pub enum VertexKind<'a> {
     ImplementedTrait(&'a Path, &'a Item),
     FunctionParameter(&'a str),
     FunctionAbi(&'a Abi),
+    Discriminant(Cow<'a, str>),
+    Variant(EnumVariant<'a>),
 }
 
 impl<'a> Typename for Vertex<'a> {
@@ -43,7 +45,7 @@ impl<'a> Typename for Vertex<'a> {
     /// intended to fulfill resolution requests for the __typename property.
     #[inline]
     fn typename(&self) -> &'static str {
-        match self.kind {
+        match &self.kind {
             VertexKind::Item(item) => match &item.inner {
                 rustdoc_types::ItemEnum::Module { .. } => "Module",
                 rustdoc_types::ItemEnum::Struct(..) => "Struct",
@@ -77,6 +79,12 @@ impl<'a> Typename for Vertex<'a> {
             },
             VertexKind::FunctionParameter(..) => "FunctionParameter",
             VertexKind::FunctionAbi(..) => "FunctionAbi",
+            VertexKind::Discriminant(..) => "Discriminant",
+            VertexKind::Variant(ev) => match ev.variant().kind {
+                VariantKind::Plain => "PlainVariant",
+                VariantKind::Tuple(..) => "TupleVariant",
+                VariantKind::Struct { .. } => "StructVariant",
+            },
         }
     }
 }
@@ -109,8 +117,9 @@ impl<'a> Vertex<'a> {
     }
 
     pub(super) fn as_item(&self) -> Option<&'a Item> {
-        match self.kind {
+        match &self.kind {
             VertexKind::Item(item) => Some(item),
+            VertexKind::Variant(variant) => Some(variant.item()),
             _ => None,
         }
     }
@@ -164,11 +173,11 @@ impl<'a> Vertex<'a> {
         })
     }
 
-    pub(super) fn as_variant(&self) -> Option<&'a Variant> {
-        self.as_item().and_then(|item| match &item.inner {
-            rustdoc_types::ItemEnum::Variant(v) => Some(v),
+    pub(super) fn as_variant(&self) -> Option<&'_ EnumVariant<'a>> {
+        match &self.kind {
+            VertexKind::Variant(variant) => Some(variant),
             _ => None,
-        })
+        }
     }
 
     pub(super) fn as_path(&self) -> Option<&'a [String]> {
@@ -251,6 +260,13 @@ impl<'a> Vertex<'a> {
     pub(super) fn as_implemented_trait(&self) -> Option<(&'a rustdoc_types::Path, &'a Item)> {
         match &self.kind {
             VertexKind::ImplementedTrait(path, trait_item) => Some((*path, *trait_item)),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_discriminant(&self) -> Option<&Cow<'a, str>> {
+        match &self.kind {
+            VertexKind::Discriminant(variant) => Some(variant),
             _ => None,
         }
     }
