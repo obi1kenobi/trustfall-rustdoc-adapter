@@ -275,7 +275,7 @@ fn blanket_type_might_cover_types_in_downstream_crate(blanket_type: &rustdoc_typ
             true
         }
         rustdoc_types::Type::BorrowedRef { type_, .. } => {
-            // Blanket implementatio over a reference, like `&T`.
+            // Blanket implementation over a reference, like `&T`.
             // It matches if the underlying type beheath the reference matches.
             blanket_type_might_cover_types_in_downstream_crate(type_)
         }
