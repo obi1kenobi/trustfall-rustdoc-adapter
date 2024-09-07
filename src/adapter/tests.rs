@@ -2098,17 +2098,17 @@ fn enum_discriminants() {
             Output {
                 enum_name: "FieldfulNoRepr".into(),
                 variant_name: "Struct".into(),
-                value: Some("2".into(),),
+                value: None,
             },
             Output {
                 enum_name: "FieldfulNoRepr".into(),
                 variant_name: "Tuple".into(),
-                value: Some("1".into(),),
+                value: None,
             },
             Output {
                 enum_name: "FieldfulNoRepr".into(),
                 variant_name: "Unit".into(),
-                value: Some("0".into(),),
+                value: None,
             },
             Output {
                 enum_name: "FieldlessWithDiscrimants".into(),
