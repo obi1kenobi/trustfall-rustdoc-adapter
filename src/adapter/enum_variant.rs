@@ -10,7 +10,7 @@ use std::str::FromStr;
 #[derive(Debug, Clone)]
 pub struct EnumVariant<'a> {
     item: &'a Item,
-    discriminants: Rc<LazyDiscriminants<'a>>,
+    discriminants: Option<Rc<LazyDiscriminants<'a>>>,
     index: usize,
 }
 
@@ -46,7 +46,7 @@ impl<'a> LazyDiscriminants<'a> {
 impl<'a> EnumVariant<'a> {
     pub(super) fn new(
         item: &'a Item,
-        discriminants: Rc<LazyDiscriminants<'a>>,
+        discriminants: Option<Rc<LazyDiscriminants<'a>>>,
         index: usize,
     ) -> Self {
         Self {
@@ -63,12 +63,14 @@ impl<'a> EnumVariant<'a> {
         }
     }
 
-    pub(super) fn discriminant(&self) -> Cow<'a, str> {
-        self.discriminants
-            .get_discriminants()
-            .get(self.index)
-            .expect("self.index should exist in self.discriminants")
-            .clone()
+    pub(super) fn discriminant(&self) -> Option<Cow<'a, str>> {
+        self.discriminants.as_ref().map(|inner| {
+            inner
+                .get_discriminants()
+                .get(self.index)
+                .expect("self.index should exist in self.discriminants")
+                .clone()
+        })
     }
 
     #[inline]

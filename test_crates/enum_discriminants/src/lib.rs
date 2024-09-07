@@ -21,7 +21,7 @@ pub enum FieldlessWithDiscrimants {
     Unit,
 }
 
-#[repr(i64)]
+#[repr(C, i64)]
 pub enum Fieldful {
     Unit,
     Tuple(bool),
@@ -29,6 +29,7 @@ pub enum Fieldful {
     Unit2 = 9
 }
 
+// No discriminants here: no repr + fields in the variants.
 pub enum FieldfulNoRepr {
     Unit,
     Tuple(bool),
