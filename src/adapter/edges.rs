@@ -302,10 +302,13 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
         "discriminant" => resolve_neighbors_with(contexts, move |vertex: &'_ Vertex<'a>| {
             let origin = vertex.origin;
             let enum_var = vertex.as_variant().expect("vertex was not a Variant");
-            let discriminant = enum_var.discriminant();
-            Box::new(std::iter::once(
-                origin.make_discriminant_vertex(discriminant),
-            ))
+            let maybe_discriminant = enum_var.discriminant();
+
+            Box::new(
+                maybe_discriminant
+                    .into_iter()
+                    .map(move |discriminant| origin.make_discriminant_vertex(discriminant)),
+            )
         }),
         _ => unreachable!("resolve_variant_edge {edge_name}"),
     }
@@ -321,6 +324,7 @@ pub(super) fn resolve_enum_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
         "variant" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
             let enum_item = vertex.as_enum().expect("vertex was not an Enum");
+            let outer_item = vertex.as_item().expect("enum was not a vertex");
 
             let item_index = match origin {
                 Origin::CurrentCrate => &current_crate.inner.index,
@@ -333,18 +337,59 @@ pub(super) fn resolve_enum_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             };
 
             let discriminants = {
+                // Discriminants are only well-defined if either:
+                // - the enum has a defined `repr` binary representation, or
+                // - none of the enum variants contain any fields of their own.
+
+                let has_repr = outer_item.attrs.iter().any(move |attr| {
+                    let parsed_attr = Attribute::new(attr.as_str());
+
+                    parsed_attr.content.base == "repr"
+                        && parsed_attr.content.arguments.iter().flatten().any(|repr| {
+                            repr.base == "isize"
+                                || repr.base == "usize"
+                                || repr
+                                    .base
+                                    .strip_prefix("i")
+                                    .map(|num| num.chars().all(|c| c.is_ascii_digit()))
+                                    .unwrap_or(false)
+                                || repr
+                                    .base
+                                    .strip_prefix("u")
+                                    .map(|num| num.chars().all(|c| c.is_ascii_digit()))
+                                    .unwrap_or(false)
+                        })
+                });
+
+                let mut has_fields_in_variants = false;
                 let variants = enum_item
                     .variants
                     .iter()
-                    .map(move |field_id| {
+                    .map(|field_id| {
                         let inner = &item_index.get(field_id).expect("missing item").inner;
                         match inner {
-                            ItemEnum::Variant(v) => v,
+                            ItemEnum::Variant(v) => {
+                                match &v.kind {
+                                    VariantKind::Plain => {}
+                                    VariantKind::Tuple(t) => {
+                                        has_fields_in_variants |= !t.is_empty()
+                                    }
+                                    VariantKind::Struct { fields, .. } => {
+                                        has_fields_in_variants |= fields.is_empty()
+                                    }
+                                }
+                                v
+                            }
                             _ => unreachable!("Item {inner:?} not a Variant"),
                         }
                     })
                     .collect();
-                Rc::new(LazyDiscriminants::new(variants))
+
+                if has_repr || !has_fields_in_variants {
+                    Some(Rc::new(LazyDiscriminants::new(variants)))
+                } else {
+                    None
+                }
             };
 
             Box::new(
