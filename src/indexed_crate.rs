@@ -240,6 +240,11 @@ impl<'a> IndexedCrate<'a> {
             impl_index: None,
         };
 
+        debug_assert!(
+            !value.manually_inlined_builtin_traits.is_empty(),
+            "failed to find any traits to manually inline",
+        );
+
         // Build the imports index
         //
         // This is inlined because we need access to `value`, but `value` is not a valid
@@ -413,6 +418,7 @@ impl<'a: 'b, 'b> Borrow<(&'b Id, &'b str)> for ImplEntry<'a> {
 #[derive(Debug)]
 struct ManualTraitItem {
     name: &'static str,
+    path: &'static [&'static str],
     is_auto: bool,
     is_unsafe: bool,
 }
@@ -423,71 +429,85 @@ struct ManualTraitItem {
 const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 14] = [
     ManualTraitItem {
         name: "Debug",
+        path: &["core", "fmt", "Debug"],
         is_auto: false,
         is_unsafe: false,
     },
     ManualTraitItem {
         name: "Clone",
+        path: &["core", "clone", "Clone"],
         is_auto: false,
         is_unsafe: false,
     },
     ManualTraitItem {
         name: "Copy",
+        path: &["core", "marker", "Copy"],
         is_auto: false,
         is_unsafe: false,
     },
     ManualTraitItem {
         name: "PartialOrd",
+        path: &["core", "cmp", "PartialOrd"],
         is_auto: false,
         is_unsafe: false,
     },
     ManualTraitItem {
         name: "Ord",
+        path: &["core", "cmp", "Ord"],
         is_auto: false,
         is_unsafe: false,
     },
     ManualTraitItem {
         name: "PartialEq",
+        path: &["core", "cmp", "PartialEq"],
         is_auto: false,
         is_unsafe: false,
     },
     ManualTraitItem {
         name: "Eq",
+        path: &["core", "cmp", "Eq"],
         is_auto: false,
         is_unsafe: false,
     },
     ManualTraitItem {
         name: "Hash",
+        path: &["core", "hash", "Hash"],
         is_auto: false,
         is_unsafe: false,
     },
     ManualTraitItem {
         name: "Send",
+        path: &["core", "marker", "Send"],
         is_auto: true,
         is_unsafe: true,
     },
     ManualTraitItem {
         name: "Sync",
+        path: &["core", "marker", "Sync"],
         is_auto: true,
         is_unsafe: true,
     },
     ManualTraitItem {
         name: "Unpin",
+        path: &["core", "marker", "Unpin"],
         is_auto: true,
         is_unsafe: false,
     },
     ManualTraitItem {
         name: "RefUnwindSafe",
+        path: &["core", "panic", "unwind_safe", "RefUnwindSafe"],
         is_auto: true,
         is_unsafe: false,
     },
     ManualTraitItem {
         name: "UnwindSafe",
+        path: &["core", "panic", "unwind_safe", "UnwindSafe"],
         is_auto: true,
         is_unsafe: false,
     },
     ManualTraitItem {
         name: "Sized",
+        path: &["core", "marker", "Sized"],
         is_auto: false,
         is_unsafe: false,
     },
@@ -534,31 +554,27 @@ fn new_trait(manual_trait_item: &ManualTraitItem, id: Id, crate_id: u32) -> Item
 }
 
 fn create_manually_inlined_builtin_traits(crate_: &Crate) -> HashMap<Id, Item> {
-    let paths = crate_
-        .index
-        .values()
-        .map(|item| &item.inner)
-        .filter_map(|item_enum| match item_enum {
-            rustdoc_types::ItemEnum::Impl(impl_) => Some(impl_),
-            _ => None,
-        })
-        .filter_map(|impl_| impl_.trait_.as_ref());
+    let paths = &crate_.paths;
 
-    paths
-        .filter_map(|path| {
-            MANUAL_TRAIT_ITEMS
-                .iter()
-                .find(|manual| manual.name == path.name)
-                .and_then(|manual| {
-                    crate_.paths.get(&path.id).map(|item_summary| {
-                        (
-                            path.id.clone(),
-                            new_trait(manual, path.id.clone(), item_summary.crate_id),
-                        )
-                    })
-                })
-        })
-        .collect()
+    // `paths` may have thousands of items.
+    #[cfg(feature = "rayon")]
+    let iter = paths.par_iter();
+    #[cfg(not(feature = "rayon"))]
+    let iter = paths.iter();
+
+    iter.filter_map(|(id, entry)| {
+        if entry.kind != rustdoc_types::ItemKind::Trait {
+            return None;
+        }
+
+        // This is a linear scan, but across a tiny array.
+        // It isn't worth doing anything fancier here.
+        MANUAL_TRAIT_ITEMS
+            .iter()
+            .find(|t| t.path == entry.path)
+            .map(|manual| (id.clone(), new_trait(manual, id.clone(), entry.crate_id)))
+    })
+    .collect()
 }
 
 #[cfg(test)]
