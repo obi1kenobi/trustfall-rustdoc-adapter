@@ -487,10 +487,11 @@ pub(super) fn resolve_implemented_trait_property<'a, V: AsVertex<Vertex<'a>> + '
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "name" => resolve_property_with(contexts, |vertex| {
-            let (path, _) = vertex
+            let (_, item) = vertex
                 .as_implemented_trait()
                 .expect("not an ImplementedTrait");
-            path.name.clone().into()
+
+            item.name.clone().into()
         }),
         _ => unreachable!("ImplementedTrait property {property_name}"),
     }
