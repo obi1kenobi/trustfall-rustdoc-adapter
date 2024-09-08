@@ -558,9 +558,27 @@ pub(super) fn resolve_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let trait_vertex = vertex.as_trait().expect("not a Trait vertex");
             Box::new(trait_vertex.bounds.iter().filter_map(move |bound| {
                 if let TraitBound { trait_, .. } = &bound {
-                    item_index
-                        .get(&trait_.id)
-                        .as_ref()
+                    // When the implemented trait is from the same crate
+                    // as its definition, the trait is expected to be present
+                    // in `item_index`. Otherwise, the
+                    // `rustdoc_types::Trait` is not in this rustdoc,
+                    // even if the trait is part of Rust `core` or `std`.
+                    // As a temporary workaround, some common
+                    // Rust built-in traits are manually "inlined"
+                    // with items stored in `manually_inlined_builtin_traits`.
+                    let found_item = item_index.get(&trait_.id).or_else(|| {
+                        let manually_inlined_builtin_traits = match origin {
+                            Origin::CurrentCrate => &current_crate.manually_inlined_builtin_traits,
+                            Origin::PreviousCrate => {
+                                &previous_crate
+                                    .expect("no previous crate provided")
+                                    .manually_inlined_builtin_traits
+                            }
+                        };
+                        manually_inlined_builtin_traits.get(&trait_.id)
+                    });
+
+                    found_item
                         .map(|next_item| origin.make_implemented_trait_vertex(trait_, next_item))
                 } else {
                     None
