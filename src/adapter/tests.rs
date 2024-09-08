@@ -135,8 +135,10 @@ fn rustdoc_finds_supertrait() {
     Crate {
         item {
             ... on Trait {
+                name @output
+
                 supertrait {
-                    name @output
+                    supertrait: name @output
                 }
             }
         }
@@ -152,6 +154,7 @@ fn rustdoc_finds_supertrait() {
     #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
     struct Output {
         name: String,
+        supertrait: String,
     }
 
     let mut results: Vec<_> =
@@ -164,10 +167,23 @@ fn rustdoc_finds_supertrait() {
     similar_asserts::assert_eq!(
         vec![
             Output {
-                name: "Supertrait".into(),
+                name: "DebugPartialOrd".into(),
+                // We *specifically* require the supertrait name to be "Debug",
+                // not "std::fmt::Debug" or any other option. Failing to do this
+                // could cause false-positives in cargo-semver-checks.
+                supertrait: "Debug".into(),
             },
             Output {
-                name: "Supertrait2".into(),
+                name: "DebugPartialOrd".into(),
+                supertrait: "PartialOrd".into(),
+            },
+            Output {
+                name: "MyTrait".into(),
+                supertrait: "Supertrait".into(),
+            },
+            Output {
+                name: "MyTrait".into(),
+                supertrait: "Supertrait2".into(),
             },
         ],
         results
