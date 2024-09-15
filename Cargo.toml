@@ -14,6 +14,7 @@ readme = "./README.md"
 trustfall = "0.7.1"
 rayon = { version = "1.10.0", optional = true }
 rustc-hash = { version = "2.0.0", optional = true }
+cargo_toml = { version = "0.20.4", features = ["features"] }
 
 #
 # Keep this dependency last, its own block, since we change it often via automated means

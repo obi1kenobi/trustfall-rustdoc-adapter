@@ -7,7 +7,7 @@ use trustfall::{
     FieldValue,
 };
 
-use crate::{attributes::Attribute, IndexedCrate};
+use crate::{attributes::Attribute, CrateHandler};
 
 use super::{origin::Origin, vertex::Vertex};
 
@@ -461,8 +461,8 @@ pub(super) fn resolve_raw_type_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
-    current_crate: &'a IndexedCrate<'a>,
-    previous_crate: Option<&'a IndexedCrate<'a>>,
+    current_crate: &'a CrateHandler<'a>,
+    previous_crate: Option<&'a CrateHandler<'a>>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "unsafe" => resolve_property_with(contexts, field_property!(as_trait, is_unsafe)),
@@ -471,12 +471,12 @@ pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let trait_item = vertex.as_item().expect("not an Item");
             let origin = vertex.origin;
 
-            let indexed_crate = match origin {
+            let handler = match origin {
                 Origin::CurrentCrate => current_crate,
                 Origin::PreviousCrate => previous_crate.expect("no previous crate provided"),
             };
 
-            indexed_crate.is_trait_sealed(&trait_item.id).into()
+            handler.own_crate.is_trait_sealed(&trait_item.id).into()
         }),
         _ => unreachable!("Trait property {property_name}"),
     }

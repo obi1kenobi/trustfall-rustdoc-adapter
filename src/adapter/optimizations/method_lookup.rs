@@ -10,9 +10,9 @@ use trustfall::{
 };
 
 use crate::{
-    adapter::{Origin, Vertex},
+    adapter::{CrateHandler, Origin, Vertex},
     indexed_crate::ImplEntry,
-    IndexedCrate, RustdocAdapter,
+    RustdocAdapter,
 };
 
 pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
@@ -48,10 +48,11 @@ pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
         resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
             let item_index = match origin {
-                Origin::CurrentCrate => &current_crate.inner.index,
+                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
                 Origin::PreviousCrate => {
                     &previous_crate
                         .expect("no previous crate provided")
+                        .own_crate
                         .inner
                         .index
                 }
@@ -92,16 +93,17 @@ fn find_impl_owner_id(impl_vertex: &Impl) -> Option<&Id> {
 }
 
 fn resolve_method_from_candidate_value<'a>(
-    current_crate: &'a IndexedCrate<'a>,
-    previous_crate: Option<&'a IndexedCrate<'a>>,
+    current_crate: &'a CrateHandler<'a>,
+    previous_crate: Option<&'a CrateHandler<'a>>,
     vertex: &Vertex<'a>,
     method_name: CandidateValue<FieldValue>,
 ) -> VertexIterator<'a, Vertex<'a>> {
     let origin = vertex.origin;
     let (item_index, impl_index) = match origin {
         Origin::CurrentCrate => (
-            &current_crate.inner.index,
+            &current_crate.own_crate.inner.index,
             current_crate
+                .own_crate
                 .impl_index
                 .as_ref()
                 .expect("no impl index present"),
@@ -109,8 +111,9 @@ fn resolve_method_from_candidate_value<'a>(
         Origin::PreviousCrate => {
             let previous_crate = previous_crate.expect("no previous crate provided");
             (
-                &previous_crate.inner.index,
+                &previous_crate.own_crate.inner.index,
                 previous_crate
+                    .own_crate
                     .impl_index
                     .as_ref()
                     .expect("no impl index provided"),

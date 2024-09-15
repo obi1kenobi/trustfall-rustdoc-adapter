@@ -10,20 +10,50 @@ use anyhow::Context;
 use maplit::btreemap;
 use trustfall::{Schema, TryIntoStruct};
 
-use crate::{IndexedCrate, RustdocAdapter};
+use crate::RustdocAdapter;
 
 #[allow(dead_code)]
 mod type_level_invariants {
-    use crate::{IndexedCrate, RustdocAdapter};
+    use crate::{CrateHandler, IndexedCrate, RustdocAdapter};
 
     fn ensure_send_and_sync<T: Send + Sync>(_value: &T) {}
 
-    fn ensure_indexed_crate_is_sync(value: &IndexedCrate<'_>) {
+    fn ensure_indexed_crate_is_send_and_sync(value: &IndexedCrate<'_>) {
         ensure_send_and_sync(value);
     }
 
-    fn ensure_adapter_is_sync(value: &RustdocAdapter<'_>) {
+    fn ensure_crate_handler_is_send_and_sync(value: &CrateHandler<'_>) {
         ensure_send_and_sync(value);
+    }
+
+    fn ensure_adapter_is_send_and_sync(value: &RustdocAdapter<'_>) {
+        ensure_send_and_sync(value);
+    }
+}
+
+// This has to be a macro due to borrows. It can't be a function call
+// unless we get a "super let" feature in Rust.
+macro_rules! get_test_data {
+    ($data:ident, $case:ident) => {
+        let rustdoc_path = format!("./localdata/test_data/{}/rustdoc.json", stringify!($case));
+        let content = std::fs::read_to_string(&rustdoc_path)
+            .with_context(|| format!("Could not load {rustdoc_path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+            .expect("failed to load rustdoc");
+        let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+
+        let manifest_path = format!("./test_crates/{}/Cargo.toml", stringify!($case));
+        let manifest_content = std::fs::read_to_string(&manifest_path)
+            .with_context(|| format!("Could not load {manifest_path} file, ensure a test crate named {} exists in ./test_crates/", stringify!($case)))
+            .expect("failed to load crate manifest");
+        let storage = crate::CrateStorage::from_rustdoc_and_manifest(
+            crate_,
+            // Our test crates don't have workspace-related info, so this is fine and faster.
+            // TODO: If we add workspace info, change to an alternative method that will load
+            //       the workspace data.
+            cargo_toml::Manifest::from_str(&manifest_content).expect("failed to parse manifest"),
+        );
+
+        let $data = crate::CrateHandler::from_storage(&storage);
     }
 }
 
@@ -48,14 +78,8 @@ fn rustdoc_json_format_version() {
 fn adapter_invariants() {
     // Which rustdoc file we use doesn't really matter,
     // we just need it to create the `RustdocAdapter` struct.
-    let path = "./localdata/test_data/impl_for_ref/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = RustdocAdapter::new(&indexed_crate, None);
+    get_test_data!(data, impl_for_ref);
+    let adapter = RustdocAdapter::new(&data, None);
     let schema =
         Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
 
@@ -65,14 +89,8 @@ fn adapter_invariants() {
 /// Ensure that methods implemented on references (like `&Foo`) show up in queries.
 #[test]
 fn impl_for_ref() {
-    let path = "./localdata/test_data/impl_for_ref/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = RustdocAdapter::new(&indexed_crate, None);
+    get_test_data!(data, impl_for_ref);
+    let adapter = RustdocAdapter::new(&data, None);
 
     let query = r#"
 {
@@ -121,14 +139,8 @@ fn impl_for_ref() {
 
 #[test]
 fn rustdoc_finds_supertrait() {
-    let path = "./localdata/test_data/supertrait/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = RustdocAdapter::new(&indexed_crate, None);
+    get_test_data!(data, supertrait);
+    let adapter = RustdocAdapter::new(&data, None);
 
     let query = r#"
 {
@@ -192,14 +204,8 @@ fn rustdoc_finds_supertrait() {
 
 #[test]
 fn rustdoc_sealed_traits() {
-    let path = "./localdata/test_data/sealed_traits/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = RustdocAdapter::new(&indexed_crate, None);
+    get_test_data!(data, sealed_traits);
+    let adapter = RustdocAdapter::new(&data, None);
 
     let query = r#"
 {
@@ -437,14 +443,8 @@ fn rustdoc_sealed_traits() {
 
 #[test]
 fn rustdoc_finds_consts() {
-    let path = "./localdata/test_data/consts/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+    get_test_data!(data, consts);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
 
     let query = r#"
 {
@@ -551,14 +551,8 @@ fn rustdoc_finds_consts() {
 
 #[test]
 fn rustdoc_trait_has_associated_types() {
-    let path = "./localdata/test_data/traits_with_associated_types/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+    get_test_data!(data, traits_with_associated_types);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
 
     let query = r#"
 {
@@ -610,14 +604,8 @@ fn rustdoc_trait_has_associated_types() {
 
 #[test]
 fn rustdoc_finds_statics() {
-    let path = "./localdata/test_data/statics/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+    get_test_data!(data, statics);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
 
     let query = r#"
 {
@@ -713,15 +701,8 @@ fn rustdoc_finds_statics() {
 
 #[test]
 fn rustdoc_modules() {
-    let path = "./localdata/test_data/modules/rustdoc.json";
-
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+    get_test_data!(data, modules);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
 
     let mod_query = r#"
 {
@@ -853,14 +834,8 @@ fn rustdoc_modules() {
 
 #[test]
 fn rustdoc_associated_consts() {
-    let path = "./localdata/test_data/associated_consts/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+    get_test_data!(data, associated_consts);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
 
     let impl_owner_query = r#"
 {
@@ -959,14 +934,8 @@ fn rustdoc_associated_consts() {
 
 #[test]
 fn function_abi() {
-    let path = "./localdata/test_data/function_abi/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+    get_test_data!(data, function_abi);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
 
     let query = r#"
 {
@@ -1033,14 +1002,8 @@ fn function_abi() {
 
 #[test]
 fn function_export_name() {
-    let path = "./localdata/test_data/function_export_name/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+    get_test_data!(data, function_export_name);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
 
     let query = r#"
 {
@@ -1109,14 +1072,8 @@ fn function_export_name() {
 
 #[test]
 fn importable_paths() {
-    let path = "./localdata/test_data/importable_paths/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+    get_test_data!(data, importable_paths);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
 
     let query = r#"
 {
@@ -1326,14 +1283,8 @@ fn importable_paths() {
 
 #[test]
 fn item_own_public_api_properties() {
-    let path = "./localdata/test_data/importable_paths/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+    get_test_data!(data, importable_paths);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
 
     let query = r#"
 {
@@ -1455,14 +1406,8 @@ fn item_own_public_api_properties() {
 /// Enum variants have as-if-public visibility by default -- they are public if the enum is public.
 #[test]
 fn enum_variant_public_api_eligible() {
-    let path = "./localdata/test_data/importable_paths/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+    get_test_data!(data, importable_paths);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
 
     let query = r#"
 {
@@ -1541,14 +1486,8 @@ fn enum_variant_public_api_eligible() {
 /// Trait associated items have as-if-public visibility by default.
 #[test]
 fn trait_associated_items_public_api_eligible() {
-    let path = "./localdata/test_data/importable_paths/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+    get_test_data!(data, importable_paths);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
 
     let query = r#"
 {
@@ -1676,14 +1615,8 @@ fn trait_associated_items_public_api_eligible() {
 
 #[test]
 fn unions() {
-    let path = "./localdata/test_data/unions/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+    get_test_data!(data, unions);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
 
     // Part 1: make sure unions have correct visibility (similart to importable_paths
     // test case)
@@ -1941,14 +1874,8 @@ fn unions() {
 
 #[test]
 fn function_has_body() {
-    let path = "./localdata/test_data/function_has_body/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+    get_test_data!(data, function_has_body);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
 
     let query = r#"
 {
@@ -2014,14 +1941,8 @@ fn function_has_body() {
 
 #[test]
 fn enum_discriminants() {
-    let path = "./localdata/test_data/enum_discriminants/rustdoc.json";
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
-        .expect("failed to load rustdoc");
-
-    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-    let indexed_crate = IndexedCrate::new(&crate_);
-    let adapter = RustdocAdapter::new(&indexed_crate, None);
+    get_test_data!(data, enum_discriminants);
+    let adapter = RustdocAdapter::new(&data, None);
 
     let query = r#"
 {

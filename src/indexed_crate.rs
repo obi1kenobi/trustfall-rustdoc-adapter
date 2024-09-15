@@ -1,6 +1,7 @@
 use std::{
     borrow::Borrow,
     collections::{hash_map::Entry, HashMap, HashSet},
+    sync::Arc,
 };
 
 #[cfg(feature = "rayon")]
@@ -8,6 +9,92 @@ use rayon::prelude::*;
 use rustdoc_types::{Crate, Id, Item};
 
 use crate::{adapter::supported_item_kind, sealed_trait, visibility_tracker::VisibilityTracker};
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct DependencyKey(Arc<str>);
+
+impl Borrow<str> for DependencyKey {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Borrow<Arc<str>> for DependencyKey {
+    fn borrow(&self) -> &Arc<str> {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CrateStorage {
+    pub(crate) own_crate: Crate,
+    pub(crate) manifest: Option<cargo_toml::Manifest<cargo_toml::Value>>,
+    pub(crate) dependencies: HashMap<DependencyKey, Crate>,
+}
+
+impl CrateStorage {
+    pub fn from_rustdoc(own_crate: Crate) -> Self {
+        Self {
+            own_crate,
+            manifest: None,
+            dependencies: Default::default(),
+        }
+    }
+
+    pub fn from_rustdoc_and_manifest(
+        own_crate: Crate,
+        manifest: cargo_toml::Manifest<cargo_toml::Value>,
+    ) -> Self {
+        Self {
+            own_crate,
+            manifest: Some(manifest),
+            dependencies: Default::default(),
+        }
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct CrateHandler<'a> {
+    pub(crate) own_crate: IndexedCrate<'a>,
+    pub(crate) features: Option<cargo_toml::features::Features<'a, 'a>>,
+    pub(crate) dependencies: HashMap<DependencyKey, IndexedCrate<'a>>,
+}
+
+impl<'a> CrateHandler<'a> {
+    /// Create a new [`CrateHandler`] for a given crate, in order to query it with Trustfall.
+    ///
+    /// Prefer the [`CrateHandler::from_storage`] function when possible, since it makes features
+    /// information available as well. Values constructed with the [`CrateHandler::from_crate`]
+    /// function will appear to have no information on features or other manifest data.
+    pub fn from_crate(crate_: &'a Crate) -> Self {
+        Self {
+            own_crate: IndexedCrate::new(crate_),
+            features: None,
+            dependencies: Default::default(),
+        }
+    }
+
+    /// Create a new [`CrateHandler`] for a given crate, in order to query it with Trustfall.
+    pub fn from_storage(storage: &'a CrateStorage) -> Self {
+        #[cfg(not(feature = "rayon"))]
+        let dependencies_iter = storage.dependencies.iter();
+        #[cfg(feature = "rayon")]
+        let dependencies_iter = storage.dependencies.par_iter();
+
+        Self {
+            own_crate: IndexedCrate::new(&storage.own_crate),
+            features: storage.manifest.as_ref().map(|manifest| {
+                let resolver = cargo_toml::features::Resolver::new();
+                resolver.parse(manifest)
+            }),
+            // TODO: possibly build this hashmap in parallel with rayon:
+            dependencies: dependencies_iter
+                .map(|(k, v)| (k.clone(), IndexedCrate::new(v)))
+                .collect(),
+        }
+    }
+}
 
 /// The rustdoc for a crate, together with associated indexed data to speed up common operations.
 ///

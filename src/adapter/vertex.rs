@@ -8,8 +8,7 @@ use trustfall::provider::Typename;
 
 use crate::{
     attributes::{Attribute, AttributeMetaItem},
-    indexed_crate::ImportablePath,
-    IndexedCrate,
+    CrateHandler, ImportablePath, IndexedCrate,
 };
 
 use super::{enum_variant::EnumVariant, origin::Origin};
@@ -24,8 +23,8 @@ pub struct Vertex<'a> {
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum VertexKind<'a> {
-    CrateDiff((&'a IndexedCrate<'a>, &'a IndexedCrate<'a>)),
-    Crate(&'a IndexedCrate<'a>),
+    CrateDiff((&'a CrateHandler<'a>, &'a CrateHandler<'a>)),
+    Crate(&'a CrateHandler<'a>),
     Item(&'a Item),
     Span(&'a Span),
     Path(&'a [String]),
@@ -91,14 +90,14 @@ impl<'a> Typename for Vertex<'a> {
 
 #[allow(dead_code)]
 impl<'a> Vertex<'a> {
-    pub(super) fn new_crate(origin: Origin, crate_: &'a IndexedCrate<'a>) -> Self {
+    pub(super) fn new_crate(origin: Origin, crate_: &'a CrateHandler<'a>) -> Self {
         Self {
             origin,
             kind: VertexKind::Crate(crate_),
         }
     }
 
-    pub(super) fn as_crate_diff(&self) -> Option<(&'a IndexedCrate<'a>, &'a IndexedCrate<'a>)> {
+    pub(super) fn as_crate_diff(&self) -> Option<(&'a CrateHandler<'a>, &'a CrateHandler<'a>)> {
         match &self.kind {
             VertexKind::CrateDiff(tuple) => Some(*tuple),
             _ => None,
@@ -107,7 +106,15 @@ impl<'a> Vertex<'a> {
 
     pub(super) fn as_indexed_crate(&self) -> Option<&'a IndexedCrate<'a>> {
         match self.kind {
-            VertexKind::Crate(c) => Some(c),
+            VertexKind::Crate(c) => Some(&c.own_crate),
+            _ => None,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn as_crate_handler(&self) -> Option<&'a CrateHandler<'a>> {
+        match self.kind {
+            VertexKind::Crate(h) => Some(h),
             _ => None,
         }
     }
@@ -278,8 +285,8 @@ impl<'a> From<&'a Item> for VertexKind<'a> {
     }
 }
 
-impl<'a> From<&'a IndexedCrate<'a>> for VertexKind<'a> {
-    fn from(c: &'a IndexedCrate<'a>) -> Self {
+impl<'a> From<&'a CrateHandler<'a>> for VertexKind<'a> {
+    fn from(c: &'a CrateHandler<'a>) -> Self {
         Self::Crate(c)
     }
 }
