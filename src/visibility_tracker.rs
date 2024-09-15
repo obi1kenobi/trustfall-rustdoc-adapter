@@ -120,12 +120,12 @@ impl<'a> VisibilityTracker<'a> {
         }
 
         let (push_name, popped_name) = match &item.inner {
-            rustdoc_types::ItemEnum::Import(import_item) => {
+            rustdoc_types::ItemEnum::Use(import_item) => {
                 if import_item.name == "_" {
                     // Items re-exported as `_` are not nameable. They cannot be directly imported.
                     // They can be used via a glob import, but we are not interested in that here.
                     return;
-                } else if import_item.glob {
+                } else if import_item.is_glob {
                     // Glob imports refer to the *contents* of the named item, not the item itself.
                     // Rust doesn't allow glob imports to rename items, so there's no name to add.
                     (None, None)
@@ -407,8 +407,8 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
                 continue;
             };
 
-            if let ItemEnum::Import(imp) = &inner_item.inner {
-                if imp.glob {
+            if let ItemEnum::Use(imp) = &inner_item.inner {
+                if imp.is_glob {
                     result
                         .modules_with_glob_imports
                         .entry(item.id.as_ref())
@@ -438,7 +438,7 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
                         //       when we support multiple crates and cross-crate imports.
                         let mut underlying_item = target;
                         let final_underlying_id = loop {
-                            if let ItemEnum::Import(next_import) = &underlying_item.inner {
+                            if let ItemEnum::Use(next_import) = &underlying_item.inner {
                                 match next_import.id.as_ref().and_then(|id| crate_.index.get(id)) {
                                     None => break None,
                                     Some(item) => underlying_item = item,
@@ -546,10 +546,10 @@ fn recursively_compute_visited_names_for_glob<'a>(
     names: &mut HashMap<NamespacedName<'a>, Definition<'a>>,
     duplicated_names: &mut HashSet<NamespacedName<'a>>,
 ) {
-    let ItemEnum::Import(glob_import) = &crate_.index[glob_id].inner else {
+    let ItemEnum::Use(glob_import) = &crate_.index[glob_id].inner else {
         unreachable!("Id {glob_id:?} was not a glob: {:?}", crate_.index[glob_id]);
     };
-    assert!(glob_import.glob, "not a glob import: {glob_import:?}");
+    assert!(glob_import.is_glob, "not a glob import: {glob_import:?}");
 
     let module_local_items = traversal_state
         .names_defined_in_module
@@ -720,13 +720,13 @@ fn visit_root_reachable_public_items<'a>(
                 }
             }
         }
-        rustdoc_types::ItemEnum::Import(imp) => {
+        rustdoc_types::ItemEnum::Use(imp) => {
             // Imports of modules, and glob imports of enums,
             // import the *contents* of the pointed-to item rather than the item itself.
             if let Some(imported_item) = imp.id.as_ref().and_then(|id| crate_.index.get(id)) {
                 // Glob imports are handled at the level of the module that contains them.
                 // Here we just skip them as a no-op.
-                if !imp.glob {
+                if !imp.is_glob {
                     visit_root_reachable_public_items(
                         crate_,
                         parents,
@@ -865,9 +865,10 @@ fn get_typedef_equivalent_reexport_target<'a>(
     if let rustdoc_types::Type::ResolvedPath(resolved_path) = &ty.type_ {
         let underlying = crate_.index.get(&resolved_path.id)?;
 
-        if let Some(GenericArgs::AngleBracketed { args, bindings }) = resolved_path.args.as_deref()
+        if let Some(GenericArgs::AngleBracketed { args, constraints }) =
+            resolved_path.args.as_deref()
         {
-            if !bindings.is_empty() {
+            if !constraints.is_empty() {
                 // The type alias specifies some of the underlying type's generic parameters.
                 // This is not equivalent to a re-export.
                 return None;

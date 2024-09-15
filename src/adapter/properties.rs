@@ -118,8 +118,9 @@ pub(super) fn resolve_struct_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let struct_vertex = vertex.as_struct().expect("not a struct");
             match struct_vertex.kind {
                 rustdoc_types::StructKind::Plain {
-                    fields_stripped, ..
-                } => fields_stripped.into(),
+                    has_stripped_fields,
+                    ..
+                } => has_stripped_fields.into(),
                 _ => FieldValue::Null,
             }
         }),
@@ -164,7 +165,7 @@ pub(super) fn resolve_enum_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "variants_stripped" => {
-            resolve_property_with(contexts, field_property!(as_enum, variants_stripped))
+            resolve_property_with(contexts, field_property!(as_enum, has_stripped_variants))
         }
         _ => unreachable!("Enum property {property_name}"),
     }
@@ -176,7 +177,7 @@ pub(super) fn resolve_union_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "fields_stripped" => {
-            resolve_property_with(contexts, field_property!(as_union, fields_stripped))
+            resolve_property_with(contexts, field_property!(as_union, has_stripped_fields))
         }
         _ => unreachable!("Union property {property_name}"),
     }
@@ -237,15 +238,15 @@ pub(super) fn resolve_function_like_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     match property_name {
         "const" => resolve_property_with(
             contexts,
-            field_property!(as_function, header, { header.const_.into() }),
+            field_property!(as_function, header, { header.is_const.into() }),
         ),
         "async" => resolve_property_with(
             contexts,
-            field_property!(as_function, header, { header.async_.into() }),
+            field_property!(as_function, header, { header.is_async.into() }),
         ),
         "unsafe" => resolve_property_with(
             contexts,
-            field_property!(as_function, header, { header.unsafe_.into() }),
+            field_property!(as_function, header, { header.is_unsafe.into() }),
         ),
         "has_body" => resolve_property_with(
             contexts,
@@ -404,8 +405,8 @@ pub(super) fn resolve_impl_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "unsafe" => resolve_property_with(contexts, field_property!(as_impl, is_unsafe)),
-        "negative" => resolve_property_with(contexts, field_property!(as_impl, negative)),
-        "synthetic" => resolve_property_with(contexts, field_property!(as_impl, synthetic)),
+        "negative" => resolve_property_with(contexts, field_property!(as_impl, is_negative)),
+        "synthetic" => resolve_property_with(contexts, field_property!(as_impl, is_synthetic)),
         _ => unreachable!("Impl property {property_name}"),
     }
 }
@@ -502,7 +503,7 @@ pub(crate) fn resolve_static_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     property_name: &str,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
-        "mutable" => resolve_property_with(contexts, field_property!(as_static, mutable)),
+        "mutable" => resolve_property_with(contexts, field_property!(as_static, is_mutable)),
         _ => unreachable!("Static property {property_name}"),
     }
 }
@@ -515,10 +516,10 @@ pub(crate) fn resolve_associated_type_property<'a, V: AsVertex<Vertex<'a>> + 'a>
         "has_default" => resolve_property_with(
             contexts,
             field_property!(as_item, inner, {
-                let ItemEnum::AssocType { default, .. } = &inner else {
+                let ItemEnum::AssocType { type_, .. } = &inner else {
                     unreachable!("expected to have a AssocType")
                 };
-                default.is_some().into()
+                type_.is_some().into()
             }),
         ),
         _ => unreachable!("AssociatedType property {property_name}"),
@@ -533,7 +534,7 @@ pub(crate) fn resolve_associated_constant_property<'a, V: AsVertex<Vertex<'a>> +
         "default" => resolve_property_with(
             contexts,
             field_property!(as_item, inner, {
-                let ItemEnum::AssocConst { default, .. } = &inner else {
+                let ItemEnum::AssocConst { value: default, .. } = &inner else {
                     unreachable!("expected to have a AssocConst")
                 };
                 default.clone().into()

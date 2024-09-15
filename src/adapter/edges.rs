@@ -168,7 +168,7 @@ pub(super) fn resolve_function_like_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 vertex
                     .as_function()
                     .expect("vertex was not a Function")
-                    .decl
+                    .sig
                     .inputs
                     .iter()
                     .map(move |(name, _type_)| origin.make_function_parameter_vertex(name)),
@@ -293,7 +293,7 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 }
                 VariantKind::Struct {
                     fields,
-                    fields_stripped: _,
+                    has_stripped_fields: _,
                 } => Box::new(fields.iter().map(move |field_id| {
                     origin.make_item_vertex(item_index.get(field_id).expect("missing item"))
                 })),

@@ -55,7 +55,7 @@ fn is_method_sealed<'a>(indexed_crate: &IndexedCrate<'a>, trait_inner: &'a Trait
             }
 
             // Check for pub-in-priv function parameters.
-            for (_, param) in &func.decl.inputs {
+            for (_, param) in &func.sig.inputs {
                 if let rustdoc_types::Type::ResolvedPath(path) = param {
                     if is_local_pub_in_priv_path(indexed_crate, path) {
                         return true;
@@ -172,9 +172,11 @@ fn is_externally_satisfiable_blanket_impl(
     for generic in &impl_item.generics.params {
         match &generic.kind {
             rustdoc_types::GenericParamDefKind::Type {
-                bounds, synthetic, ..
+                bounds,
+                is_synthetic,
+                ..
             } => {
-                if *synthetic {
+                if *is_synthetic {
                     // Synthetic bounds don't count. We also don't really expect to find one here.
                     continue;
                 }

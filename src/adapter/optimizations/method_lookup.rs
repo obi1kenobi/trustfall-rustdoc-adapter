@@ -70,12 +70,15 @@ fn find_impl_owner_id(impl_vertex: &Impl) -> Option<&Id> {
             Type::ResolvedPath(path) => break Some(&path.id),
             Type::BorrowedRef {
                 lifetime: _,
-                mutable: _,
+                is_mutable: _,
                 type_,
             } => {
                 ty = type_;
             }
-            Type::RawPointer { mutable: _, type_ } => {
+            Type::RawPointer {
+                is_mutable: _,
+                type_,
+            } => {
                 ty = type_;
             }
             _ => {
