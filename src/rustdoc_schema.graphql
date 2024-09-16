@@ -33,6 +33,27 @@ type Crate {
   root_module: Module!
 
   item: [Item!]
+
+  """
+  User-facing features that are present in the crate.
+
+  We heuristically disregard features prefixed with `_`, and features introduced by
+  optional dependencies that are never referenced by any other feature.
+  We deem those features to be non-user-facing, and do not show them here.
+  """
+  feature: [Feature!]
+
+  """
+  User-facing features that are enabled by default, either directly or transitively.
+
+  Directly enabled features are explicitly enabled by the `default` feature. Such features
+  may in turn enable other features, and so on — those are transitively enabled default features.
+
+  We heuristically disregard features prefixed with `_`, and features introduced by
+  optional dependencies that are never referenced by any other feature.
+  We deem those features to be non-user-facing, and do not show them here.
+  """
+  default_feature: [Feature!]
 }
 
 """
@@ -432,7 +453,7 @@ interface Variant implements Item {
 
   """
   The discriminant value of this variant, if its value is well-defined.
-  
+
   A discriminant is an integer value that is logically associated with an enum variant,
   and is used to determine which variant an enum value holds.
 
@@ -514,10 +535,10 @@ type PlainVariant implements Item & Variant {
 
   # edges from Variant
   field: [StructField!]
-  
+
   """
   The discriminant value of this variant, if its value is well-defined.
-  
+
   A discriminant is an integer value that is logically associated with an enum variant,
   and is used to determine which variant an enum value holds.
 
@@ -591,7 +612,7 @@ type TupleVariant implements Item & Variant {
 
   """
   The discriminant value of this variant, if its value is well-defined.
-  
+
   A discriminant is an integer value that is logically associated with an enum variant,
   and is used to determine which variant an enum value holds.
 
@@ -665,7 +686,7 @@ type StructVariant implements Item & Variant {
 
   """
   The discriminant value of this variant, if its value is well-defined.
-  
+
   A discriminant is an integer value that is logically associated with an enum variant,
   and is used to determine which variant an enum value holds.
 
@@ -1811,4 +1832,18 @@ type ResolvedPathType implements RawType {
   For example: "core::marker::PhantomData" or "std::marker::PhantomData"
   """
   name: String!
+}
+
+type Feature {
+  """
+  The feature's name.
+  """
+  name: String!
+
+  """
+  Other features that are directly (non-transitively) enabled by this feature.
+
+  Enabling those features may in turn enable other features not listed here.
+  """
+  directly_enables: [Feature!]
 }
