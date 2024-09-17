@@ -2095,3 +2095,135 @@ fn enum_discriminants() {
         results
     );
 }
+
+#[test]
+fn features() {
+    get_test_data!(data, features);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+
+    let query = r#"
+{
+    Crate {
+        feature {
+            name @output
+
+            directly_enables @optional {
+                enables: name @output
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        enables: Option<String>,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "default".into(),
+            enables: Some("foo".into()),
+        },
+        Output {
+            name: "default".into(),
+            enables: Some("bar".into()),
+        },
+        Output {
+            name: "foo".into(),
+            enables: Some("baz".into()),
+        },
+        Output {
+            name: "bar".into(),
+            enables: None,
+        },
+        Output {
+            name: "baz".into(),
+            enables: None,
+        },
+        Output {
+            name: "opt_in".into(),
+            enables: None,
+        },
+        Output {
+            name: "serde".into(),
+            enables: None,
+        },
+        Output {
+            name: "serde_json".into(),
+            enables: None,
+        },
+        Output {
+            name: "nightly".into(),
+            enables: None,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+
+    //
+    // Check default features as well.
+    //
+
+    let query = r#"
+{
+    Crate {
+        default_feature {
+            name @output
+        }
+    }
+}
+"#;
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct DefaultsOutput {
+        name: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        DefaultsOutput {
+            name: "default".into(),
+        },
+        DefaultsOutput {
+            name: "foo".into(),
+        },
+        DefaultsOutput {
+            name: "bar".into(),
+        },
+        DefaultsOutput {
+            name: "baz".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
