@@ -162,6 +162,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "Discriminant" => {
                     properties::resolve_discriminant_property(contexts, property_name)
                 }
+                "Feature" => properties::resolve_feature_property(contexts, property_name),
                 _ => unreachable!("resolve_property {type_name} {property_name}"),
             }
         }
@@ -250,6 +251,12 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             "ImplementedTrait" => edges::resolve_implemented_trait_edge(contexts, edge_name),
             "Attribute" => edges::resolve_attribute_edge(contexts, edge_name),
             "AttributeMetaItem" => edges::resolve_attribute_meta_item_edge(contexts, edge_name),
+            "Feature" => edges::resolve_feature_edge(
+                contexts,
+                edge_name,
+                self.current_crate,
+                self.previous_crate,
+            ),
             _ => unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}"),
         }
     }

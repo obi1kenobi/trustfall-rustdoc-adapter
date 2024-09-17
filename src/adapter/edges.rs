@@ -8,7 +8,11 @@ use trustfall::provider::{
 use crate::{adapter::supported_item_kind, attributes::Attribute, PackageHandler};
 
 use super::{
-    enum_variant::LazyDiscriminants, optimizations, origin::Origin, vertex::Vertex, RustdocAdapter,
+    enum_variant::LazyDiscriminants,
+    optimizations,
+    origin::Origin,
+    vertex::{Feature, Vertex},
+    RustdocAdapter,
 };
 
 pub(super) fn resolve_crate_diff_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
@@ -60,6 +64,60 @@ pub(super) fn resolve_crate_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                     .get(&crate_.root)
                     .expect("crate had no root module");
                 Box::new(std::iter::once(origin.make_item_vertex(module)))
+            })
+        }
+        "feature" => {
+            let current_crate = adapter.current_crate;
+            let previous_crate = adapter.previous_crate;
+
+            resolve_neighbors_with(contexts, move |vertex| {
+                let origin = vertex.origin;
+
+                let features_lookup = match origin {
+                    Origin::CurrentCrate => &current_crate.features,
+                    Origin::PreviousCrate => {
+                        &previous_crate.expect("no previous crate provided").features
+                    }
+                }
+                .as_ref()
+                .expect("no feature data was loaded");
+
+                Box::new(
+                    features_lookup
+                        .features
+                        .values()
+                        .map(move |feat| origin.make_feature_vertex(feat)),
+                )
+            })
+        }
+        "default_feature" => {
+            let current_crate = adapter.current_crate;
+            let previous_crate = adapter.previous_crate;
+
+            resolve_neighbors_with(contexts, move |vertex| {
+                let origin = vertex.origin;
+
+                let features_lookup = match origin {
+                    Origin::CurrentCrate => &current_crate.features,
+                    Origin::PreviousCrate => {
+                        &previous_crate.expect("no previous crate provided").features
+                    }
+                }
+                .as_ref()
+                .expect("no feature data was loaded");
+
+                // If there's no `default` feature, then no features are enabled by default.
+                let Some(default_feature) = features_lookup.features.get("default") else {
+                    return Box::new(std::iter::empty());
+                };
+                let (default_enabled, _) =
+                    default_feature.enables_recursive(&features_lookup.features);
+
+                Box::new(
+                    default_enabled
+                        .into_values()
+                        .map(move |feat| origin.make_feature_vertex(feat)),
+                )
             })
         }
         _ => unreachable!("resolve_crate_edge {edge_name}"),
@@ -746,5 +804,43 @@ pub(super) fn resolve_attribute_meta_item_edge<'a, V: AsVertex<Vertex<'a>> + 'a>
             }
         }),
         _ => unreachable!("resolve_attribute_meta_item_edge {edge_name}"),
+    }
+}
+
+pub(super) fn resolve_feature_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    edge_name: &str,
+    current_crate: &'a PackageHandler<'a>,
+    previous_crate: Option<&'a PackageHandler<'a>>,
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
+    match edge_name {
+        "directly_enables" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let feature: &Feature<'_> = vertex.as_feature().expect("vertex was not a Feature");
+
+            let features_lookup = match origin {
+                Origin::CurrentCrate => &current_crate.features,
+                Origin::PreviousCrate => {
+                    &previous_crate.expect("no previous crate provided").features
+                }
+            }
+            .as_ref()
+            .expect("no feature data was loaded");
+
+            Box::new(
+                feature
+                    .inner
+                    .enables_features
+                    .iter()
+                    .copied()
+                    .filter_map(move |key| {
+                        features_lookup
+                            .features
+                            .get(key)
+                            .map(|f| origin.make_feature_vertex(f))
+                    }),
+            )
+        }),
+        _ => unreachable!("resolve_feature_edge {edge_name}"),
     }
 }

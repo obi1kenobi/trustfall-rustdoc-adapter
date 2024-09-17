@@ -37,6 +37,7 @@ pub enum VertexKind<'a> {
     FunctionAbi(&'a Abi),
     Discriminant(Cow<'a, str>),
     Variant(EnumVariant<'a>),
+    Feature(Feature<'a>),
 }
 
 impl<'a> Typename for Vertex<'a> {
@@ -84,6 +85,7 @@ impl<'a> Typename for Vertex<'a> {
                 VariantKind::Tuple(..) => "TupleVariant",
                 VariantKind::Struct { .. } => "StructVariant",
             },
+            VertexKind::Feature(..) => "Feature",
         }
     }
 }
@@ -277,6 +279,13 @@ impl<'a> Vertex<'a> {
             _ => None,
         }
     }
+
+    pub(super) fn as_feature(&self) -> Option<&Feature<'a>> {
+        match &self.kind {
+            VertexKind::Feature(f) => Some(f),
+            _ => None,
+        }
+    }
 }
 
 impl<'a> From<&'a Item> for VertexKind<'a> {
@@ -301,4 +310,9 @@ impl<'a> From<&'a Abi> for VertexKind<'a> {
     fn from(a: &'a Abi) -> Self {
         Self::FunctionAbi(a)
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Feature<'a> {
+    pub(super) inner: &'a cargo_toml::features::Feature<'a>,
 }

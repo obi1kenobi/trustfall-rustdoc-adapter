@@ -595,3 +595,20 @@ pub(crate) fn resolve_discriminant_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
         _ => unreachable!("Discriminant property {property_name}"),
     }
 }
+
+pub(crate) fn resolve_feature_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    match property_name {
+        "name" => resolve_property_with(contexts, |vertex| {
+            vertex
+                .as_feature()
+                .expect("vertex was not a Feature")
+                .inner
+                .key
+                .into()
+        }),
+        _ => unreachable!("Feature property {property_name}"),
+    }
+}
