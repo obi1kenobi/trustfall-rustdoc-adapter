@@ -33,11 +33,11 @@ harness = false
 debug = 1 # We only need function name information (for flamegraphs)
 
 [dev-dependencies]
-anyhow = "1.0.58"
+anyhow = "1.0.89"
 criterion = "0.5.1"
-itertools = "0.12.0"
-serde_json = "1.0.85"
-serde = { version = "1.0.185", features = ["derive"] }
+itertools = "0.13.0"
+serde_json = "1.0.128"
+serde = { version = "1.0.210", features = ["derive"] }
 maplit = "1.0.2"
-version_check = "0.9.4"
-similar-asserts = { version = "1.4.2", features = ["serde"] }
+version_check = "0.9.5"
+similar-asserts = { version = "1.6.0", features = ["serde"] }
