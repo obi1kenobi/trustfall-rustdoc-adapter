@@ -9,7 +9,7 @@ use trustfall::{
     FieldValue, Schema,
 };
 
-use crate::CrateHandler;
+use crate::PackageHandler;
 
 use self::{
     origin::Origin,
@@ -28,14 +28,14 @@ mod tests;
 
 #[non_exhaustive]
 pub struct RustdocAdapter<'a> {
-    current_crate: &'a CrateHandler<'a>,
-    previous_crate: Option<&'a CrateHandler<'a>>,
+    current_crate: &'a PackageHandler<'a>,
+    previous_crate: Option<&'a PackageHandler<'a>>,
 }
 
 impl<'a> RustdocAdapter<'a> {
     pub fn new(
-        current_crate: &'a CrateHandler<'a>,
-        previous_crate: Option<&'a CrateHandler<'a>>,
+        current_crate: &'a PackageHandler<'a>,
+        previous_crate: Option<&'a PackageHandler<'a>>,
     ) -> Self {
         Self {
             current_crate,

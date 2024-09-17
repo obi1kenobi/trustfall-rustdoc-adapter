@@ -14,7 +14,7 @@ use crate::RustdocAdapter;
 
 #[allow(dead_code)]
 mod type_level_invariants {
-    use crate::{CrateHandler, IndexedCrate, RustdocAdapter};
+    use crate::{IndexedCrate, PackageHandler, RustdocAdapter};
 
     fn ensure_send_and_sync<T: Send + Sync>(_value: &T) {}
 
@@ -22,7 +22,7 @@ mod type_level_invariants {
         ensure_send_and_sync(value);
     }
 
-    fn ensure_crate_handler_is_send_and_sync(value: &CrateHandler<'_>) {
+    fn ensure_crate_handler_is_send_and_sync(value: &PackageHandler<'_>) {
         ensure_send_and_sync(value);
     }
 
@@ -42,18 +42,17 @@ macro_rules! get_test_data {
         let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
 
         let manifest_path = format!("./test_crates/{}/Cargo.toml", stringify!($case));
-        let manifest_content = std::fs::read_to_string(&manifest_path)
-            .with_context(|| format!("Could not load {manifest_path} file, ensure a test crate named {} exists in ./test_crates/", stringify!($case)))
-            .expect("failed to load crate manifest");
-        let storage = crate::CrateStorage::from_rustdoc_and_manifest(
+
+        let mut metadata = cargo_metadata::MetadataCommand::new().manifest_path(&manifest_path).no_deps().exec().expect("failed to run cargo metadata");
+        assert_eq!(metadata.packages.len(), 1, "{metadata:?}");
+        let package = metadata.packages.pop().expect("failed to pop only item in vec");
+
+        let storage = crate::PackageStorage::from_rustdoc_and_package(
             crate_,
-            // Our test crates don't have workspace-related info, so this is fine and faster.
-            // TODO: If we add workspace info, change to an alternative method that will load
-            //       the workspace data.
-            cargo_toml::Manifest::from_str(&manifest_content).expect("failed to parse manifest"),
+            package,
         );
 
-        let $data = crate::CrateHandler::from_storage(&storage);
+        let $data = crate::PackageHandler::from_storage(&storage);
     }
 }
 

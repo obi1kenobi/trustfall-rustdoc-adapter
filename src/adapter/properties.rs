@@ -7,7 +7,7 @@ use trustfall::{
     FieldValue,
 };
 
-use crate::{attributes::Attribute, CrateHandler};
+use crate::{attributes::Attribute, PackageHandler};
 
 use super::{origin::Origin, vertex::Vertex};
 
@@ -461,8 +461,8 @@ pub(super) fn resolve_raw_type_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
-    current_crate: &'a CrateHandler<'a>,
-    previous_crate: Option<&'a CrateHandler<'a>>,
+    current_crate: &'a PackageHandler<'a>,
+    previous_crate: Option<&'a PackageHandler<'a>>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "unsafe" => resolve_property_with(contexts, field_property!(as_trait, is_unsafe)),

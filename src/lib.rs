@@ -12,5 +12,5 @@ pub use rustdoc_types::Crate;
 
 pub use {
     adapter::RustdocAdapter,
-    indexed_crate::{CrateHandler, CrateStorage, ImportablePath, IndexedCrate},
+    indexed_crate::{ImportablePath, IndexedCrate, PackageHandler, PackageStorage},
 };

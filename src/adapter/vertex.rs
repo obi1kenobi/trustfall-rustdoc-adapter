@@ -8,7 +8,7 @@ use trustfall::provider::Typename;
 
 use crate::{
     attributes::{Attribute, AttributeMetaItem},
-    CrateHandler, ImportablePath, IndexedCrate,
+    ImportablePath, IndexedCrate, PackageHandler,
 };
 
 use super::{enum_variant::EnumVariant, origin::Origin};
@@ -23,8 +23,8 @@ pub struct Vertex<'a> {
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum VertexKind<'a> {
-    CrateDiff((&'a CrateHandler<'a>, &'a CrateHandler<'a>)),
-    Crate(&'a CrateHandler<'a>),
+    CrateDiff((&'a PackageHandler<'a>, &'a PackageHandler<'a>)),
+    Crate(&'a PackageHandler<'a>),
     Item(&'a Item),
     Span(&'a Span),
     Path(&'a [String]),
@@ -90,14 +90,14 @@ impl<'a> Typename for Vertex<'a> {
 
 #[allow(dead_code)]
 impl<'a> Vertex<'a> {
-    pub(super) fn new_crate(origin: Origin, crate_: &'a CrateHandler<'a>) -> Self {
+    pub(super) fn new_crate(origin: Origin, crate_: &'a PackageHandler<'a>) -> Self {
         Self {
             origin,
             kind: VertexKind::Crate(crate_),
         }
     }
 
-    pub(super) fn as_crate_diff(&self) -> Option<(&'a CrateHandler<'a>, &'a CrateHandler<'a>)> {
+    pub(super) fn as_crate_diff(&self) -> Option<(&'a PackageHandler<'a>, &'a PackageHandler<'a>)> {
         match &self.kind {
             VertexKind::CrateDiff(tuple) => Some(*tuple),
             _ => None,
@@ -112,7 +112,7 @@ impl<'a> Vertex<'a> {
     }
 
     #[allow(dead_code)]
-    pub(super) fn as_crate_handler(&self) -> Option<&'a CrateHandler<'a>> {
+    pub(super) fn as_crate_handler(&self) -> Option<&'a PackageHandler<'a>> {
         match self.kind {
             VertexKind::Crate(h) => Some(h),
             _ => None,
@@ -285,8 +285,8 @@ impl<'a> From<&'a Item> for VertexKind<'a> {
     }
 }
 
-impl<'a> From<&'a CrateHandler<'a>> for VertexKind<'a> {
-    fn from(c: &'a CrateHandler<'a>) -> Self {
+impl<'a> From<&'a PackageHandler<'a>> for VertexKind<'a> {
+    fn from(c: &'a PackageHandler<'a>) -> Self {
         Self::Crate(c)
     }
 }

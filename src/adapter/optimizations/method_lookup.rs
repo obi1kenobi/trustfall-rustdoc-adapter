@@ -10,7 +10,7 @@ use trustfall::{
 };
 
 use crate::{
-    adapter::{CrateHandler, Origin, Vertex},
+    adapter::{Origin, PackageHandler, Vertex},
     indexed_crate::ImplEntry,
     RustdocAdapter,
 };
@@ -93,8 +93,8 @@ fn find_impl_owner_id(impl_vertex: &Impl) -> Option<&Id> {
 }
 
 fn resolve_method_from_candidate_value<'a>(
-    current_crate: &'a CrateHandler<'a>,
-    previous_crate: Option<&'a CrateHandler<'a>>,
+    current_crate: &'a PackageHandler<'a>,
+    previous_crate: Option<&'a PackageHandler<'a>>,
     vertex: &Vertex<'a>,
     method_name: CandidateValue<FieldValue>,
 ) -> VertexIterator<'a, Vertex<'a>> {

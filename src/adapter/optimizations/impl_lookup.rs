@@ -9,7 +9,7 @@ use trustfall::{
     FieldValue,
 };
 
-use crate::{adapter::CrateHandler, indexed_crate::ImplEntry};
+use crate::{adapter::PackageHandler, indexed_crate::ImplEntry};
 
 use super::super::{origin::Origin, vertex::Vertex, RustdocAdapter};
 
@@ -55,8 +55,8 @@ pub(crate) fn resolve_owner_impl<'a, V: AsVertex<Vertex<'a>> + 'a>(
 fn resolve_owner_impl_based_on_method_info<'a, V: AsVertex<Vertex<'a>> + 'a>(
     adapter: &RustdocAdapter<'a>,
     contexts: ContextIterator<'a, V>,
-    current_crate: &'a CrateHandler<'a>,
-    previous_crate: Option<&'a CrateHandler<'a>>,
+    current_crate: &'a PackageHandler<'a>,
+    previous_crate: Option<&'a PackageHandler<'a>>,
     inherent_impls_only: bool,
     method_vertex_info: &impl VertexInfo,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
@@ -96,8 +96,8 @@ fn resolve_owner_impl_based_on_method_info<'a, V: AsVertex<Vertex<'a>> + 'a>(
 
 fn resolve_impl_based_on_method_name_candidate<'a>(
     vertex: &Vertex<'a>,
-    current_crate: &'a CrateHandler<'a>,
-    previous_crate: Option<&'a CrateHandler<'a>>,
+    current_crate: &'a PackageHandler<'a>,
+    previous_crate: Option<&'a PackageHandler<'a>>,
     inherent_impls_only: bool,
     method_name: CandidateValue<FieldValue>,
 ) -> VertexIterator<'a, Vertex<'a>> {
@@ -175,8 +175,8 @@ the `impl_index` returned a value where the `impl_item` was not an impl: {impl_i
 
 fn resolve_owner_impl_slow_path<'a>(
     vertex: &Vertex<'a>,
-    current_crate: &'a CrateHandler<'a>,
-    previous_crate: Option<&'a CrateHandler<'a>>,
+    current_crate: &'a PackageHandler<'a>,
+    previous_crate: Option<&'a PackageHandler<'a>>,
     inherent_impls_only: bool,
 ) -> VertexIterator<'a, Vertex<'a>> {
     let origin = vertex.origin;
