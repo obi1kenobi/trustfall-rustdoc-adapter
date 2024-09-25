@@ -95,7 +95,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant" | "PlainVariant"
                 | "TupleVariant" | "StructVariant" | "Union" | "Trait" | "Function" | "Method"
                 | "Impl" | "GlobalValue" | "Constant" | "Static" | "AssociatedType"
-                | "AssociatedConstant" | "Module"
+                | "AssociatedConstant" | "Module" | "Macro"
                     if matches!(
                         property_name.as_ref(),
                         "id" | "crate_id"
@@ -192,7 +192,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             "Item" | "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant"
             | "PlainVariant" | "TupleVariant" | "Union" | "StructVariant" | "Trait"
             | "Function" | "Method" | "Impl" | "GlobalValue" | "Constant" | "Static"
-            | "AssociatedType" | "AssociatedConstant" | "Module"
+            | "AssociatedType" | "AssociatedConstant" | "Module" | "Macro"
                 if matches!(edge_name.as_ref(), "span" | "attribute") =>
             {
                 edges::resolve_item_edge(contexts, edge_name)
@@ -304,5 +304,6 @@ pub(crate) fn supported_item_kind(item: &Item) -> bool {
             | rustdoc_types::ItemEnum::Static(..)
             | rustdoc_types::ItemEnum::AssocType { .. }
             | rustdoc_types::ItemEnum::Module { .. }
+            | rustdoc_types::ItemEnum::Macro { .. }
     )
 }
