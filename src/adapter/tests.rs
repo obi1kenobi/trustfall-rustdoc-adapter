@@ -2175,3 +2175,105 @@ fn enum_discriminants() {
         results
     );
 }
+
+#[test]
+fn declarative_macros() {
+    let path = "./localdata/test_data/declarative_macros/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Macro {
+                name @output
+                public_api_eligible @output
+                visibility_limit @output
+
+                attribute @optional {
+                    raw_attribute @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        public_api_eligible: bool,
+        visibility_limit: String,
+        raw_attribute: Option<String>,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "top_level".into(),
+            public_api_eligible: true,
+            visibility_limit: "public".into(),
+            raw_attribute: Some("#[macro_export]".into()),
+        },
+        Output {
+            name: "nested_private".into(),
+            public_api_eligible: true,
+            visibility_limit: "public".into(),
+            raw_attribute: Some("#[macro_export]".into()),
+        },
+        Output {
+            name: "nested_public".into(),
+            public_api_eligible: true,
+            visibility_limit: "public".into(),
+            raw_attribute: Some("#[macro_export]".into()),
+        },
+        Output {
+            name: "not_exported".into(),
+            public_api_eligible: false,
+            visibility_limit: "crate".into(),
+            raw_attribute: Some("#[allow(unused_macros)]".into()),
+        },
+        Output {
+            name: "hidden_parent".into(),
+            public_api_eligible: true,
+            visibility_limit: "public".into(),
+            raw_attribute: Some("#[macro_export]".into()),
+        },
+        Output {
+            name: "hidden".into(),
+            public_api_eligible: false,
+            visibility_limit: "public".into(),
+            raw_attribute: Some("#[doc(hidden)]".into()),
+        },
+        Output {
+            name: "hidden".into(),
+            public_api_eligible: false,
+            visibility_limit: "public".into(),
+            raw_attribute: Some("#[macro_export]".into()),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
