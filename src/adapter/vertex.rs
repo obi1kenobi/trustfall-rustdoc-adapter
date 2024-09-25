@@ -63,6 +63,7 @@ impl Typename for Vertex<'_> {
                 rustdoc_types::ItemEnum::Constant { .. } => "Constant",
                 rustdoc_types::ItemEnum::Static(..) => "Static",
                 rustdoc_types::ItemEnum::AssocType { .. } => "AssociatedType",
+                rustdoc_types::ItemEnum::Macro { .. } => "Macro",
                 _ => unreachable!("unexpected item.inner for item: {item:?}"),
             },
             VertexKind::Span(..) => "Span",
