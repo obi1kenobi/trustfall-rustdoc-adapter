@@ -432,7 +432,7 @@ interface Variant implements Item {
 
   """
   The discriminant value of this variant, if its value is well-defined.
-  
+
   A discriminant is an integer value that is logically associated with an enum variant,
   and is used to determine which variant an enum value holds.
 
@@ -514,10 +514,10 @@ type PlainVariant implements Item & Variant {
 
   # edges from Variant
   field: [StructField!]
-  
+
   """
   The discriminant value of this variant, if its value is well-defined.
-  
+
   A discriminant is an integer value that is logically associated with an enum variant,
   and is used to determine which variant an enum value holds.
 
@@ -591,7 +591,7 @@ type TupleVariant implements Item & Variant {
 
   """
   The discriminant value of this variant, if its value is well-defined.
-  
+
   A discriminant is an integer value that is logically associated with an enum variant,
   and is used to determine which variant an enum value holds.
 
@@ -665,7 +665,7 @@ type StructVariant implements Item & Variant {
 
   """
   The discriminant value of this variant, if its value is well-defined.
-  
+
   A discriminant is an integer value that is logically associated with an enum variant,
   and is used to determine which variant an enum value holds.
 
@@ -1781,6 +1781,63 @@ type AssociatedConstant implements Item {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+}
+
+"""
+A `macro_rules` declarative macro.
+
+When such macros are exported by a crate, they are always exported at the top level of the crate,
+even if the macro's definition is located inside a `mod`. In essence, the `#[macro_export]`
+attribute behaves as a `pub use` of the macro into the crate's root module.
+
+This is why we don't model macro items as `Importable`:
+- They always have only one importable path: `the_crate::macro_name`.
+- Their names are in their own namespace, and do not mix with the types or values namespaces.
+"""
+type Macro implements Item {
+  # properties from Item
+  id: String!
+  crate_id: Int!
+  name: String
+  docs: String
+  attrs: [String!]!
+
+  """
+  This item is hidden in documentation.
+  """
+  doc_hidden: Boolean!
+
+  """
+  This item is deprecated.
+  """
+  deprecated: Boolean!
+
+  """
+  Whether this item is eligible to be in the public API. This is true if both:
+  - The item is public, either explicitly (`pub`) or implicitly (like enum variants).
+  - The item is visible in documentation, or is not visible but is deprecated,
+    since deprecated items are assumed to have been part of the public API in the past.
+
+  Being eligible to be part of the public API *does not* make an item public API!
+  An item that is not eligible by itself cannot be part of the public API,
+  but eligible items might not be public API -- for example, pub-in-priv items
+  (public items in a private module) are eligible but not public API. Another example
+  would be a public item that is only reachable via modules that are both
+  `#[doc(hidden)]` and not deprecated.
+
+  To check whether an item is part of the public API:
+  - For items that are legal in a `use` import statement, use the `importable_path` edge and the
+    path's `public_api` property.
+  - For all other items (e.g. struct fields), first check whether that parent item is public API
+    as above, and then check whether the item itself is `public_api_eligible`.
+  """
+  public_api_eligible: Boolean!
+
+  visibility_limit: String!
+
+  # edges from Item
+  attribute: [Attribute!]
+  span: Span
 }
 
 """
