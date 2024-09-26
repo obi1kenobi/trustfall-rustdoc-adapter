@@ -118,4 +118,11 @@ impl Origin {
             kind: VertexKind::Variant(EnumVariant::new(item, discriminants, index)),
         }
     }
+
+    pub(super) fn make_derive_helper_attr_vertex<'a>(&self, helper: &'a str) -> Vertex<'a> {
+        Vertex {
+            origin: *self,
+            kind: VertexKind::DeriveHelperAttr(helper),
+        }
+    }
 }
