@@ -723,3 +723,25 @@ pub(super) fn resolve_attribute_meta_item_edge<'a, V: AsVertex<Vertex<'a>> + 'a>
         _ => unreachable!("resolve_attribute_meta_item_edge {edge_name}"),
     }
 }
+
+pub(super) fn resolve_derive_proc_macro_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    edge_name: &str,
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
+    match edge_name {
+        "helper_attribute" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+
+            let proc_macro = vertex
+                .as_proc_macro()
+                .expect("vertex was not a DeriveProcMacro");
+            Box::new(
+                proc_macro
+                    .helpers
+                    .iter()
+                    .map(move |helper| origin.make_derive_helper_attr_vertex(helper)),
+            )
+        }),
+        _ => unreachable!("resolve_derive_proc_macro_edge {edge_name}"),
+    }
+}
