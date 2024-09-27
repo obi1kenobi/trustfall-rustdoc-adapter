@@ -254,6 +254,10 @@ fn rustdoc_sealed_traits() {
             sealed: true,
         },
         Output {
+            name: "SealedWithWhereSelfBound".into(),
+            sealed: true,
+        },
+        Output {
             name: "PrivateSealed".into(),
             sealed: true,
         },
