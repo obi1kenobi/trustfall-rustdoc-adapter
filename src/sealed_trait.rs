@@ -1,4 +1,4 @@
-use rustdoc_types::{Item, Trait};
+use rustdoc_types::{GenericBound, Item, Trait};
 
 use crate::IndexedCrate;
 
@@ -69,53 +69,91 @@ fn is_method_sealed<'a>(indexed_crate: &IndexedCrate<'a>, trait_inner: &'a Trait
 }
 
 fn has_sealed_supertrait<'a>(indexed_crate: &IndexedCrate<'a>, inner: &'a Trait) -> bool {
-    for bound in &inner.bounds {
-        let supertrait = match bound {
-            rustdoc_types::GenericBound::TraitBound {
-                trait_: trait_path, ..
-            } => {
-                match indexed_crate.inner.index.get(&trait_path.id) {
-                    Some(item) => item,
-                    None => {
-                        // Item from another crate, so clearly not pub-in-priv.
+    for predicate in &inner.generics.where_predicates {
+        match predicate {
+            // Only `where Self: SomeTrait` predicates are relevant for sealed trait analysis.
+            // Ignore all other predicate types.
+            rustdoc_types::WherePredicate::BoundPredicate { type_, bounds, .. } => {
+                // If the predicate isn't over `Self`, it isn't relevant.
+                if matches!(type_, rustdoc_types::Type::Generic(generic) if generic.as_str() == "Self")
+                {
+                    for bound in bounds {
+                        // We found a trait similar to:
+                        // `pub trait Example where Self: SealedTrait { ... }`
                         //
-                        // TODO: Once we have the ability to do cross-crate analysis, consider
-                        //       whether this external trait is sealed. That can have
-                        //       some interesting SemVer implications as well.
-                        continue;
+                        // Even though `SealedTrait` isn't *explicitly* a supertrait,
+                        // any implementer of `Example` would still have to implement it too.
+                        // This makes it equivalent to a supertrait bound for purposes
+                        // of trait sealing. Apply the equivalent logic here.
+                        if is_sealed_supertrait_bound(indexed_crate, bound) {
+                            return true;
+                        }
                     }
                 }
             }
-            rustdoc_types::GenericBound::Outlives(_) => {
-                continue;
-            }
-        };
+            _ => continue,
+        }
+    }
 
-        // Otherwise, check if the supertrait is itself sealed.
-        // This catches cases like:
-        // ```rust
-        // mod priv {
-        //     pub trait Sealed {}
-        // }
-        //
-        // pub trait First: Sealed {}
-        //
-        // pub trait Second: First {}
-        // ```
-        //
-        // Here, both `First` and `Second` are sealed.
-        //
-        // N.B.: This cannot infinite-loop, since rustc denies cyclic trait bounds.
-        if is_trait_sealed(indexed_crate, supertrait) {
-            // The supertrait is sealed, so a downstream crate cannot add a direct impl for it
-            // on any of its own types.
-            //
-            // However, this isn't the same thing as "downstream types cannot impl this trait"!
-            // We must check the supertrait for blanket impls that might result in
-            // a downstream type gaining an impl for that trait.
-            if has_no_externally_satisfiable_blanket_impls(indexed_crate, supertrait) {
-                return true;
+    for bound in &inner.bounds {
+        if is_sealed_supertrait_bound(indexed_crate, bound) {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn is_sealed_supertrait_bound<'a>(
+    indexed_crate: &IndexedCrate<'a>,
+    bound: &'a GenericBound,
+) -> bool {
+    let supertrait = match bound {
+        rustdoc_types::GenericBound::TraitBound {
+            trait_: trait_path, ..
+        } => {
+            match indexed_crate.inner.index.get(&trait_path.id) {
+                Some(item) => item,
+                None => {
+                    // Item from another crate, so clearly not pub-in-priv.
+                    //
+                    // TODO: Once we have the ability to do cross-crate analysis, consider
+                    //       whether this external trait is sealed. That can have
+                    //       some interesting SemVer implications as well.
+                    return false;
+                }
             }
+        }
+        rustdoc_types::GenericBound::Outlives(_) => {
+            // Not a trait bound of any kind, nothing to check.
+            return false;
+        }
+    };
+
+    // Otherwise, check if the supertrait is itself sealed.
+    // This catches cases like:
+    // ```rust
+    // mod priv {
+    //     pub trait Sealed {}
+    // }
+    //
+    // pub trait First: Sealed {}
+    //
+    // pub trait Second: First {}
+    // ```
+    //
+    // Here, both `First` and `Second` are sealed.
+    //
+    // N.B.: This cannot infinite-loop, since rustc denies cyclic trait bounds.
+    if is_trait_sealed(indexed_crate, supertrait) {
+        // The supertrait is sealed, so a downstream crate cannot add a direct impl for it
+        // on any of its own types.
+        //
+        // However, this isn't the same thing as "downstream types cannot impl this trait"!
+        // We must check the supertrait for blanket impls that might result in
+        // a downstream type gaining an impl for that trait.
+        if has_no_externally_satisfiable_blanket_impls(indexed_crate, supertrait) {
+            return true;
         }
     }
 
