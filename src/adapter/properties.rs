@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use rustdoc_types::{ItemEnum, Visibility};
 use trustfall::{
     provider::{
@@ -448,11 +450,7 @@ pub(super) fn resolve_raw_type_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     match property_name {
         "name" => resolve_property_with(contexts, |vertex| {
             let type_vertex = vertex.as_raw_type().expect("not a RawType");
-            match type_vertex {
-                rustdoc_types::Type::ResolvedPath(path) => path.name.clone().into(),
-                rustdoc_types::Type::Primitive(name) => name.clone().into(),
-                _ => unreachable!("unexpected RawType vertex content: {type_vertex:?}"),
-            }
+            super::typename::Type(&type_vertex).to_string().into()
         }),
         _ => unreachable!("RawType property {property_name}"),
     }
