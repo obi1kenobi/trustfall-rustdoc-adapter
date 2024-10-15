@@ -40,7 +40,7 @@ pub enum VertexKind<'a> {
     Variant(EnumVariant<'a>),
 }
 
-impl<'a> Typename for Vertex<'a> {
+impl Typename for Vertex<'_> {
     /// The name of the actual runtime type of this vertex,
     /// intended to fulfill resolution requests for the __typename property.
     #[inline]
