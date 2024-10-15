@@ -768,7 +768,11 @@ fn rustdoc_modules() {
             .expect("failed to run query")
             .map(|row| row.try_into_struct().expect("shape mismatch"))
             .collect();
+
+    // Ensure both the rows and the folded paths within each row come
+    // in a consistent, deterministic order.
     results.sort_unstable();
+    results.iter_mut().for_each(|row| row.paths.sort());
 
     similar_asserts::assert_eq!(
         vec![
@@ -779,7 +783,7 @@ fn rustdoc_modules() {
                 types: vec!["Module".into(), "Struct".into()],
                 paths: vec![
                     vec!["modules".into(), "hello".into()],
-                    vec!["modules".into(), "hi".into()]
+                    vec!["modules".into(), "hi".into()],
                 ],
             },
             Output {

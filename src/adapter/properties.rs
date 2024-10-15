@@ -16,10 +16,9 @@ pub(super) fn resolve_crate_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     property_name: &str,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
-        "root" => resolve_property_with(
-            contexts,
-            field_property!(as_crate, root, { root.0.clone().into() }),
-        ),
+        "root" => {
+            resolve_property_with(contexts, field_property!(as_crate, root, { root.0.into() }))
+        }
         "crate_version" => {
             resolve_property_with(contexts, field_property!(as_crate, crate_version))
         }
@@ -38,10 +37,7 @@ pub(super) fn resolve_item_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     property_name: &str,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
-        "id" => resolve_property_with(
-            contexts,
-            field_property!(as_item, id, { id.0.clone().into() }),
-        ),
+        "id" => resolve_property_with(contexts, field_property!(as_item, id, { id.0.into() })),
         "crate_id" => resolve_property_with(contexts, field_property!(as_item, crate_id)),
         "name" => resolve_property_with(contexts, field_property!(as_item, name)),
         "docs" => resolve_property_with(contexts, field_property!(as_item, docs)),
