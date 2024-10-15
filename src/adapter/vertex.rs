@@ -1,8 +1,8 @@
 use std::{borrow::Cow, rc::Rc};
 
 use rustdoc_types::{
-    Abi, Constant, Crate, Enum, Function, Impl, Item, Module, Path, Span, Static, Struct, Trait,
-    Type, Union, VariantKind,
+    Abi, Constant, Crate, Enum, Function, GenericParamDef, Impl, Item, Module, Path, Span, Static,
+    Struct, Trait, Type, Union, VariantKind,
 };
 use trustfall::provider::Typename;
 
@@ -39,6 +39,7 @@ pub enum VertexKind<'a> {
     Discriminant(Cow<'a, str>),
     Variant(EnumVariant<'a>),
     DeriveHelperAttr(&'a str),
+    GenericParameter(&'a GenericParamDef),
 }
 
 impl Typename for Vertex<'_> {
@@ -93,6 +94,11 @@ impl Typename for Vertex<'_> {
                 VariantKind::Struct { .. } => "StructVariant",
             },
             VertexKind::DeriveHelperAttr(..) => "DeriveMacroHelperAttribute",
+            VertexKind::GenericParameter(param) => match &param.kind {
+                rustdoc_types::GenericParamDefKind::Lifetime { .. } => "GenericLifetimeParameter",
+                rustdoc_types::GenericParamDefKind::Type { .. } => "GenericTypeParameter",
+                rustdoc_types::GenericParamDefKind::Const { .. } => "GenericConstParameter",
+            },
         }
     }
 }
@@ -291,6 +297,24 @@ impl<'a> Vertex<'a> {
             VertexKind::DeriveHelperAttr(value) => Some(value),
             _ => None,
         }
+    }
+
+    pub(super) fn as_generic_parameter(&self) -> Option<&'a GenericParamDef> {
+        match &self.kind {
+            VertexKind::GenericParameter(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_generics(&self) -> Option<&'a rustdoc_types::Generics> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::Struct(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Enum(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Function(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Trait(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Union(x) => Some(&x.generics),
+            _ => None,
+        })
     }
 }
 

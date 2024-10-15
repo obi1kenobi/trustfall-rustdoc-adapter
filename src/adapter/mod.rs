@@ -91,7 +91,9 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         } else {
             match type_name.as_ref() {
                 "Crate" => properties::resolve_crate_property(contexts, property_name),
-                "Item" => properties::resolve_item_property(contexts, property_name),
+                "Item" | "GenericItem" => {
+                    properties::resolve_item_property(contexts, property_name)
+                }
                 "ImplOwner"
                 | "Struct"
                 | "StructField"
@@ -188,6 +190,20 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                         property_name,
                     )
                 }
+                "GenericParameter"
+                | "GenericTypeParameter"
+                | "GenericLifetimeParameter"
+                | "GenericConstParameter"
+                    if matches!(property_name.as_ref(), "name") =>
+                {
+                    properties::resolve_generic_parameter_property(contexts, property_name)
+                }
+                "GenericTypeParameter" => {
+                    properties::resolve_generic_type_parameter_property(contexts, property_name)
+                }
+                "GenericConstParameter" => {
+                    properties::resolve_generic_const_parameter_property(contexts, property_name)
+                }
                 _ => unreachable!("resolve_property {type_name} {property_name}"),
             }
         }
@@ -216,6 +232,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 )
             }
             "Item"
+            | "GenericItem"
             | "ImplOwner"
             | "Struct"
             | "StructField"
@@ -253,6 +270,11 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 if matches!(edge_name.as_ref(), "parameter" | "abi") =>
             {
                 edges::resolve_function_like_edge(contexts, edge_name)
+            }
+            "GenericItem" | "Struct" | "Enum" | "Union" | "Trait" | "Function" | "Method"
+                if matches!(edge_name.as_ref(), "generic_parameter") =>
+            {
+                edges::resolve_generic_parameter_edge(contexts, edge_name)
             }
             "Module" => edges::resolve_module_edge(
                 contexts,
@@ -298,6 +320,12 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             "Attribute" => edges::resolve_attribute_edge(contexts, edge_name),
             "AttributeMetaItem" => edges::resolve_attribute_meta_item_edge(contexts, edge_name),
             "DeriveProcMacro" => edges::resolve_derive_proc_macro_edge(contexts, edge_name),
+            "GenericTypeParameter" => edges::resolve_generic_type_parameter_edge(
+                contexts,
+                edge_name,
+                self.current_crate,
+                self.previous_crate,
+            ),
             _ => unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}"),
         }
     }
@@ -311,12 +339,16 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
     ) -> ContextOutcomeIterator<'a, V, bool> {
         let coerce_to_type = coerce_to_type.clone();
         match type_name.as_ref() {
-            "Item" | "Variant" | "FunctionLike" | "Importable" | "ImplOwner" | "RawType"
-            | "GlobalValue" | "ProcMacro" => {
+            "Item" | "GenericItem" | "Variant" | "FunctionLike" | "Importable" | "ImplOwner"
+            | "RawType" | "GlobalValue" | "ProcMacro" => {
                 resolve_coercion_with(contexts, move |vertex| {
                     let actual_type_name = vertex.typename();
 
                     match coerce_to_type.as_ref() {
+                        "GenericItem" => matches!(
+                            actual_type_name,
+                            "Struct" | "Enum" | "Union" | "Trait" | "Function" | "Method"
+                        ),
                         "Variant" => matches!(
                             actual_type_name,
                             "PlainVariant" | "TupleVariant" | "StructVariant"
@@ -336,6 +368,14 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     }
                 })
             }
+            "GenericParameter" => resolve_coercion_with(contexts, move |vertex| {
+                let actual_type_name = vertex.typename();
+
+                // The possible types are final (don't have any subtypes)
+                // so we can just compare the actual type name to
+                // the type we are attempting to coerce to.
+                actual_type_name == coerce_to_type.as_ref()
+            }),
             _ => unreachable!("resolve_coercion {type_name} {coerce_to_type}"),
         }
     }
