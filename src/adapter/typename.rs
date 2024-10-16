@@ -83,7 +83,7 @@ display_wrapper! {
         if !self.0.generic_params.is_empty() {
             write!(f, "for<")?;
             intersperse_with(f, ", ", &self.0.generic_params, GenericParamDef)?;
-            write!(f, ">")?;
+            write!(f, "> ")?;
         }
 
         write!(f, "{}", Path(&self.0.trait_))
@@ -107,12 +107,87 @@ display_wrapper! {
             }
             rustdoc_types::Type::Generic(t) => write!(f, "{t}"),
             rustdoc_types::Type::Primitive(t) => write!(f, "{t}"),
-            rustdoc_types::Type::FunctionPointer(fnp) => todo!(),
+            rustdoc_types::Type::FunctionPointer(fnp) => {
+                // order: for<_> const async unsafe fn()
+                if !fnp.generic_params.is_empty() {
+                    write!(f, "for<")?;
+                    intersperse_with(f, ", ", &fnp.generic_params, GenericParamDef)?;
+                    write!(f, "> ")?;
+                }
+
+                if fnp.header.is_const {
+                    write!(f, "const ")?;
+                }
+
+                if fnp.header.is_async {
+                    write!(f, "async ")?;
+                }
+
+                if fnp.header.is_unsafe {
+                    write!(f, "unsafe ")?;
+                }
+
+                macro_rules! abi_name {
+                    ($f:expr, $name:literal, $unwind:expr) => {{
+                        write!($f, concat!("extern \"", $name))?;
+
+                        if *$unwind {
+                            write!(f, "-unwind")?;
+                        }
+
+                        write!(f, "\" ")?;
+                    }};
+                }
+
+                match &fnp.header.abi {
+                    rustdoc_types::Abi::Rust => (),
+                    rustdoc_types::Abi::C { unwind } => abi_name!(f, "C", unwind),
+                    rustdoc_types::Abi::Cdecl { unwind } => abi_name!(f, "cdecl", unwind),
+                    rustdoc_types::Abi::Stdcall { unwind } => abi_name!(f, "stdcall", unwind),
+                    rustdoc_types::Abi::Fastcall { unwind } => abi_name!(f, "fastcall", unwind),
+                    rustdoc_types::Abi::Aapcs { unwind } => abi_name!(f, "aapcs", unwind),
+                    rustdoc_types::Abi::Win64 { unwind } => abi_name!(f, "win64", unwind),
+                    rustdoc_types::Abi::SysV64 { unwind } => abi_name!(f, "sysv64", unwind),
+                    rustdoc_types::Abi::System { unwind } => abi_name!(f, "system", unwind),
+                    rustdoc_types::Abi::Other(other) => write!(f, r#"extern "{other}" "#)?
+                }
+
+                write!(f, "fn(")?;
+
+                enum Arg<'a> {
+                    Named(&'a str, Type<'a>),
+                    Dots,
+                }
+
+                intersperse(
+                    f,
+                    ", ",
+                    fnp.sig.inputs
+                        .iter()
+                        .map(|(name, ty)| Arg::Named(&name, Type(ty)))
+                        .chain(fnp.sig.is_c_variadic.then_some(Arg::Dots)),
+                    |arg, f| {
+                        match arg {
+                            Arg::Named(name, ty) => write!(f, "{name}: {ty}"),
+                            Arg::Dots => write!(f, "..."),
+                        }
+                    }
+                )?;
+
+                write!(f, ")")?;
+
+                if let Some(output) = &fnp.sig.output {
+                    write!(f, " -> {}", Type(output))?;
+                }
+
+
+                Ok(())
+            }
             rustdoc_types::Type::Tuple(tys) => {
                 write!(f, "(")?;
                 intersperse_with(f, ", ", tys, Type)?;
                 write!(f, ")")
-            },
+            }
             rustdoc_types::Type::Slice(ty) => write!(f, "[{}]", Type(ty)),
             // according to docs, `len` is not guaranteed to roundtrip
             rustdoc_types::Type::Array { type_, len } => write!(f, "[{}; {}]", Type(type_), len),
@@ -194,36 +269,65 @@ display_wrapper! {
 }
 
 display_wrapper! {
+    Constant,
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        if let Some(val) = &self.0.value {
+            write!(f, "{}", val)
+        } else {
+            // TODO: investigate expr docs - stringified is unstable
+            write!(f, "{}", self.0.expr)
+        }
+    }
+}
+
+display_wrapper! {
     GenericArgs,
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self.0 {
             rustdoc_types::GenericArgs::AngleBracketed { args, constraints } => {
-                write!(f, "<")?;
-                intersperse(f, ", ", args, |arg, f| {
-                    match arg {
-                        rustdoc_types::GenericArg::Lifetime(lt) => {
-                            // TODO: bounds
-                            write!(f, "{lt}")?;
-                            Ok(())
-                        }
-                        rustdoc_types::GenericArg::Type(t) => {
-                            // TODO: bounds
-                            write!(f, "{}", Type(t))
-                        },
-                        rustdoc_types::GenericArg::Const(constant) => {
-                            // TODO: bounds
-                            if let Some(val) = &constant.value {
-                                write!(f, "{}", val)
-                            } else {
-                                // TODO: investigate expr docs - stringified is unstable
-                                write!(f, "{}", constant.expr)
+                if !args.is_empty() {
+                    write!(f, "<")?;
+                    intersperse(f, ", ", args, |arg, f| {
+                        match arg {
+                            rustdoc_types::GenericArg::Lifetime(lt) => {
+                                write!(f, "{lt}")
                             }
+                            rustdoc_types::GenericArg::Type(t) => {
+                                write!(f, "{}", Type(t))
+                            },
+                            rustdoc_types::GenericArg::Const(constant) => {
+                                write!(f, "{}", Constant(constant))
+                            }
+                            rustdoc_types::GenericArg::Infer => write!(f, "_"),
                         }
-                        rustdoc_types::GenericArg::Infer => write!(f, "_"),
-                    }
-                })?;
+                    })?;
 
-                write!(f, ">")?;
+                    if !constraints.is_empty() {
+                        if !args.is_empty() {
+                            write!(f, ", ")?;
+                        }
+
+                        intersperse(f, ", ", constraints, |constraint, f| {
+                            write!(f, "{}{}", constraint.name, GenericArgs(&constraint.args))?;
+                            match &constraint.binding {
+                                rustdoc_types::AssocItemConstraintKind::Constraint(c) => {
+                                    write!(f, ": ")?;
+                                    intersperse_with(f, " + ", c, GenericBound)?;
+                                },
+                                rustdoc_types::AssocItemConstraintKind::Equality(e) => {
+                                    write!(f, " = ")?;
+                                    match e {
+                                        rustdoc_types::Term::Type(ty) => write!(f, "{}", Type(ty))?,
+                                        rustdoc_types::Term::Constant(c) => write!(f, "{}", Constant(c))?,
+                                    }
+                                }
+                            }
+                            Ok(())
+                        })?;
+                    }
+
+                    write!(f, ">")?;
+                }
             }
             rustdoc_types::GenericArgs::Parenthesized { inputs, output } => {
                 write!(f, "(")?;
@@ -254,7 +358,6 @@ display_wrapper! {
 mod tests {
     use anyhow::Context as _;
     use maplit::btreemap;
-    use rustdoc_types::Crate;
     use trustfall::{Schema, TryIntoStruct as _};
 
     use crate::{IndexedCrate, RustdocAdapter};
@@ -277,8 +380,9 @@ mod tests {
                             name @filter(op: "=", value: ["$struct"])
 
                             field {
+                                name @output
                                 raw_type {
-                                    name @output
+                                    typename: name @output
                                 }
                             }
                         }
@@ -294,18 +398,51 @@ mod tests {
         let schema = Schema::parse(include_str!("../rustdoc_schema.graphql"))
             .expect("schema failed to parse");
 
-        #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+        #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]
         struct Output {
             name: String,
+            typename: String,
         }
 
-        let mut results: Vec<_> =
+        let mut results: Vec<Output> =
             trustfall::execute_query(&schema, adapter.into(), query, variables.clone())
                 .expect("failed to run query")
                 .map(|row| row.try_into_struct().expect("shape mismatch"))
                 .collect();
         results.sort_unstable();
 
-        similar_asserts::assert_eq!(vec![Output { name: "Hi".into() }], results);
+        similar_asserts::assert_eq!(
+            results,
+            vec![
+                Output {
+                    name: "a".into(),
+                    typename: "String".into()
+                },
+                Output {
+                    name: "b".into(),
+                    typename: "T".into()
+                },
+                Output {
+                    name: "c".into(),
+                    typename: "Option<T>".into()
+                },
+                Output {
+                    name: "d".into(),
+                    typename: "<A as MyTrait>::A<'static, ()>".into()
+                },
+                Output {
+                    name: "e".into(),
+                    typename: "()".into(),
+                },
+                Output {
+                    name: "f".into(),
+                    typename: r#"unsafe extern "C-unwind" fn() -> T"#.into(),
+                },
+                Output {
+                    name: "g".into(),
+                    typename: "Box<dyn for<'b> MyTrait2<'b, b'a', B = &'b ()> + Send + 'a>".into(),
+                }
+            ]
+        );
     }
 }

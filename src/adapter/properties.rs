@@ -1,5 +1,3 @@
-use std::fmt::Write;
-
 use rustdoc_types::{ItemEnum, Visibility};
 use trustfall::{
     provider::{
