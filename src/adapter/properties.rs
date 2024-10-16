@@ -651,9 +651,7 @@ pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>
                 .expect("vertex was not a GenericTypeParameter");
 
             match &generic.kind {
-                rustdoc_types::GenericParamDefKind::Type { is_synthetic, .. } => {
-                    (*is_synthetic).into()
-                }
+                rustdoc_types::GenericParamDefKind::Type { synthetic, .. } => (*synthetic).into(),
                 _ => unreachable!("vertex was not a GenericTypeParameter: {vertex:?}"),
             }
         }),
