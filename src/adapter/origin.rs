@@ -125,4 +125,14 @@ impl Origin {
             kind: VertexKind::DeriveHelperAttr(helper),
         }
     }
+
+    pub(super) fn make_generic_parameter_vertex<'a>(
+        &self,
+        param: &'a rustdoc_types::GenericParamDef,
+    ) -> Vertex<'a> {
+        Vertex {
+            origin: *self,
+            kind: VertexKind::GenericParameter(param),
+        }
+    }
 }
