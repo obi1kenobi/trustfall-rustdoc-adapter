@@ -92,6 +92,66 @@ interface Item {
 }
 
 """
+An item that can have generic parameters.
+"""
+interface GenericItem implements Item {
+  id: String!
+  crate_id: Int!
+  name: String
+  docs: String
+
+  """
+  A list of all the attributes applied to this item.
+
+  The attributes are also available through the `attribute` edge,
+  which makes certain operations easier.
+  """
+  attrs: [String!]!
+
+  """
+  This item is hidden in documentation.
+  """
+  doc_hidden: Boolean!
+
+  """
+  This item is deprecated.
+  """
+  deprecated: Boolean!
+
+  """
+  Whether this item is eligible to be in the public API. This is true if both:
+  - The item is public, either explicitly (`pub`) or implicitly (like enum variants).
+  - The item is visible in documentation, or is not visible but is deprecated,
+    since deprecated items are assumed to have been part of the public API in the past.
+
+  Being eligible to be part of the public API *does not* make an item public API!
+  An item that is not eligible by itself cannot be part of the public API,
+  but eligible items might not be public API -- for example, pub-in-priv items
+  (public items in a private module) are eligible but not public API. Another example
+  would be a public item that is only reachable via modules that are both
+  `#[doc(hidden)]` and not deprecated.
+
+  To check whether an item is part of the public API:
+  - For items that are legal in a `use` import statement, use the `importable_path` edge and the
+    path's `public_api` property.
+  - For all other items (e.g. struct fields), first check whether that parent item is public API
+    as above, and then check whether the item itself is `public_api_eligible`.
+  """
+  public_api_eligible: Boolean!
+
+  # stringified version of the visibility struct field
+  visibility_limit: String!
+
+  attribute: [Attribute!]
+  span: Span
+
+  """
+  Generic type, lifetime, or const parameters by which this item is parameterized.
+  """
+  generic_parameter: [GenericParameter]
+}
+
+"""
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.16.0/rustdoc_types/struct.Module.html
 """
@@ -157,7 +217,7 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Struct.html
 """
-type Struct implements Item & Importable & ImplOwner {
+type Struct implements Item & Importable & ImplOwner & GenericItem {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -234,6 +294,12 @@ type Struct implements Item & Importable & ImplOwner {
   """
   inherent_impl: [Impl!]
 
+  # edges from GenericItem
+  """
+  Generic type, lifetime, or const parameters by which this struct is parameterized.
+  """
+  generic_parameter: [GenericParameter]
+
   # own edges
   field: [StructField!]
 }
@@ -297,7 +363,7 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Enum.html
 """
-type Enum implements Item & Importable & ImplOwner {
+type Enum implements Item & Importable & ImplOwner & GenericItem {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -373,6 +439,12 @@ type Enum implements Item & Importable & ImplOwner {
   """
   inherent_impl: [Impl!]
 
+  # edges from GenericItem
+  """
+  Generic type, lifetime, or const parameters by which this enum is parameterized.
+  """
+  generic_parameter: [GenericParameter]
+
   # own edges
   variant: [Variant!]
 }
@@ -432,7 +504,7 @@ interface Variant implements Item {
 
   """
   The discriminant value of this variant, if its value is well-defined.
-  
+
   A discriminant is an integer value that is logically associated with an enum variant,
   and is used to determine which variant an enum value holds.
 
@@ -514,10 +586,10 @@ type PlainVariant implements Item & Variant {
 
   # edges from Variant
   field: [StructField!]
-  
+
   """
   The discriminant value of this variant, if its value is well-defined.
-  
+
   A discriminant is an integer value that is logically associated with an enum variant,
   and is used to determine which variant an enum value holds.
 
@@ -591,7 +663,7 @@ type TupleVariant implements Item & Variant {
 
   """
   The discriminant value of this variant, if its value is well-defined.
-  
+
   A discriminant is an integer value that is logically associated with an enum variant,
   and is used to determine which variant an enum value holds.
 
@@ -665,7 +737,7 @@ type StructVariant implements Item & Variant {
 
   """
   The discriminant value of this variant, if its value is well-defined.
-  
+
   A discriminant is an integer value that is logically associated with an enum variant,
   and is used to determine which variant an enum value holds.
 
@@ -689,7 +761,7 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Union.html
 """
-type Union implements Item & Importable & ImplOwner {
+type Union implements Item & Importable & ImplOwner & GenericItem {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -764,6 +836,12 @@ type Union implements Item & Importable & ImplOwner {
   When Trustfall supports macro edges, this should just become a macro edge.
   """
   inherent_impl: [Impl!]
+
+  # edges from GenericItem
+  """
+  Generic type, lifetime, or const parameters by which this union is parameterized.
+  """
+  generic_parameter: [GenericParameter]
 
   # own edges
   field: [StructField!]
@@ -951,7 +1029,7 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/latest/rustdoc_types/struct.Trait.html
 """
-type Trait implements Item & Importable {
+type Trait implements Item & Importable & GenericItem {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -1018,6 +1096,12 @@ type Trait implements Item & Importable {
   # edges from Importable
   importable_path: [ImportablePath!]
   canonical_path: Path
+
+  # edges from GenericItem
+  """
+  Generic type, lifetime, or const parameters by which this trait is parameterized.
+  """
+  generic_parameter: [GenericParameter]
 
   # own edges
   """
@@ -1170,7 +1254,7 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Function.html
 """
-type Function implements Item & FunctionLike & Importable {
+type Function implements Item & FunctionLike & Importable & GenericItem {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -1252,6 +1336,12 @@ type Function implements Item & FunctionLike & Importable {
   # edges from Importable
   importable_path: [ImportablePath!]
   canonical_path: Path
+
+  # edges from GenericItem
+  """
+  Generic type, lifetime, or const parameters by which this function is parameterized.
+  """
+  generic_parameter: [GenericParameter]
 }
 
 """
@@ -1259,7 +1349,7 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Method.html
 """
-type Method implements Item & FunctionLike {
+type Method implements Item & FunctionLike & GenericItem {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -1313,6 +1403,15 @@ type Method implements Item & FunctionLike {
   # edges from FunctionLike
   parameter: [FunctionParameter!]
   abi: FunctionAbi!
+
+  # edges from GenericItem
+  """
+  Generic type, lifetime, or const parameters by which this method is parameterized.
+
+  This only includes the *method's own* generic parameters. It does not include
+  any generic parameters that may be part of the definition of the type that owns the method.
+  """
+  generic_parameter: [GenericParameter]
 }
 
 """
@@ -1781,6 +1880,413 @@ type AssociatedConstant implements Item {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+}
+
+"""
+A `macro_rules` declarative macro.
+
+When such macros are exported by a crate, they are always exported at the top level of the crate,
+even if the macro's definition is located inside a `mod`. In essence, the `#[macro_export]`
+attribute behaves as a `pub use` of the macro into the crate's root module.
+
+This is why we don't model macro items as `Importable`:
+- They always have only one importable path: `the_crate::macro_name`.
+- Their names are in their own namespace, and do not mix with the types or values namespaces.
+"""
+type Macro implements Item {
+  # properties from Item
+  id: String!
+  crate_id: Int!
+  name: String
+  docs: String
+  attrs: [String!]!
+
+  """
+  This item is hidden in documentation.
+  """
+  doc_hidden: Boolean!
+
+  """
+  This item is deprecated.
+  """
+  deprecated: Boolean!
+
+  """
+  Whether this item is eligible to be in the public API. This is true if both:
+  - The item is public, either explicitly (`pub`) or implicitly (like enum variants).
+  - The item is visible in documentation, or is not visible but is deprecated,
+    since deprecated items are assumed to have been part of the public API in the past.
+
+  Being eligible to be part of the public API *does not* make an item public API!
+  An item that is not eligible by itself cannot be part of the public API,
+  but eligible items might not be public API -- for example, pub-in-priv items
+  (public items in a private module) are eligible but not public API. Another example
+  would be a public item that is only reachable via modules that are both
+  `#[doc(hidden)]` and not deprecated.
+
+  To check whether an item is part of the public API:
+  - For items that are legal in a `use` import statement, use the `importable_path` edge and the
+    path's `public_api` property.
+  - For all other items (e.g. struct fields), first check whether that parent item is public API
+    as above, and then check whether the item itself is `public_api_eligible`.
+  """
+  public_api_eligible: Boolean!
+
+  visibility_limit: String!
+
+  # edges from Item
+  attribute: [Attribute!]
+  span: Span
+}
+
+"""
+A procedural macro. Unlike declarative macros (`Macro`), expanding these macros runs Rust code.
+
+There are multiple kinds of procedural macros.
+More info: https://doc.rust-lang.org/reference/procedural-macros.html
+
+When such macros are exported by a crate, they are always exported at the top level of the crate.
+
+This is why we don't model macro items as `Importable`:
+- They always have only one importable path: `the_crate::macro_name`.
+- Their names are in their own namespace, and do not mix with the types or values namespaces.
+"""
+interface ProcMacro implements Item {
+  # properties from Item
+  id: String!
+  crate_id: Int!
+  name: String
+  docs: String
+  attrs: [String!]!
+
+  """
+  This item is hidden in documentation.
+  """
+  doc_hidden: Boolean!
+
+  """
+  This item is deprecated.
+  """
+  deprecated: Boolean!
+
+  """
+  Whether this item is eligible to be in the public API. This is true if both:
+  - The item is public, either explicitly (`pub`) or implicitly (like enum variants).
+  - The item is visible in documentation, or is not visible but is deprecated,
+    since deprecated items are assumed to have been part of the public API in the past.
+
+  Being eligible to be part of the public API *does not* make an item public API!
+  An item that is not eligible by itself cannot be part of the public API,
+  but eligible items might not be public API -- for example, pub-in-priv items
+  (public items in a private module) are eligible but not public API. Another example
+  would be a public item that is only reachable via modules that are both
+  `#[doc(hidden)]` and not deprecated.
+
+  To check whether an item is part of the public API:
+  - For items that are legal in a `use` import statement, use the `importable_path` edge and the
+    path's `public_api` property.
+  - For all other items (e.g. struct fields), first check whether that parent item is public API
+    as above, and then check whether the item itself is `public_api_eligible`.
+  """
+  public_api_eligible: Boolean!
+
+  visibility_limit: String!
+
+  # edges from Item
+  attribute: [Attribute!]
+  span: Span
+}
+
+"""
+A proc macro meant to be used as `my_macro!();`.
+
+More info:
+https://doc.rust-lang.org/reference/procedural-macros.html#function-like-procedural-macros
+
+When such macros are exported by a crate, they are always exported at the top level of the crate.
+
+This is why we don't model macro items as `Importable`:
+- They always have only one importable path: `the_crate::macro_name`.
+- Their names are in their own namespace, and do not mix with the types or values namespaces.
+"""
+type FunctionLikeProcMacro implements Item & ProcMacro {
+  # properties from Item
+  id: String!
+  crate_id: Int!
+  name: String
+  docs: String
+  attrs: [String!]!
+
+  """
+  This item is hidden in documentation.
+  """
+  doc_hidden: Boolean!
+
+  """
+  This item is deprecated.
+  """
+  deprecated: Boolean!
+
+  """
+  Whether this item is eligible to be in the public API. This is true if both:
+  - The item is public, either explicitly (`pub`) or implicitly (like enum variants).
+  - The item is visible in documentation, or is not visible but is deprecated,
+    since deprecated items are assumed to have been part of the public API in the past.
+
+  Being eligible to be part of the public API *does not* make an item public API!
+  An item that is not eligible by itself cannot be part of the public API,
+  but eligible items might not be public API -- for example, pub-in-priv items
+  (public items in a private module) are eligible but not public API. Another example
+  would be a public item that is only reachable via modules that are both
+  `#[doc(hidden)]` and not deprecated.
+
+  To check whether an item is part of the public API:
+  - For items that are legal in a `use` import statement, use the `importable_path` edge and the
+    path's `public_api` property.
+  - For all other items (e.g. struct fields), first check whether that parent item is public API
+    as above, and then check whether the item itself is `public_api_eligible`.
+  """
+  public_api_eligible: Boolean!
+
+  visibility_limit: String!
+
+  # edges from Item
+  attribute: [Attribute!]
+  span: Span
+}
+
+"""
+A proc macro meant to be used as `#[item_attribute]`.
+
+More info: https://doc.rust-lang.org/reference/procedural-macros.html#attribute-macros
+
+When such macros are exported by a crate, they are always exported at the top level of the crate.
+
+This is why we don't model macro items as `Importable`:
+- They always have only one importable path: `the_crate::macro_name`.
+- Their names are in their own namespace, and do not mix with the types or values namespaces.
+"""
+type AttributeProcMacro implements Item & ProcMacro {
+  # properties from Item
+  id: String!
+  crate_id: Int!
+  name: String
+  docs: String
+  attrs: [String!]!
+
+  """
+  This item is hidden in documentation.
+  """
+  doc_hidden: Boolean!
+
+  """
+  This item is deprecated.
+  """
+  deprecated: Boolean!
+
+  """
+  Whether this item is eligible to be in the public API. This is true if both:
+  - The item is public, either explicitly (`pub`) or implicitly (like enum variants).
+  - The item is visible in documentation, or is not visible but is deprecated,
+    since deprecated items are assumed to have been part of the public API in the past.
+
+  Being eligible to be part of the public API *does not* make an item public API!
+  An item that is not eligible by itself cannot be part of the public API,
+  but eligible items might not be public API -- for example, pub-in-priv items
+  (public items in a private module) are eligible but not public API. Another example
+  would be a public item that is only reachable via modules that are both
+  `#[doc(hidden)]` and not deprecated.
+
+  To check whether an item is part of the public API:
+  - For items that are legal in a `use` import statement, use the `importable_path` edge and the
+    path's `public_api` property.
+  - For all other items (e.g. struct fields), first check whether that parent item is public API
+    as above, and then check whether the item itself is `public_api_eligible`.
+  """
+  public_api_eligible: Boolean!
+
+  visibility_limit: String!
+
+  # edges from Item
+  attribute: [Attribute!]
+  span: Span
+}
+
+"""
+A proc macro meant to be used as a `#[derive(MyMacro)]`.
+
+More info: https://doc.rust-lang.org/reference/procedural-macros.html#derive-macros
+
+When such macros are exported by a crate, they are always exported at the top level of the crate.
+
+This is why we don't model macro items as `Importable`:
+- They always have only one importable path: `the_crate::MacroName`.
+- Their names are in their own namespace, and do not mix with the types or values namespaces.
+"""
+type DeriveProcMacro implements Item & ProcMacro {
+  # properties from Item
+  id: String!
+  crate_id: Int!
+  name: String
+  docs: String
+  attrs: [String!]!
+
+  """
+  This item is hidden in documentation.
+  """
+  doc_hidden: Boolean!
+
+  """
+  This item is deprecated.
+  """
+  deprecated: Boolean!
+
+  """
+  Whether this item is eligible to be in the public API. This is true if both:
+  - The item is public, either explicitly (`pub`) or implicitly (like enum variants).
+  - The item is visible in documentation, or is not visible but is deprecated,
+    since deprecated items are assumed to have been part of the public API in the past.
+
+  Being eligible to be part of the public API *does not* make an item public API!
+  An item that is not eligible by itself cannot be part of the public API,
+  but eligible items might not be public API -- for example, pub-in-priv items
+  (public items in a private module) are eligible but not public API. Another example
+  would be a public item that is only reachable via modules that are both
+  `#[doc(hidden)]` and not deprecated.
+
+  To check whether an item is part of the public API:
+  - For items that are legal in a `use` import statement, use the `importable_path` edge and the
+    path's `public_api` property.
+  - For all other items (e.g. struct fields), first check whether that parent item is public API
+    as above, and then check whether the item itself is `public_api_eligible`.
+  """
+  public_api_eligible: Boolean!
+
+  visibility_limit: String!
+
+  # edges from Item
+  attribute: [Attribute!]
+  span: Span
+
+  # own edges
+  """
+  Any additional helper attributes defined by this macro.
+  """
+  helper_attribute: [DeriveMacroHelperAttribute]
+}
+
+"""
+Derive proc macros may add additional attributes into the scope of the item where they are applied.
+Such additional attributes are called "derive macro helper attributes" and their only purpose is to
+be read by the derive proc macro.
+
+More info: https://doc.rust-lang.org/reference/procedural-macros.html#derive-macro-helper-attributes
+"""
+type DeriveMacroHelperAttribute {
+  """
+  The name of the helper attribute.
+  """
+  name: String!
+}
+
+interface GenericParameter {
+  """
+  The name of the generic parameter.
+
+  For example:
+  - `"T"` as a generic type
+  - `"'a"` as a generic lifetime
+  - `"N"` as a generic constant
+  """
+  name: String!
+}
+
+type GenericTypeParameter implements GenericParameter {
+  # properties from GenericParameter
+  """
+  The name of the generic parameter.
+
+  For example:
+  - `"T"` as a generic type
+  - `"'a"` as a generic lifetime
+  - `"N"` as a generic constant
+  """
+  name: String!
+
+  """
+  Whether the generic type parameter has a default value.
+  """
+  has_default: Boolean!
+
+  """
+  Whether the type parameter is synthetic.
+
+  This is normally `false`, which means that this generic parameter is
+  declared in the Rust source text.
+
+  If it is `true`, this generic parameter has been introduced by the
+  compiler behind the scenes, for example in `impl Trait` uses:
+  `fn f(_: impl Trait) {}` is transformed by the compiler into (pseudo-Rust)
+  `fn f<impl Trait: Trait>(_: impl Trait) {}`. In this example,
+  the generic parameter named `impl Trait` is synthetic because
+  it was not originally in the Rust source text.
+  """
+  synthetic: Boolean!
+
+  # own edges
+  """
+  Type bounds applied specifically to this generic type parameter.
+
+  For example:
+  - For `<T: Clone + PartialEq<i64>>`, this edge would have two instances
+    pointing to each of `Clone` and `PartialEq<i64>`.
+  - For `impl Trait<'a, T, i64>`, this edge would point to `Trait<'a, T, i64>`.
+
+  Bounds involving this type parameter but not specifically applying to it are not included.
+  For example, for type parameter `T`, a bound like `Arc<T>: Clone` wouldn't be included here.
+  """
+  type_bound: [ImplementedTrait!]
+
+  # TODO: needs lifetime bounds
+  # lifetime_bound: ?
+}
+
+type GenericLifetimeParameter implements GenericParameter {
+  # properties from GenericParameter
+  """
+  The name of the generic parameter.
+
+  For example:
+  - `"T"` as a generic type
+  - `"'a"` as a generic lifetime
+  - `"N"` as a generic constant
+  """
+  name: String!
+
+  # own edges
+  # TODO: needs lifetime bounds
+  # lifetime_bound: ?
+}
+
+type GenericConstParameter implements GenericParameter {
+  # properties from GenericParameter
+  """
+  The name of the generic parameter.
+
+  For example:
+  - `"T"` as a generic type
+  - `"'a"` as a generic lifetime
+  - `"N"` as a generic constant
+  """
+  name: String!
+
+  """
+  Whether the generic const parameter has a default value.
+  """
+  has_default: Boolean!
+
+  # own edges
+  # TODO: needs type and value
 }
 
 """
