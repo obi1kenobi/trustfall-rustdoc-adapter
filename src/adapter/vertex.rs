@@ -1,8 +1,8 @@
 use std::{borrow::Cow, rc::Rc};
 
 use rustdoc_types::{
-    Abi, Constant, Crate, Enum, Function, Impl, Item, Module, Path, Span, Static, Struct, Trait,
-    Type, Union, VariantKind,
+    Abi, Constant, Crate, Enum, Function, GenericParamDef, Impl, Item, Module, Path, Span, Static,
+    Struct, Trait, Type, Union, VariantKind,
 };
 use trustfall::provider::Typename;
 
@@ -38,6 +38,8 @@ pub enum VertexKind<'a> {
     FunctionAbi(&'a Abi),
     Discriminant(Cow<'a, str>),
     Variant(EnumVariant<'a>),
+    DeriveHelperAttr(&'a str),
+    GenericParameter(&'a GenericParamDef),
 }
 
 impl Typename for Vertex<'_> {
@@ -63,6 +65,12 @@ impl Typename for Vertex<'_> {
                 rustdoc_types::ItemEnum::Constant { .. } => "Constant",
                 rustdoc_types::ItemEnum::Static(..) => "Static",
                 rustdoc_types::ItemEnum::AssocType { .. } => "AssociatedType",
+                rustdoc_types::ItemEnum::Macro { .. } => "Macro",
+                rustdoc_types::ItemEnum::ProcMacro(proc) => match proc.kind {
+                    rustdoc_types::MacroKind::Bang => "FunctionLikeProcMacro",
+                    rustdoc_types::MacroKind::Attr => "AttributeProcMacro",
+                    rustdoc_types::MacroKind::Derive => "DeriveProcMacro",
+                },
                 _ => unreachable!("unexpected item.inner for item: {item:?}"),
             },
             VertexKind::Span(..) => "Span",
@@ -84,6 +92,12 @@ impl Typename for Vertex<'_> {
                 VariantKind::Plain => "PlainVariant",
                 VariantKind::Tuple(..) => "TupleVariant",
                 VariantKind::Struct { .. } => "StructVariant",
+            },
+            VertexKind::DeriveHelperAttr(..) => "DeriveMacroHelperAttribute",
+            VertexKind::GenericParameter(param) => match &param.kind {
+                rustdoc_types::GenericParamDefKind::Lifetime { .. } => "GenericLifetimeParameter",
+                rustdoc_types::GenericParamDefKind::Type { .. } => "GenericTypeParameter",
+                rustdoc_types::GenericParamDefKind::Const { .. } => "GenericConstParameter",
             },
         }
     }
@@ -236,6 +250,13 @@ impl<'a> Vertex<'a> {
         })
     }
 
+    pub(super) fn as_proc_macro(&self) -> Option<&'a rustdoc_types::ProcMacro> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::ProcMacro(m) => Some(m),
+            _ => None,
+        })
+    }
+
     pub(super) fn as_attribute(&self) -> Option<&'_ Attribute<'a>> {
         match &self.kind {
             VertexKind::Attribute(attr) => Some(attr),
@@ -269,6 +290,31 @@ impl<'a> Vertex<'a> {
             VertexKind::Discriminant(variant) => Some(variant),
             _ => None,
         }
+    }
+
+    pub(super) fn as_derive_helper_attr(&self) -> Option<&'a str> {
+        match &self.kind {
+            VertexKind::DeriveHelperAttr(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_generic_parameter(&self) -> Option<&'a GenericParamDef> {
+        match &self.kind {
+            VertexKind::GenericParameter(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_generics(&self) -> Option<&'a rustdoc_types::Generics> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::Struct(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Enum(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Function(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Trait(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Union(x) => Some(&x.generics),
+            _ => None,
+        })
     }
 }
 

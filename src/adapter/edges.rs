@@ -188,6 +188,29 @@ pub(super) fn resolve_function_like_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     }
 }
 
+pub(super) fn resolve_generic_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    edge_name: &str,
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
+    match edge_name {
+        "generic_parameter" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            Box::new(
+                vertex
+                    .as_generics()
+                    .map(move |g| {
+                        g.params
+                            .iter()
+                            .map(move |param| origin.make_generic_parameter_vertex(param))
+                    })
+                    .into_iter()
+                    .flatten(),
+            )
+        }),
+        _ => unreachable!("resolve_generic_parameter_edge {edge_name}"),
+    }
+}
+
 pub(super) fn resolve_module_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
@@ -721,5 +744,91 @@ pub(super) fn resolve_attribute_meta_item_edge<'a, V: AsVertex<Vertex<'a>> + 'a>
             }
         }),
         _ => unreachable!("resolve_attribute_meta_item_edge {edge_name}"),
+    }
+}
+
+pub(super) fn resolve_derive_proc_macro_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    edge_name: &str,
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
+    match edge_name {
+        "helper_attribute" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+
+            let proc_macro = vertex
+                .as_proc_macro()
+                .expect("vertex was not a DeriveProcMacro");
+            Box::new(
+                proc_macro
+                    .helpers
+                    .iter()
+                    .map(move |helper| origin.make_derive_helper_attr_vertex(helper)),
+            )
+        }),
+        _ => unreachable!("resolve_derive_proc_macro_edge {edge_name}"),
+    }
+}
+
+pub(super) fn resolve_generic_type_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    edge_name: &str,
+    current_crate: &'a IndexedCrate<'a>,
+    previous_crate: Option<&'a IndexedCrate<'a>>,
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
+    match edge_name {
+        "type_bound" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let item_index = match origin {
+                Origin::CurrentCrate => &current_crate.inner.index,
+                Origin::PreviousCrate => {
+                    &previous_crate
+                        .expect("no previous crate provided")
+                        .inner
+                        .index
+                }
+            };
+
+            let generic = vertex
+                .as_generic_parameter()
+                .expect("vertex was not a GenericTypeParameter");
+
+            match &generic.kind {
+                rustdoc_types::GenericParamDefKind::Type { bounds, .. } => {
+                    Box::new(bounds.iter().filter_map(move |bound| {
+                        if let TraitBound { trait_, .. } = &bound {
+                            // When the implemented trait is from the same crate
+                            // as its definition, the trait is expected to be present
+                            // in `item_index`. Otherwise, the
+                            // `rustdoc_types::Trait` is not in this rustdoc,
+                            // even if the trait is part of Rust `core` or `std`.
+                            // As a temporary workaround, some common
+                            // Rust built-in traits are manually "inlined"
+                            // with items stored in `manually_inlined_builtin_traits`.
+                            let found_item = item_index.get(&trait_.id).or_else(|| {
+                                let manually_inlined_builtin_traits = match origin {
+                                    Origin::CurrentCrate => {
+                                        &current_crate.manually_inlined_builtin_traits
+                                    }
+                                    Origin::PreviousCrate => {
+                                        &previous_crate
+                                            .expect("no previous crate provided")
+                                            .manually_inlined_builtin_traits
+                                    }
+                                };
+                                manually_inlined_builtin_traits.get(&trait_.id)
+                            });
+
+                            found_item.map(|next_item| {
+                                origin.make_implemented_trait_vertex(trait_, next_item)
+                            })
+                        } else {
+                            None
+                        }
+                    }))
+                }
+                _ => unreachable!("vertex was not a GenericTypeParameter: {vertex:?}"),
+            }
+        }),
+        _ => unreachable!("resolve_derive_proc_macro_edge {edge_name}"),
     }
 }
