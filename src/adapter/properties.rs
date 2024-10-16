@@ -448,7 +448,7 @@ pub(super) fn resolve_raw_type_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     match property_name {
         "name" => resolve_property_with(contexts, |vertex| {
             let type_vertex = vertex.as_raw_type().expect("not a RawType");
-            super::typename::Type(type_vertex).to_string().into()
+            super::rust_type_name::rust_type_name(type_vertex).into()
         }),
         _ => unreachable!("RawType property {property_name}"),
     }
