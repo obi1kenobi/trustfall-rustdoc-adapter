@@ -164,7 +164,7 @@ display_wrapper! {
                     ", ",
                     fnp.sig.inputs
                         .iter()
-                        .map(|(name, ty)| Arg::Named(&name, Type(ty)))
+                        .map(|(name, ty)| Arg::Named(name, Type(ty)))
                         .chain(fnp.sig.is_c_variadic.then_some(Arg::Dots)),
                     |arg, f| {
                         match arg {
