@@ -37,7 +37,10 @@ pub(super) fn resolve_item_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     property_name: &str,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
-        "id" => resolve_property_with(contexts, field_property!(as_item, id, { id.0.into() })),
+        "id" => resolve_property_with(
+            contexts,
+            field_property!(as_item, id, { id.0.to_string().into() }),
+        ),
         "crate_id" => resolve_property_with(contexts, field_property!(as_item, crate_id)),
         "name" => resolve_property_with(contexts, field_property!(as_item, name)),
         "docs" => resolve_property_with(contexts, field_property!(as_item, docs)),
