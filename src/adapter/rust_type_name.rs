@@ -604,4 +604,43 @@ mod tests {
             )
         });
     }
+
+    #[test]
+    fn is_synthetic() {
+        with_crate_root(|crate_, module| {
+            let func = module
+                .items
+                .iter()
+                .find_map(|x| {
+                    let item = crate_.index.get(x)?;
+                    if item.name.as_ref()? == "is_synthetic" {
+                        if let rustdoc_types::ItemEnum::Function(func) = &item.inner {
+                            return Some(func);
+                        }
+                    }
+
+                    None
+                })
+                .expect("couldn't find `is_synthetic`");
+
+            let inputs: Vec<_> = func
+                .sig
+                .inputs
+                .iter()
+                .map(|(k, v)| (k, rust_type_name(v)))
+                .collect();
+
+            similar_asserts::assert_eq!(
+                inputs
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect::<Vec<_>>(),
+                vec![("x", "impl std::any::Any"),]
+            );
+            similar_asserts::assert_eq!(
+                rust_type_name(func.sig.output.as_ref().expect("no output")),
+                "impl std::any::Any"
+            );
+        });
+    }
 }

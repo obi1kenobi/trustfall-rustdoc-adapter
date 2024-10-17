@@ -36,6 +36,10 @@ pub struct TypeEnum<T> {
     pub qualified_path: <std::str::SplitAsciiWhitespace<'static> as Iterator>::Item,
 }
 
+pub fn is_synthetic(x: impl std::any::Any) -> impl std::any::Any {
+    x
+}
+
 pub fn my_generic_function<'a, T, U: GAT<T>>(
     a: &'a &'static mut *const T,
     b: &(dyn Iterator<Item = T> + Unpin + Send),
