@@ -244,7 +244,7 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
             //
             // Unconditionally wrapping an `impl/dyn Trait` reference with parentheses
             // may create something syntactially different from the original statement,
-            // but it will always be semantically valid, and lets the formatting be more
+            // but it will always be semantically equivalent, and lets the formatting be more
             // context-free than keeping track of when parentheses are needed.
             let wrap_parens = matches!(
                 &**type_,
