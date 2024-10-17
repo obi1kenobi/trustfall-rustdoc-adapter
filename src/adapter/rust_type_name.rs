@@ -204,7 +204,8 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
             write!(f, ")")
         }
         rustdoc_types::Type::Slice(ty) => write!(f, "[{}]", Type(ty)),
-        // according to docs, `len` is not guaranteed to roundtrip
+        // According to the docs for this variant, `len` is not guaranteed to be the
+        // same as the source code.  For example, [u8; 1 + 2] currently becomes [u8; 3]
         rustdoc_types::Type::Array { type_, len } => write!(f, "[{}; {}]", Type(type_), len),
         rustdoc_types::Type::ImplTrait(vec) => {
             write!(f, "impl ")?;
@@ -259,20 +260,20 @@ fn fmt_generic_bound(this: &GenericBound, f: &mut Formatter<'_>) -> Result {
             generic_params,
             modifier,
         } => {
+            if !generic_params.is_empty() {
+                write!(f, "for<")?;
+                intersperse_with(f, ", ", generic_params, GenericParamDef)?;
+                write!(f, "> ")?;
+            }
+
             match modifier {
                 rustdoc_types::TraitBoundModifier::Maybe => write!(f, "?")?,
-                // TODO: check this/find a good reference.  it's currently unstablke
+                // TODO: check this/find a good reference.  it's currently unstable
                 rustdoc_types::TraitBoundModifier::MaybeConst => write!(f, "~const ")?,
                 rustdoc_types::TraitBoundModifier::None => (),
             };
 
             write!(f, "{}", Path(trait_))?;
-
-            if generic_params.is_empty() {
-                write!(f, "<")?;
-                intersperse_with(f, ", ", generic_params, GenericParamDef)?;
-                write!(f, ">")?;
-            }
 
             Ok(())
         }
@@ -291,7 +292,8 @@ fn fmt_constant(this: &Constant, f: &mut Formatter<'_>) -> Result {
     if let Some(val) = &this.0.value {
         write!(f, "{}", val)
     } else {
-        // TODO: investigate expr docs - stringified is unstable
+        // The stringified form is unstable.  For example, `{ 1 + 2 }` currently
+        // becomes `{ _ }`.
         write!(f, "{}", this.0.expr)
     }
 }
@@ -301,8 +303,11 @@ display_wrapper!(Constant, fmt_constant);
 fn fmt_generic_args(this: &GenericArgs, f: &mut Formatter<'_>) -> Result {
     match this.0 {
         rustdoc_types::GenericArgs::AngleBracketed { args, constraints } => {
-            if !args.is_empty() {
+            if !constraints.is_empty() || !args.is_empty() {
                 write!(f, "<")?;
+            }
+
+            if !args.is_empty() {
                 intersperse(f, ", ", args, |arg, f| match arg {
                     rustdoc_types::GenericArg::Lifetime(lt) => {
                         write!(f, "{lt}")
@@ -315,33 +320,33 @@ fn fmt_generic_args(this: &GenericArgs, f: &mut Formatter<'_>) -> Result {
                     }
                     rustdoc_types::GenericArg::Infer => write!(f, "_"),
                 })?;
+            }
 
-                if !constraints.is_empty() {
-                    if !args.is_empty() {
-                        write!(f, ", ")?;
-                    }
-
-                    intersperse(f, ", ", constraints, |constraint, f| {
-                        write!(f, "{}{}", constraint.name, GenericArgs(&constraint.args))?;
-                        match &constraint.binding {
-                            rustdoc_types::AssocItemConstraintKind::Constraint(c) => {
-                                write!(f, ": ")?;
-                                intersperse_with(f, " + ", c, GenericBound)?;
-                            }
-                            rustdoc_types::AssocItemConstraintKind::Equality(e) => {
-                                write!(f, " = ")?;
-                                match e {
-                                    rustdoc_types::Term::Type(ty) => write!(f, "{}", Type(ty))?,
-                                    rustdoc_types::Term::Constant(c) => {
-                                        write!(f, "{}", Constant(c))?
-                                    }
-                                }
-                            }
-                        }
-                        Ok(())
-                    })?;
+            if !constraints.is_empty() {
+                if !args.is_empty() {
+                    write!(f, ", ")?;
                 }
 
+                intersperse(f, ", ", constraints, |constraint, f| {
+                    write!(f, "{}{}", constraint.name, GenericArgs(&constraint.args))?;
+                    match &constraint.binding {
+                        rustdoc_types::AssocItemConstraintKind::Constraint(c) => {
+                            write!(f, ": ")?;
+                            intersperse_with(f, " + ", c, GenericBound)?;
+                        }
+                        rustdoc_types::AssocItemConstraintKind::Equality(e) => {
+                            write!(f, " = ")?;
+                            match e {
+                                rustdoc_types::Term::Type(ty) => write!(f, "{}", Type(ty))?,
+                                rustdoc_types::Term::Constant(c) => write!(f, "{}", Constant(c))?,
+                            }
+                        }
+                    }
+                    Ok(())
+                })?;
+            }
+
+            if !constraints.is_empty() || !args.is_empty() {
                 write!(f, ">")?;
             }
         }
@@ -374,15 +379,18 @@ display_wrapper!(Path, fmt_path);
 mod tests {
     use anyhow::Context as _;
     use maplit::btreemap;
+    use rustdoc_types::{Item, ItemEnum, StructKind};
     use trustfall::{Schema, TryIntoStruct as _};
 
     use crate::{IndexedCrate, RustdocAdapter};
 
+    use super::rust_type_name;
+
     #[test]
     fn typename() {
-        let path = "./localdata/test_data/typename/rustdoc.json";
+        let path = "./localdata/test_data/rust_type_name/rustdoc.json";
         let content = std::fs::read_to_string(path)
-            .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+            .with_context(|| format!("could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
             .expect("failed to load rustdoc");
         let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
         let indexed_crate = IndexedCrate::new(&crate_);
@@ -460,5 +468,140 @@ mod tests {
                 }
             ]
         );
+    }
+
+    /// Helper function to run a closure on the root module of the `raw_type_json` test crate.
+    fn with_crate_root(f: impl FnOnce(&rustdoc_types::Crate, &rustdoc_types::Module)) {
+        let path = "./localdata/test_data/raw_type_json/rustdoc.json";
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+            .expect("failed to load rustdoc");
+        let crate_: rustdoc_types::Crate =
+            serde_json::from_str(&content).expect("failed to parse rustdoc");
+
+        let module = crate_.index.get(&crate_.root).expect("no root");
+
+        let rustdoc_types::ItemEnum::Module(module) = &module.inner else {
+            panic!("root is not a module");
+        };
+
+        f(&crate_, module)
+    }
+
+    #[test]
+    fn raw_type_json() {
+        with_crate_root(|crate_, module| {
+            let func = module
+                .items
+                .iter()
+                .find_map(|x| {
+                    let item = crate_.index.get(x)?;
+                    if item.name.as_ref()? == "my_generic_function" {
+                        if let rustdoc_types::ItemEnum::Function(func) = &item.inner {
+                            return Some(func);
+                        }
+                    }
+
+                    None
+                })
+                .expect("couldn't find `my_generic_function`");
+
+            let inputs: Vec<_> = func
+                .sig
+                .inputs
+                .iter()
+                .map(|(k, v)| (k, rust_type_name(v)))
+                .collect();
+
+            similar_asserts::assert_eq!(
+                inputs
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect::<Vec<_>>(),
+                vec![
+                    ("a", "&'a &'static mut *const T"),
+                    ("b", "&dyn Iterator<Item = T> + Unpin + Send"),
+                    ("c", "Constant<25>"),
+                    (
+                        "d",
+                        "impl for<'x> FnMut(&'a unsafe extern \"C\" fn(\
+                        _: *const [u8], \
+                        _: &'x mut *mut (), \
+                        ...) -> std::borrow::Cow<'static, [u8]>\
+                        ) -> &'x dyn std::fmt::Display + Send + 'static"
+                    ),
+                    ("e", "<U as GAT<T>>::Type<'a, &'static *const ()>"),
+                ]
+            );
+
+            let output = func.sig.output.as_ref().expect("expected a return type");
+            similar_asserts::assert_eq!(
+                rust_type_name(output),
+                "impl std::future::Future<Output: Iterator<Item: 'a + Send> + \
+                for<'z> FnMut(&'z ()) -> &'z &'a ()>"
+            );
+        });
+    }
+
+    #[test]
+    fn type_enum() {
+        with_crate_root(|crate_, module| {
+            let type_struct = module
+                .items
+                .iter()
+                .find_map(|id| {
+                    let item = crate_.index.get(id)?;
+                    if item.name.as_ref()? == "TypeEnum" {
+                        if let ItemEnum::Struct(s) = &item.inner {
+                            return Some(s);
+                        }
+                    }
+                    None
+                })
+                .expect("did not find TypeEnum struct");
+
+            let StructKind::Plain { fields, .. } = &type_struct.kind else {
+                panic!("expected Plain struct");
+            };
+
+            let names: Vec<_> = fields
+                .iter()
+                .map(|id| {
+                    let Some(Item {
+                        name: Some(name),
+                        inner: ItemEnum::StructField(ty),
+                        ..
+                    }) = crate_.index.get(id)
+                    else {
+                        panic!("expected StructField");
+                    };
+
+                    (name, rust_type_name(ty))
+                })
+                .collect();
+
+            similar_asserts::assert_eq!(
+                names
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect::<Vec<_>>(),
+                vec![
+                    ("resolved_path", "Option<()>"),
+                    ("dyn_trait", "Box<dyn std::io::Read>"),
+                    ("generic", "T"),
+                    ("primitive", "u32"),
+                    ("function_pointer", "fn(_: ()) -> i32"),
+                    ("tuple", "(u32, (), T)"),
+                    ("slice", "Box<[u8]>"),
+                    ("array", "[(); 3]"),
+                    ("raw_pointer", "*const u8"),
+                    ("borrowed_ref", "&'static str"),
+                    (
+                        "qualified_path",
+                        "<std::str::SplitAsciiWhitespace<'static> as Iterator>::Item"
+                    ),
+                ]
+            )
+        });
     }
 }
