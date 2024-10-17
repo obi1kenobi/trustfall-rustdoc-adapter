@@ -231,7 +231,37 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
                 write!(f, "mut ")?;
             }
 
-            write!(f, "{}", Type(type_))
+            // References can create ambiguity when there is an `impl/dyn Trait + ...`
+            // block:
+            //
+            // `&dyn Read + Send + Sync` is rejected by the compiler, it should be
+            // `&(dyn Read + Send + Sync)`.
+            //
+            // Parentheses for an `impl/dyn Trait` with no `+` are not always required,
+            // but it can create ambiguity with e.g., `impl Fn() -> &dyn Trait + Send + Sync`,
+            // which could be `Fn() -> &(dyn Trait) + Send + Sync`
+            // or `Fn() -> &(dyn Trait + Send + Sync)`.
+            //
+            // Unconditionally wrapping an `impl/dyn Trait` reference with parentheses
+            // may create something syntactially different from the original statement,
+            // but it will always be semantically valid, and lets the formatting be more
+            // context-free than keeping track of when parentheses are needed.
+            let wrap_parens = matches!(
+                &**type_,
+                rustdoc_types::Type::DynTrait(_) | rustdoc_types::Type::ImplTrait(_)
+            );
+
+            if wrap_parens {
+                write!(f, "(")?;
+            }
+
+            write!(f, "{}", Type(type_))?;
+
+            if wrap_parens {
+                write!(f, ")")?;
+            }
+
+            Ok(())
         }
         rustdoc_types::Type::QualifiedPath {
             name,
@@ -520,7 +550,7 @@ mod tests {
                     .collect::<Vec<_>>(),
                 vec![
                     ("a", "&'a &'static mut *const T"),
-                    ("b", "&dyn Iterator<Item = T> + Unpin + Send"),
+                    ("b", "&(dyn Iterator<Item = T> + Unpin + Send)"),
                     ("c", "Constant<25>"),
                     (
                         "d",
@@ -528,7 +558,7 @@ mod tests {
                         _: *const [u8], \
                         _: &'x mut *mut (), \
                         ...) -> std::borrow::Cow<'static, [u8]>\
-                        ) -> &'x dyn std::fmt::Display + Send + 'static"
+                        ) -> &'x (dyn std::fmt::Display) + Send + 'static"
                     ),
                     ("e", "<U as GAT<T>>::Type<'a, &'static *const ()>"),
                 ]
