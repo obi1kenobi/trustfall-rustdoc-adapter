@@ -1708,11 +1708,36 @@ The trait that is being implemented in an impl block.
 In `impl Foo<u64> for Bar`, this is the `Foo<u64>` part.
 """
 type ImplementedTrait {
+  """
+  The name of the trait being implemented.
+
+  In `impl Foo<u64> for Bar`, this is `"Foo"`.
+  """
   name: String!
+
+  """
+  The item identifier of the trait being implemented here.
+
+  Useful in case the trait's definition isn't available for querying, for example
+  if the trait is located in a different crate than the currently-queried one.
+  In such a case, there won't be any instances of the `trait` edge, but this ID
+  will make it possible to look up more information on the trait regardless.
+  """
+  trait_id: String!
 
   # own edges
   """
   In `impl Foo<u64> for Bar`, this refers to `trait Foo<T>`.
+
+  Currently, item information for items from a foreign crate is not generally available,
+  so if the trait is defined in a different crate then this edge won't have any instances.
+
+  Even the `std` and `core` built-in crates are considered foreign.
+  However, a limited number of common built-in Rust traits have their definitions hard-coded
+  into our adapter and their information will be available for inspection.
+  The set of such traits will include, at minimum:
+  `Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Sized, Send, Sync, Unpin, UnwindSafe,
+  RefUnwindSafe`.
   """
   trait: Trait
 }
