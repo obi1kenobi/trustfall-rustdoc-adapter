@@ -2658,6 +2658,31 @@ fn generic_parameters() {
             generic_name: "T".into(),
         },
         Output {
+            name: "combined_explicit_where_bound".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "complex_explicit_where_bound".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "combined_bounds".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "full_path_trait_bound".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "renamed_trait_bound".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
             name: "DefaultGenerics".into(),
             generic_kind: "GenericTypeParameter".into(),
             generic_name: "T".into(),
@@ -2782,7 +2807,7 @@ fn generic_type_parameters() {
         bound: Vec<String>,
     }
 
-    let mut results: Vec<_> = trustfall::execute_query(
+    let mut results: Vec<Output> = trustfall::execute_query(
         &schema,
         adapter.clone(),
         top_level_query,
@@ -2809,7 +2834,10 @@ fn generic_type_parameters() {
     )
     .map(|row| row.try_into_struct().expect("shape mismatch"))
     .collect();
+
+    // Ensure that the results are in sorted order, and also that the aggregated bounds are sorted.
     results.sort_unstable();
+    results.iter_mut().for_each(|row| row.bound.sort_unstable());
 
     // We write the results in the order the items appear in the test file,
     // and sort them afterward in order to compare with the (sorted) query results.
@@ -2905,15 +2933,52 @@ fn generic_type_parameters() {
             generic_name: "T".into(),
             synthetic: false,
             has_default: false,
+            bound: { ["Iterator"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "combined_explicit_where_bound".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
             bound: {
-                // TODO: FIXME, the correct bound here should be ["Iterator"]
-                //       but because we only partially inline built-in trait definitions,
-                //       `Iterator` is not resolved and is invisible.
-                //       When that's fixed, switch implementations to:
-                //
-                // ["Iterator"].into_iter().map(ToString::to_string).collect(),
-                vec![]
+                ["Clone", "Iterator"]
+                    .into_iter()
+                    .map(ToString::to_string)
+                    .collect()
             },
+        },
+        Output {
+            name: "complex_explicit_where_bound".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: { ["Iterator"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "combined_bounds".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: {
+                ["Clone", "Iterator"]
+                    .into_iter()
+                    .map(ToString::to_string)
+                    .collect()
+            },
+        },
+        Output {
+            name: "full_path_trait_bound".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: { ["Debug"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "renamed_trait_bound".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: { ["Write"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
             name: "DefaultGenerics".into(),
