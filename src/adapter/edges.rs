@@ -826,8 +826,8 @@ pub(super) fn resolve_generic_type_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 
 
                         Some(bounds.as_slice())
                     }
-                    WherePredicate::LifetimePredicate { .. } | WherePredicate::EqPredicate { .. } => {
-                        // Neither of these cases can be written as a bound on a generic parameter.
+                    WherePredicate::EqPredicate { .. } => {
+                        // This case cannot be written as a bound on a generic parameter.
                         None
                     }
                 }
