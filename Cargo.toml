@@ -1,6 +1,6 @@
 [package]
 name = "trustfall-rustdoc-adapter"
-version = "35.0.1"
+version = "36.0.0"
 edition = "2021"
 authors = ["Predrag Gruevski <obi1kenobi82@gmail.com>"]
 license = "Apache-2.0 OR MIT"
@@ -19,7 +19,7 @@ rustc-hash = { version = "2.0.0", optional = true }
 # Keep this dependency last, its own block, since we change it often via automated means
 # and we'd like to avoid merge conflicts.
 #
-rustdoc-types = "0.31.0"
+rustdoc-types = "0.32.0"
 #
 # No dependencies after this point. Put all dependencies above this section.
 #
