@@ -78,7 +78,7 @@ impl Origin {
     pub(super) fn make_implemented_trait_vertex<'a>(
         &self,
         path: &'a rustdoc_types::Path,
-        trait_def: &'a Item,
+        trait_def: Option<&'a Item>,
     ) -> Vertex<'a> {
         Vertex {
             origin: *self,
@@ -128,11 +128,12 @@ impl Origin {
 
     pub(super) fn make_generic_parameter_vertex<'a>(
         &self,
+        generics: &'a rustdoc_types::Generics,
         param: &'a rustdoc_types::GenericParamDef,
     ) -> Vertex<'a> {
         Vertex {
             origin: *self,
-            kind: VertexKind::GenericParameter(param),
+            kind: VertexKind::GenericParameter(generics, param),
         }
     }
 }
