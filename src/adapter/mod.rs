@@ -167,9 +167,12 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     self.current_crate,
                     self.previous_crate,
                 ),
-                "ImplementedTrait" => {
-                    properties::resolve_implemented_trait_property(contexts, property_name)
-                }
+                "ImplementedTrait" => properties::resolve_implemented_trait_property(
+                    contexts,
+                    property_name,
+                    self.current_crate,
+                    self.previous_crate,
+                ),
                 "Static" => properties::resolve_static_property(contexts, property_name),
                 "RawType" | "ResolvedPathType" if matches!(property_name.as_ref(), "name") => {
                     // fields from "RawType"

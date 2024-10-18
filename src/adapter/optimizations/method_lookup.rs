@@ -184,7 +184,7 @@ fn resolve_methods_slow_path<'a>(
             if let Some(trait_item) = trait_item {
                 if let ItemEnum::Trait(trait_item) = &trait_item.inner {
                     Box::new(trait_item.items.iter().filter(move |item_id| {
-                        let next_item = item_index.get(item_id.as_ref());
+                        let next_item = item_index.get(item_id);
                         if let Some(name) = next_item.and_then(|x| x.name.as_deref()) {
                             method_names.contains(name)
                         } else {
