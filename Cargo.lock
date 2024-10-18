@@ -635,7 +635,7 @@ dependencies = [
 
 [[package]]
 name = "trustfall-rustdoc-adapter"
-version = "35.0.0"
+version = "35.0.1"
 dependencies = [
  "anyhow",
  "criterion",
