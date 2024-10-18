@@ -33,13 +33,13 @@ pub enum VertexKind<'a> {
     RawType(&'a Type),
     Attribute(Attribute<'a>),
     AttributeMetaItem(Rc<AttributeMetaItem<'a>>),
-    ImplementedTrait(&'a Path, &'a Item),
+    ImplementedTrait(&'a Path, Option<&'a Item>), // the second item is `None` if not in our crate
     FunctionParameter(&'a str),
     FunctionAbi(&'a Abi),
     Discriminant(Cow<'a, str>),
     Variant(EnumVariant<'a>),
     DeriveHelperAttr(&'a str),
-    GenericParameter(&'a GenericParamDef),
+    GenericParameter(&'a rustdoc_types::Generics, &'a GenericParamDef),
 }
 
 impl Typename for Vertex<'_> {
@@ -94,7 +94,7 @@ impl Typename for Vertex<'_> {
                 VariantKind::Struct { .. } => "StructVariant",
             },
             VertexKind::DeriveHelperAttr(..) => "DeriveMacroHelperAttribute",
-            VertexKind::GenericParameter(param) => match &param.kind {
+            VertexKind::GenericParameter(_, param) => match &param.kind {
                 rustdoc_types::GenericParamDefKind::Lifetime { .. } => "GenericLifetimeParameter",
                 rustdoc_types::GenericParamDefKind::Type { .. } => "GenericTypeParameter",
                 rustdoc_types::GenericParamDefKind::Const { .. } => "GenericConstParameter",
@@ -278,7 +278,9 @@ impl<'a> Vertex<'a> {
         }
     }
 
-    pub(super) fn as_implemented_trait(&self) -> Option<(&'a rustdoc_types::Path, &'a Item)> {
+    pub(super) fn as_implemented_trait(
+        &self,
+    ) -> Option<(&'a rustdoc_types::Path, Option<&'a Item>)> {
         match &self.kind {
             VertexKind::ImplementedTrait(path, trait_item) => Some((*path, *trait_item)),
             _ => None,
@@ -299,9 +301,11 @@ impl<'a> Vertex<'a> {
         }
     }
 
-    pub(super) fn as_generic_parameter(&self) -> Option<&'a GenericParamDef> {
+    pub(super) fn as_generic_parameter(
+        &self,
+    ) -> Option<(&'a rustdoc_types::Generics, &'a GenericParamDef)> {
         match &self.kind {
-            VertexKind::GenericParameter(value) => Some(value),
+            VertexKind::GenericParameter(generics, param) => Some((generics, param)),
             _ => None,
         }
     }
