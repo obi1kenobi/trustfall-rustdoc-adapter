@@ -21,6 +21,7 @@ mod enum_variant;
 mod optimizations;
 mod origin;
 mod properties;
+mod rust_type_name;
 mod vertex;
 
 #[cfg(test)]
