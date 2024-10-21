@@ -71,9 +71,9 @@ fn fmt_generic_param_def(this: &GenericParamDef, f: &mut Formatter<'_>) -> Resul
         rustdoc_types::GenericParamDefKind::Type {
             bounds,
             default,
-            is_synthetic,
+            synthetic,
         } => {
-            if *is_synthetic {
+            if *synthetic {
                 unreachable!(
                     "synthetic generic definitions do not occur in types.\n\
                     This code will need to be updated if used to format generic definitions \
@@ -164,15 +164,15 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
                 write!(f, "> ")?;
             }
 
-            if fnp.header.is_const {
+            if fnp.header.const_ {
                 write!(f, "const ")?;
             }
 
-            if fnp.header.is_async {
+            if fnp.header.async_ {
                 write!(f, "async ")?;
             }
 
-            if fnp.header.is_unsafe {
+            if fnp.header.unsafe_ {
                 write!(f, "unsafe ")?;
             }
 
@@ -211,11 +211,11 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
             intersperse(
                 f,
                 ", ",
-                fnp.sig
+                fnp.decl
                     .inputs
                     .iter()
                     .map(|(name, ty)| Arg::Named(name, Type(ty, false)))
-                    .chain(fnp.sig.is_c_variadic.then_some(Arg::Dots)),
+                    .chain(fnp.decl.c_variadic.then_some(Arg::Dots)),
                 |arg, f| match arg {
                     Arg::Named(name, ty) => write!(f, "{name}: {ty}"),
                     Arg::Dots => write!(f, "..."),
@@ -224,7 +224,7 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
 
             write!(f, ")")?;
 
-            if let Some(output) = &fnp.sig.output {
+            if let Some(output) = &fnp.decl.output {
                 // If `this` follows + bounds, so does the output, so the output
                 // will need to be wrapped in parentheses if `this.1` is true and it
                 // is a `dyn/impl Trait`.
@@ -256,7 +256,7 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
             Ok(())
         }
         rustdoc_types::Type::Infer => write!(f, "_"),
-        rustdoc_types::Type::RawPointer { is_mutable, type_ } => {
+        rustdoc_types::Type::RawPointer { mutable, type_ } => {
             // When there are multiple bounds on a `dyn` or `impl` trait raw pointer,
             // it needs to be wrapped in parentheses.
             let force_wrap_parens = match &**type_ {
@@ -267,12 +267,12 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
                 _ => false,
             };
 
-            let kind = if *is_mutable { "mut" } else { "const" };
+            let kind = if *mutable { "mut" } else { "const" };
             write!(f, "*{kind} {}", Type(type_, force_wrap_parens || this.1))
         }
         rustdoc_types::Type::BorrowedRef {
             lifetime,
-            is_mutable,
+            mutable,
             type_,
         } => {
             write!(f, "&")?;
@@ -280,7 +280,7 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
                 write!(f, "{lt} ")?;
             }
 
-            if *is_mutable {
+            if *mutable {
                 write!(f, "mut ")?;
             }
 
@@ -349,11 +349,6 @@ fn fmt_generic_bound(this: &GenericBound, f: &mut Formatter<'_>) -> Result {
             Ok(())
         }
         rustdoc_types::GenericBound::Outlives(lt) => write!(f, "{lt}"),
-        rustdoc_types::GenericBound::Use(vec) => {
-            write!(f, "use<")?;
-            intersperse(f, ", ", vec, String::fmt)?;
-            write!(f, ">")
-        }
     }
 }
 
@@ -377,8 +372,8 @@ display_wrapper!(Constant, fmt_constant);
 
 fn fmt_generic_args(this: &GenericArgs, f: &mut Formatter<'_>) -> Result {
     match this.0 {
-        rustdoc_types::GenericArgs::AngleBracketed { args, constraints } => {
-            if !constraints.is_empty() || !args.is_empty() {
+        rustdoc_types::GenericArgs::AngleBracketed { args, bindings } => {
+            if !bindings.is_empty() || !args.is_empty() {
                 write!(f, "<")?;
             }
 
@@ -397,12 +392,12 @@ fn fmt_generic_args(this: &GenericArgs, f: &mut Formatter<'_>) -> Result {
                 })?;
             }
 
-            if !constraints.is_empty() {
+            if !bindings.is_empty() {
                 if !args.is_empty() {
                     write!(f, ", ")?;
                 }
 
-                intersperse(f, ", ", constraints, |constraint, f| {
+                intersperse(f, ", ", bindings, |constraint, f| {
                     write!(
                         f,
                         "{}{}",
@@ -410,11 +405,11 @@ fn fmt_generic_args(this: &GenericArgs, f: &mut Formatter<'_>) -> Result {
                         GenericArgs(&constraint.args, false)
                     )?;
                     match &constraint.binding {
-                        rustdoc_types::AssocItemConstraintKind::Constraint(c) => {
+                        rustdoc_types::TypeBindingKind::Constraint(c) => {
                             write!(f, ": ")?;
                             intersperse_with(f, " + ", c, |gb| GenericBound(gb, c.len() > 1))?;
                         }
-                        rustdoc_types::AssocItemConstraintKind::Equality(e) => {
+                        rustdoc_types::TypeBindingKind::Equality(e) => {
                             write!(f, " = ")?;
                             match e {
                                 rustdoc_types::Term::Type(ty) => write!(f, "{}", Type(ty, false))?,
@@ -426,7 +421,7 @@ fn fmt_generic_args(this: &GenericArgs, f: &mut Formatter<'_>) -> Result {
                 })?;
             }
 
-            if !constraints.is_empty() || !args.is_empty() {
+            if !bindings.is_empty() || !args.is_empty() {
                 write!(f, ">")?;
             }
         }
@@ -587,7 +582,7 @@ mod tests {
                 .expect("couldn't find `my_generic_function`");
 
             let inputs: Vec<_> = func
-                .sig
+                .decl
                 .inputs
                 .iter()
                 .map(|(k, v)| (k, rust_type_name(v)))
@@ -614,7 +609,7 @@ mod tests {
                 ]
             );
 
-            let output = func.sig.output.as_ref().expect("expected a return type");
+            let output = func.decl.output.as_ref().expect("expected a return type");
             similar_asserts::assert_eq!(
                 rust_type_name(output),
                 "impl std::future::Future<Output: Iterator<Item: 'a + Send> + \
@@ -688,14 +683,14 @@ mod tests {
     }
 
     #[test]
-    fn is_synthetic() {
+    fn synthetic() {
         with_crate_root(|crate_, module| {
             let func = module
                 .items
                 .iter()
                 .find_map(|x| {
                     let item = crate_.index.get(x)?;
-                    if item.name.as_ref()? == "is_synthetic" {
+                    if item.name.as_ref()? == "synthetic" {
                         if let rustdoc_types::ItemEnum::Function(func) = &item.inner {
                             return Some(func);
                         }
@@ -703,10 +698,10 @@ mod tests {
 
                     None
                 })
-                .expect("couldn't find `is_synthetic`");
+                .expect("couldn't find `synthetic`");
 
             let inputs: Vec<_> = func
-                .sig
+                .decl
                 .inputs
                 .iter()
                 .map(|(k, v)| (k, rust_type_name(v)))
@@ -720,7 +715,7 @@ mod tests {
                 vec![("x", "impl std::any::Any"),]
             );
             similar_asserts::assert_eq!(
-                rust_type_name(func.sig.output.as_ref().expect("no output")),
+                rust_type_name(func.decl.output.as_ref().expect("no output")),
                 "impl std::any::Any"
             );
         });
@@ -745,7 +740,7 @@ mod tests {
                 .expect("couldn't find fn `dyn_ambiguity`");
 
             let inputs: Vec<_> = func
-                .sig
+                .decl
                 .inputs
                 .iter()
                 .map(|(k, v)| (k, rust_type_name(v)))
