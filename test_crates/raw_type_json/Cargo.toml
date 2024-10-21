@@ -1,0 +1,6 @@
+[package]
+name = "raw_type_json"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
