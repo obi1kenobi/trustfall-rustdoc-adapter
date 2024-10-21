@@ -688,14 +688,14 @@ mod tests {
     }
 
     #[test]
-    fn synthetic() {
+    fn is_synthetic() {
         with_crate_root(|crate_, module| {
             let func = module
                 .items
                 .iter()
                 .find_map(|x| {
                     let item = crate_.index.get(x)?;
-                    if item.name.as_ref()? == "synthetic" {
+                    if item.name.as_ref()? == "is_synthetic" {
                         if let rustdoc_types::ItemEnum::Function(func) = &item.inner {
                             return Some(func);
                         }
@@ -703,7 +703,7 @@ mod tests {
 
                     None
                 })
-                .expect("couldn't find `synthetic`");
+                .expect("couldn't find `is_synthetic`");
 
             let inputs: Vec<_> = func
                 .decl
