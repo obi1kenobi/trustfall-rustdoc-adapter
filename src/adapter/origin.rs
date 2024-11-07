@@ -9,7 +9,7 @@ use crate::{
 
 use super::{
     enum_variant::{EnumVariant, LazyDiscriminants},
-    vertex::{Vertex, VertexKind},
+    vertex::{ImplementedTrait, Vertex, VertexKind},
 };
 
 #[non_exhaustive]
@@ -78,11 +78,16 @@ impl Origin {
     pub(super) fn make_implemented_trait_vertex<'a>(
         &self,
         path: &'a rustdoc_types::Path,
+        bound: Option<&'a rustdoc_types::GenericBound>,
         trait_def: Option<&'a Item>,
     ) -> Vertex<'a> {
         Vertex {
             origin: *self,
-            kind: VertexKind::ImplementedTrait(path, trait_def),
+            kind: VertexKind::ImplementedTrait(ImplementedTrait {
+                path,
+                bound,
+                resolved_item: trait_def,
+            }),
         }
     }
 
