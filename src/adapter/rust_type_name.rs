@@ -1,22 +1,32 @@
 use std::fmt::{Display, Formatter, Result};
 
-/// Serializes the `rustdoc_types::Type` type as a String containing the name
-/// of the type, as close as possible to the original code declaration.
+use super::vertex::ImplementedTrait;
+
+/// Serializes the `rustdoc_types::Type` type as a `String` containing the name
+/// of the type together with all generic parameters,
+/// as close as possible to its original code declaration.
 pub(crate) fn rust_type_name(ty: &rustdoc_types::Type) -> String {
     Type(ty, false).to_string()
 }
 
-pub(crate) fn rust_type_name_from_path(path: &rustdoc_types::Path) -> String {
-    assert!(
-        // No type should have code akin to `impl Fn() -> i64 for Type`,
-        // or else this code has a fundamental misunderstanding of what Rust can do.
-        !matches!(
-            path.args.as_deref(),
-            Some(rustdoc_types::GenericArgs::Parenthesized { .. })
-        ),
-        "printing parenthesized args for a type or trait, which should be impossible: {path:?}"
-    );
+/// Serializes our `ImplementedTrait` type as a `String` together with all generic parameters
+/// and higher-rank trait bounds (HRTBs), as close as possible to its original code declaration.
+pub(crate) fn implemented_trait_instantiated_name(
+    implemented_trait: &ImplementedTrait<'_>,
+) -> String {
+    if let Some(bound) = implemented_trait.bound {
+        generic_bound_instantiated_name(bound)
+    } else {
+        rustdoc_path_instantiated_name(implemented_trait.path)
+    }
+}
+
+fn rustdoc_path_instantiated_name(path: &rustdoc_types::Path) -> String {
     Path(path, false).to_string()
+}
+
+fn generic_bound_instantiated_name(bound: &rustdoc_types::GenericBound) -> String {
+    GenericBound(bound, false).to_string()
 }
 
 /// Creates a struct named `$t` that wraps a `rustdoc_types::$t` reference,

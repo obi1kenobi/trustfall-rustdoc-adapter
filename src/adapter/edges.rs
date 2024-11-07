@@ -525,7 +525,7 @@ pub(super) fn resolve_impl_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 });
 
                 Box::new(std::iter::once(
-                    origin.make_implemented_trait_vertex(path, found_item),
+                    origin.make_implemented_trait_vertex(path, None, found_item),
                 ))
             } else {
                 Box::new(std::iter::empty())
@@ -599,7 +599,13 @@ pub(super) fn resolve_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                         manually_inlined_builtin_traits.get(&trait_.id)
                     });
 
-                    Some(origin.make_implemented_trait_vertex(trait_, found_item))
+                    // TODO: Remove this once rust-analyzer stops falsely inferring the type of
+                    //       `bound` as `GenericBound` when in fact it's `&GenericBound`.
+                    //       It shows a phantom compile error unless we add `&` before `bound`.
+                    #[allow(clippy::needless_borrow)]
+                    let trait_bound: Option<&rustdoc_types::GenericBound> = Some(&bound);
+
+                    Some(origin.make_implemented_trait_vertex(trait_, trait_bound, found_item))
                 } else {
                     None
                 }
@@ -693,12 +699,13 @@ pub(super) fn resolve_implemented_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
         "trait" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
 
-            let (_, trait_item) = vertex
+            let impld_trait = vertex
                 .as_implemented_trait()
                 .expect("vertex was not an ImplementedTrait");
 
             Box::new(
-                trait_item
+                impld_trait
+                    .resolved_item
                     .into_iter()
                     .map(move |item| origin.make_item_vertex(item)),
             )
@@ -861,7 +868,11 @@ pub(super) fn resolve_generic_type_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 
                                 manually_inlined_builtin_traits.get(&trait_.id)
                             });
 
-                            Some(origin.make_implemented_trait_vertex(trait_, found_item))
+                            Some(origin.make_implemented_trait_vertex(
+                                trait_,
+                                Some(bound),
+                                found_item,
+                            ))
                         } else {
                             None
                         }
