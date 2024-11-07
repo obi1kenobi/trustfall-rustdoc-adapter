@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use maplit::btreemap;
-use trustfall::{Schema, TryIntoStruct};
+use trustfall::{FieldValue, Schema, TryIntoStruct};
 
 use crate::{IndexedCrate, RustdocAdapter};
 
@@ -3168,6 +3168,142 @@ fn generic_const_parameters() {
             name: "DefaultGenerics".into(),
             generic_name: "N".into(),
             has_default: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn implemented_trait_instantiated_name() {
+    let path = "./localdata/test_data/rust_type_name/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                name @filter(op: "=", value: ["$struct"])
+
+                impl {
+                    implemented_trait {
+                        bare_name @output @filter(op: "one_of", value: ["$traits"])
+                        instantiated_name @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let mut variables: BTreeMap<&str, FieldValue> = BTreeMap::default();
+    variables.insert("struct", "A".into());
+    variables.insert(
+        "traits",
+        vec![
+            "MyTrait",
+            "MyTrait2",
+            "Any",
+            "Borrow",
+            "BorrowMut",
+            "From",
+            "Into",
+            "RefUnwindSafe",
+            "Send",
+            "Sync",
+            "TryFrom",
+            "TryInto",
+            "Unpin",
+            "UnwindSafe",
+        ]
+        .into(),
+    );
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        bare_name: String,
+        instantiated_name: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            bare_name: "Any".into(),
+            instantiated_name: "Any".into(),
+        },
+        Output {
+            bare_name: "Borrow".into(),
+            instantiated_name: "Borrow<T>".into(),
+        },
+        Output {
+            bare_name: "BorrowMut".into(),
+            instantiated_name: "BorrowMut<T>".into(),
+        },
+        Output {
+            bare_name: "From".into(),
+            instantiated_name: "From<T>".into(),
+        },
+        Output {
+            bare_name: "Into".into(),
+            instantiated_name: "Into<U>".into(),
+        },
+        Output {
+            bare_name: "MyTrait".into(),
+            instantiated_name: "MyTrait".into(),
+        },
+        Output {
+            bare_name: "MyTrait2".into(),
+            instantiated_name: "MyTrait2<'a, N, i64>".into(),
+        },
+        Output {
+            bare_name: "RefUnwindSafe".into(),
+            instantiated_name: "RefUnwindSafe".into(),
+        },
+        Output {
+            bare_name: "Send".into(),
+            instantiated_name: "Send".into(),
+        },
+        Output {
+            bare_name: "Sync".into(),
+            instantiated_name: "Sync".into(),
+        },
+        Output {
+            bare_name: "TryFrom".into(),
+            instantiated_name: "TryFrom<U>".into(),
+        },
+        Output {
+            bare_name: "TryInto".into(),
+            instantiated_name: "TryInto<U>".into(),
+        },
+        Output {
+            bare_name: "Unpin".into(),
+            instantiated_name: "Unpin".into(),
+        },
+        Output {
+            bare_name: "UnwindSafe".into(),
+            instantiated_name: "UnwindSafe".into(),
         },
     ];
     expected_results.sort_unstable();

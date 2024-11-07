@@ -11,6 +11,10 @@ pub trait MyTrait2<'a, const N: u8, T = ()> {
     type B;
 }
 
+impl<'a, const N: u8> MyTrait2<'a, N, i64> for A {
+    type B = i64;
+}
+
 mod a {
     pub type B = ();
 }
@@ -23,6 +27,7 @@ pub struct Struct<'a, T> {
     pub e: a::B,
     pub f: unsafe extern "C-unwind" fn() -> T,
     pub g: Box<dyn for<'b> MyTrait2<'b, b'a', B = &'b ()> + Send + 'a>,
+    pub h: Box<dyn Fn(&'a i64) -> &'a i64>,
 }
 
 const unsafe fn x() {}

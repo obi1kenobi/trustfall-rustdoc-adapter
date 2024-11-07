@@ -486,7 +486,7 @@ pub(super) fn resolve_implemented_trait_property<'a, V: AsVertex<Vertex<'a>> + '
     previous_crate: Option<&'a IndexedCrate<'a>>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
-        "name" => resolve_property_with(contexts, move |vertex| {
+        "name" | "bare_name" => resolve_property_with(contexts, move |vertex| {
             let origin_crate = match vertex.origin {
                 Origin::CurrentCrate => current_crate,
                 Origin::PreviousCrate => {
@@ -525,6 +525,13 @@ pub(super) fn resolve_implemented_trait_property<'a, V: AsVertex<Vertex<'a>> + '
             } else {
                 info.name.clone().into()
             }
+        }),
+        "instantiated_name" => resolve_property_with(contexts, |vertex| {
+            let (info, _) = vertex
+                .as_implemented_trait()
+                .expect("not an ImplementedTrait");
+
+            super::rust_type_name::rust_type_name_from_path(info).into()
         }),
         "trait_id" => resolve_property_with(contexts, |vertex| {
             let (info, _) = vertex
