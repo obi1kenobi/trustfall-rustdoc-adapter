@@ -3310,3 +3310,130 @@ fn implemented_trait_instantiated_name() {
 
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn parenthesized_type_bounds_on_type_and_impl() {
+    let path = "./localdata/test_data/rust_type_name/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                name @filter(op: "=", value: ["$struct"]) @output
+
+                generic_parameter {
+                    ... on GenericTypeParameter {
+                        generic: name @output
+                        bound_: type_bound {
+                            instantiated_name @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let mut variables: BTreeMap<&str, &str> = BTreeMap::default();
+    variables.insert("struct", "ParenthesizedGenericType");
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        generic: String,
+        bound_instantiated_name: String,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![Output {
+        name: "ParenthesizedGenericType".into(),
+        generic: "T".into(),
+        bound_instantiated_name: "for<'a> Fn(&'a i64) -> &'a i64".into(),
+    }];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                name @filter(op: "=", value: ["$struct"]) @output
+
+                generic_parameter {
+                    ... on GenericTypeParameter {
+                        generic: name @output
+                    }
+                }
+
+                impl_: inherent_impl {
+                    generic_parameter {
+                        ... on GenericTypeParameter {
+                            generic: name @output
+                            bound_: type_bound {
+                                instantiated_name @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let mut variables: BTreeMap<&str, &str> = BTreeMap::default();
+    variables.insert("struct", "ParenthesizedGenericImpl");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct LatterOutput {
+        name: String,
+        generic: String,
+        impl_generic: String,
+        impl_bound_instantiated_name: String,
+    }
+
+    let mut results: Vec<LatterOutput> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![LatterOutput {
+        name: "ParenthesizedGenericImpl".into(),
+        generic: "T".into(),
+        impl_generic: "T".into(),
+        impl_bound_instantiated_name: "for<'a> Fn(&'a i64) -> &'a i64".into(),
+    }];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
