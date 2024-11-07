@@ -948,7 +948,7 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/latest/rustdoc_types/struct.Impl.html
 """
-type Impl implements Item {
+type Impl implements Item & GenericItem {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -999,8 +999,13 @@ type Impl implements Item {
   span: Span
   attribute: [Attribute!]
 
-  # own edges
+  # edges from GenericItem
+  """
+  Generic type, lifetime, or const parameters by which this impl is parameterized.
+  """
+  generic_parameter: [GenericParameter]
 
+  # own edges
   """
   The trait being implemented. Inherent impls don't have a trait.
   """
