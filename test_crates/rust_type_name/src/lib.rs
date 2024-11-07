@@ -31,3 +31,15 @@ pub struct Struct<'a, T> {
 }
 
 const unsafe fn x() {}
+
+pub struct ParenthesizedGenericType<T: for<'a> Fn(&'a i64) -> &'a i64> {
+    value: T,
+}
+
+pub struct ParenthesizedGenericImpl<T> {
+    value: T,
+}
+
+impl<T: for<'a> Fn(&'a i64) -> &'a i64> ParenthesizedGenericImpl<T> {
+    const N: usize = 42;
+}

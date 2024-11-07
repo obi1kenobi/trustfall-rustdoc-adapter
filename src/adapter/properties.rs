@@ -493,14 +493,14 @@ pub(super) fn resolve_implemented_trait_property<'a, V: AsVertex<Vertex<'a>> + '
                     previous_crate.as_ref().expect("no previous crate provided")
                 }
             };
-            let (info, item) = vertex
+            let impld = vertex
                 .as_implemented_trait()
                 .expect("not an ImplementedTrait");
 
-            if let Some(item) = item {
+            if let Some(item) = impld.resolved_item {
                 // We have the full item already. Use the original declaration name.
                 item.name.clone().into()
-            } else if let Some(summary) = origin_crate.inner.paths.get(&info.id) {
+            } else if let Some(summary) = origin_crate.inner.paths.get(&impld.path.id) {
                 // The item is from a foreign crate.
                 // The last component of the canonical path should match its declaration name,
                 // so use that.
@@ -508,11 +508,11 @@ pub(super) fn resolve_implemented_trait_property<'a, V: AsVertex<Vertex<'a>> + '
                     .path
                     .last()
                     .unwrap_or_else(|| {
-                        panic!("empty path for id {} in vertex {vertex:?}", info.id.0)
+                        panic!("empty path for id {} in vertex {vertex:?}", impld.path.id.0)
                     })
                     .clone()
                     .into()
-            } else if let Some((_, last)) = info.name.rsplit_once("::") {
+            } else if let Some((_, last)) = impld.path.name.rsplit_once("::") {
                 // For some reason, we didn't find the item either locally or
                 // in the `paths` section of the rustdoc JSON.
                 //
@@ -523,22 +523,22 @@ pub(super) fn resolve_implemented_trait_property<'a, V: AsVertex<Vertex<'a>> + '
                 // Otherwise, fall through to the `else` block to return it as-is.
                 last.to_string().into()
             } else {
-                info.name.clone().into()
+                impld.path.name.clone().into()
             }
         }),
         "instantiated_name" => resolve_property_with(contexts, |vertex| {
-            let (info, _) = vertex
+            let impld = vertex
                 .as_implemented_trait()
                 .expect("not an ImplementedTrait");
 
-            super::rust_type_name::rust_type_name_from_path(info).into()
+            super::rust_type_name::implemented_trait_instantiated_name(impld).into()
         }),
         "trait_id" => resolve_property_with(contexts, |vertex| {
-            let (info, _) = vertex
+            let impld = vertex
                 .as_implemented_trait()
                 .expect("not an ImplementedTrait");
 
-            info.id.0.to_string().into()
+            impld.path.id.0.to_string().into()
         }),
         _ => unreachable!("ImplementedTrait property {property_name}"),
     }
