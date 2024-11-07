@@ -1709,11 +1709,27 @@ In `impl Foo<u64> for Bar`, this is the `Foo<u64>` part.
 """
 type ImplementedTrait {
   """
+  The name of the trait being implemented, without any generic parameters. Just the name.
+
+  In `impl Foo<u64> for Bar`, this is `"Foo"`.
+  """
+  bare_name: String!
+
+  """
+  Deprecated alias of `bare_name`.
+
   The name of the trait being implemented.
 
   In `impl Foo<u64> for Bar`, this is `"Foo"`.
   """
-  name: String!
+  name: String! @deprecated(reason: "Renamed to `bare_name`, please use that instead.")
+
+  """
+  The trait being implemented together with any generic parameters.
+
+  In `impl Foo<u64> for Bar`, this is `"Foo<u64>"`.
+  """
+  instantiated_name: String!
 
   """
   The item identifier of the trait being implemented here.
