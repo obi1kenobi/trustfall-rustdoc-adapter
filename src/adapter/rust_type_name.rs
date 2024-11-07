@@ -6,6 +6,19 @@ pub(crate) fn rust_type_name(ty: &rustdoc_types::Type) -> String {
     Type(ty, false).to_string()
 }
 
+pub(crate) fn rust_type_name_from_path(path: &rustdoc_types::Path) -> String {
+    assert!(
+        // No type should have code akin to `impl Fn() -> i64 for Type`,
+        // or else this code has a fundamental misunderstanding of what Rust can do.
+        !matches!(
+            path.args.as_deref(),
+            Some(rustdoc_types::GenericArgs::Parenthesized { .. })
+        ),
+        "printing parenthesized args for a type or trait, which should be impossible: {path:?}"
+    );
+    Path(path, false).to_string()
+}
+
 /// Creates a struct named `$t` that wraps a `rustdoc_types::$t` reference,
 /// and implements `Display` on it by calling the given `$formatter` function.
 macro_rules! display_wrapper {
@@ -545,7 +558,11 @@ mod tests {
                 Output {
                     name: "g".into(),
                     typename: "Box<dyn for<'b> MyTrait2<'b, b'a', B = &'b ()> + Send + 'a>".into(),
-                }
+                },
+                Output {
+                    name: "h".into(),
+                    typename: "Box<dyn Fn(&'a i64) -> &'a i64>".into(),
+                },
             ]
         );
     }
