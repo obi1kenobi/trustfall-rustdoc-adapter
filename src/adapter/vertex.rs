@@ -1,8 +1,8 @@
 use std::{borrow::Cow, rc::Rc};
 
 use rustdoc_types::{
-    Abi, Constant, Crate, Enum, Function, GenericParamDef, Impl, Item, Module, Path, Span, Static,
-    Struct, Trait, Type, Union, VariantKind,
+    Abi, Constant, Crate, Enum, Function, GenericBound, GenericParamDef, Impl, Item, Module, Path,
+    Span, Static, Struct, Trait, Type, Union, VariantKind,
 };
 use trustfall::provider::Typename;
 
@@ -33,7 +33,7 @@ pub enum VertexKind<'a> {
     RawType(&'a Type),
     Attribute(Attribute<'a>),
     AttributeMetaItem(Rc<AttributeMetaItem<'a>>),
-    ImplementedTrait(&'a Path, Option<&'a Item>), // the second item is `None` if not in our crate
+    ImplementedTrait(ImplementedTrait<'a>),
     FunctionParameter(&'a str),
     FunctionAbi(&'a Abi),
     Discriminant(Cow<'a, str>),
@@ -278,11 +278,9 @@ impl<'a> Vertex<'a> {
         }
     }
 
-    pub(super) fn as_implemented_trait(
-        &self,
-    ) -> Option<(&'a rustdoc_types::Path, Option<&'a Item>)> {
+    pub(super) fn as_implemented_trait(&self) -> Option<&ImplementedTrait<'a>> {
         match &self.kind {
-            VertexKind::ImplementedTrait(path, trait_item) => Some((*path, *trait_item)),
+            VertexKind::ImplementedTrait(impld) => Some(impld),
             _ => None,
         }
     }
@@ -317,6 +315,7 @@ impl<'a> Vertex<'a> {
             rustdoc_types::ItemEnum::Function(x) => Some(&x.generics),
             rustdoc_types::ItemEnum::Trait(x) => Some(&x.generics),
             rustdoc_types::ItemEnum::Union(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Impl(x) => Some(&x.generics),
             _ => None,
         })
     }
@@ -344,4 +343,17 @@ impl<'a> From<&'a Abi> for VertexKind<'a> {
     fn from(a: &'a Abi) -> Self {
         Self::FunctionAbi(a)
     }
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub struct ImplementedTrait<'a> {
+    /// The rustdoc `Path` item that contains the
+    pub(crate) path: &'a Path,
+
+    /// Keep higher-rank trait bound (HRTBs) information, if any.
+    pub(crate) bound: Option<&'a GenericBound>,
+
+    /// `None` if not in our crate
+    pub(crate) resolved_item: Option<&'a Item>,
 }
