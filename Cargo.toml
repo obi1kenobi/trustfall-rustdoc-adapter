@@ -11,7 +11,7 @@ readme = "./README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-trustfall = "0.7.1"
+trustfall = "0.8.0"
 rayon = { version = "1.10.0", optional = true }
 rustc-hash = { version = "2.0.0", optional = true }
 
