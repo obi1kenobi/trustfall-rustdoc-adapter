@@ -31,9 +31,9 @@ checksum = "86fdf8605db99b54d3cd748a44c6d04df638eb5dafb219b135d0149bd0db01f6"
 
 [[package]]
 name = "async-graphql-parser"
-version = "6.0.11"
+version = "7.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6139181845757fd6a73fbb8839f3d036d7150b798db0e9bb3c6e83cdd65bd53b"
+checksum = "79272bdbf26af97866e149f05b2b546edb5c00e51b5f916289931ed233e208ad"
 dependencies = [
  "async-graphql-value",
  "pest",
@@ -43,9 +43,9 @@ dependencies = [
 
 [[package]]
 name = "async-graphql-value"
-version = "6.0.11"
+version = "7.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "323a5143f5bdd2030f45e3f2e0c821c9b1d36e79cf382129c64299c50a7f3750"
+checksum = "ef5ec94176a12a8cbe985cd73f2e54dc9c702c88c766bdef12f1f3a67cedbee1"
 dependencies = [
  "bytes",
  "indexmap",
@@ -295,15 +295,6 @@ name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
 dependencies = [
  "either",
 ]
@@ -624,9 +615,9 @@ dependencies = [
 
 [[package]]
 name = "trustfall"
-version = "0.7.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba9cc422e50a87f4fad1b7108d4e68bfd5d2f31142998aee4b26f25312aa38e1"
+checksum = "5ae0a56d0b642f6c64e683b8c29acfdc27a9cd384cea7e9ca32e7b24f2252b54"
 dependencies = [
  "anyhow",
  "trustfall_core",
@@ -653,13 +644,13 @@ dependencies = [
 
 [[package]]
 name = "trustfall_core"
-version = "0.7.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4794de1ab6087b44c68bc3738021e95be3d51316bf57bbddc4d5bf1ca033b134"
+checksum = "62e206681a3cc2282151908aab9892c7227fe1a702c8b624700b201e5b66edc9"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
- "itertools 0.11.0",
+ "itertools 0.13.0",
  "maplit",
  "regex",
  "serde",
