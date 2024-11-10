@@ -16,10 +16,9 @@ pub(super) fn resolve_crate_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     property_name: &str,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
-        "root" => resolve_property_with(
-            contexts,
-            field_property!(as_crate, root, { root.0.clone().into() }),
-        ),
+        "root" => {
+            resolve_property_with(contexts, field_property!(as_crate, root, { root.0.into() }))
+        }
         "crate_version" => {
             resolve_property_with(contexts, field_property!(as_crate, crate_version))
         }
@@ -40,7 +39,7 @@ pub(super) fn resolve_item_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     match property_name {
         "id" => resolve_property_with(
             contexts,
-            field_property!(as_item, id, { id.0.clone().into() }),
+            field_property!(as_item, id, { id.0.to_string().into() }),
         ),
         "crate_id" => resolve_property_with(contexts, field_property!(as_item, crate_id)),
         "name" => resolve_property_with(contexts, field_property!(as_item, name)),
@@ -448,11 +447,7 @@ pub(super) fn resolve_raw_type_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     match property_name {
         "name" => resolve_property_with(contexts, |vertex| {
             let type_vertex = vertex.as_raw_type().expect("not a RawType");
-            match type_vertex {
-                rustdoc_types::Type::ResolvedPath(path) => path.name.clone().into(),
-                rustdoc_types::Type::Primitive(name) => name.clone().into(),
-                _ => unreachable!("unexpected RawType vertex content: {type_vertex:?}"),
-            }
+            super::rust_type_name::rust_type_name(type_vertex).into()
         }),
         _ => unreachable!("RawType property {property_name}"),
     }
@@ -466,7 +461,9 @@ pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "unsafe" => resolve_property_with(contexts, field_property!(as_trait, is_unsafe)),
-        "object_safe" => resolve_property_with(contexts, field_property!(as_trait, is_object_safe)),
+        "object_safe" => {
+            resolve_property_with(contexts, field_property!(as_trait, is_dyn_compatible))
+        }
         "sealed" => resolve_property_with(contexts, move |vertex| {
             let trait_item = vertex.as_item().expect("not an Item");
             let origin = vertex.origin;
@@ -485,14 +482,63 @@ pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_implemented_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
+    current_crate: &'a PackageHandler<'a>,
+    previous_crate: Option<&'a PackageHandler<'a>>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
-        "name" => resolve_property_with(contexts, |vertex| {
-            let (_, item) = vertex
+        "name" | "bare_name" => resolve_property_with(contexts, move |vertex| {
+            let origin_crate = match vertex.origin {
+                Origin::CurrentCrate => current_crate,
+                Origin::PreviousCrate => {
+                    previous_crate.as_ref().expect("no previous crate provided")
+                }
+            };
+            let impld = vertex
                 .as_implemented_trait()
                 .expect("not an ImplementedTrait");
 
-            item.name.clone().into()
+            if let Some(item) = impld.resolved_item {
+                // We have the full item already. Use the original declaration name.
+                item.name.clone().into()
+            } else if let Some(summary) = origin_crate.own_crate.inner.paths.get(&impld.path.id) {
+                // The item is from a foreign crate.
+                // The last component of the canonical path should match its declaration name,
+                // so use that.
+                summary
+                    .path
+                    .last()
+                    .unwrap_or_else(|| {
+                        panic!("empty path for id {} in vertex {vertex:?}", impld.path.id.0)
+                    })
+                    .clone()
+                    .into()
+            } else if let Some((_, last)) = impld.path.name.rsplit_once("::") {
+                // For some reason, we didn't find the item either locally or
+                // in the `paths` section of the rustdoc JSON.
+                //
+                // Use the name in the `implemented_trait` portion itself.
+                // That name seems to be sensitive to how the source represents the item:
+                // it might be a full path, or just a name, or anything in between.
+                // If it's a path, grab its last component (this block).
+                // Otherwise, fall through to the `else` block to return it as-is.
+                last.to_string().into()
+            } else {
+                impld.path.name.clone().into()
+            }
+        }),
+        "instantiated_name" => resolve_property_with(contexts, |vertex| {
+            let impld = vertex
+                .as_implemented_trait()
+                .expect("not an ImplementedTrait");
+
+            super::rust_type_name::implemented_trait_instantiated_name(impld).into()
+        }),
+        "trait_id" => resolve_property_with(contexts, |vertex| {
+            let impld = vertex
+                .as_implemented_trait()
+                .expect("not an ImplementedTrait");
+
+            impld.path.id.0.to_string().into()
         }),
         _ => unreachable!("ImplementedTrait property {property_name}"),
     }
@@ -610,5 +656,91 @@ pub(crate) fn resolve_feature_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 .into()
         }),
         _ => unreachable!("Feature property {property_name}"),
+    }
+}
+
+pub(crate) fn resolve_derive_macro_helper_attribute_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    match property_name {
+        "name" => resolve_property_with(contexts, |vertex| {
+            vertex
+                .as_derive_helper_attr()
+                .expect("vertex was not a DeriveMacroHelperAttribute")
+                .to_string()
+                .into()
+        }),
+        _ => unreachable!("DeriveMacroHelperAttribute property {property_name}"),
+    }
+}
+
+pub(crate) fn resolve_generic_parameter_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    match property_name {
+        "name" => resolve_property_with(contexts, |vertex| {
+            let (_, generic) = vertex
+                .as_generic_parameter()
+                .expect("vertex was not a GenericParameter");
+
+            generic.name.clone().into()
+        }),
+        _ => unreachable!("GenericParameter property {property_name}"),
+    }
+}
+
+pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    match property_name {
+        "has_default" => resolve_property_with(contexts, |vertex| {
+            let (_, generic) = vertex
+                .as_generic_parameter()
+                .expect("vertex was not a GenericTypeParameter");
+
+            match &generic.kind {
+                rustdoc_types::GenericParamDefKind::Type { default, .. } => {
+                    default.is_some().into()
+                }
+                _ => unreachable!("vertex was not a GenericTypeParameter: {vertex:?}"),
+            }
+        }),
+        "synthetic" => resolve_property_with(contexts, |vertex| {
+            let (_, generic) = vertex
+                .as_generic_parameter()
+                .expect("vertex was not a GenericTypeParameter");
+
+            match &generic.kind {
+                rustdoc_types::GenericParamDefKind::Type { is_synthetic, .. } => {
+                    (*is_synthetic).into()
+                }
+                _ => unreachable!("vertex was not a GenericTypeParameter: {vertex:?}"),
+            }
+        }),
+        _ => unreachable!("GenericTypeParameter property {property_name}"),
+    }
+}
+
+pub(crate) fn resolve_generic_const_parameter_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    match property_name {
+        "has_default" => resolve_property_with(contexts, |vertex| {
+            let (_, generic) = vertex
+                .as_generic_parameter()
+                .expect("vertex was not a GenericConstParameter");
+
+            match &generic.kind {
+                rustdoc_types::GenericParamDefKind::Const { default, .. } => {
+                    default.is_some().into()
+                }
+                _ => unreachable!("vertex was not a GenericConstParameter: {vertex:?}"),
+            }
+        }),
+        _ => unreachable!("GenericConstParameter property {property_name}"),
     }
 }

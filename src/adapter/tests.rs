@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use maplit::btreemap;
-use trustfall::{Schema, TryIntoStruct};
+use trustfall::{FieldValue, Schema, TryIntoStruct};
 
 use crate::RustdocAdapter;
 
@@ -256,6 +256,10 @@ fn rustdoc_sealed_traits() {
         },
         Output {
             name: "SealedTraitWithStdSupertrait".into(),
+            sealed: true,
+        },
+        Output {
+            name: "SealedWithWhereSelfBound".into(),
             sealed: true,
         },
         Output {
@@ -744,7 +748,11 @@ fn rustdoc_modules() {
             .expect("failed to run query")
             .map(|row| row.try_into_struct().expect("shape mismatch"))
             .collect();
+
+    // Ensure both the rows and the folded paths within each row come
+    // in a consistent, deterministic order.
     results.sort_unstable();
+    results.iter_mut().for_each(|row| row.paths.sort());
 
     similar_asserts::assert_eq!(
         vec![
@@ -755,7 +763,7 @@ fn rustdoc_modules() {
                 types: vec!["Module".into(), "Struct".into()],
                 paths: vec![
                     vec!["modules".into(), "hello".into()],
-                    vec!["modules".into(), "hi".into()]
+                    vec!["modules".into(), "hi".into()],
                 ],
             },
             Output {
@@ -2097,6 +2105,1218 @@ fn enum_discriminants() {
 }
 
 #[test]
+fn declarative_macros() {
+    get_test_data!(data, declarative_macros);
+    let adapter = RustdocAdapter::new(&data, None);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Macro {
+                name @output
+                public_api_eligible @output
+                visibility_limit @output
+
+                attribute @optional {
+                    raw_attribute @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        public_api_eligible: bool,
+        visibility_limit: String,
+        raw_attribute: Option<String>,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, Arc::new(adapter), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "top_level".into(),
+            public_api_eligible: true,
+            visibility_limit: "public".into(),
+            raw_attribute: Some("#[macro_export]".into()),
+        },
+        Output {
+            name: "nested_private".into(),
+            public_api_eligible: true,
+            visibility_limit: "public".into(),
+            raw_attribute: Some("#[macro_export]".into()),
+        },
+        Output {
+            name: "nested_public".into(),
+            public_api_eligible: true,
+            visibility_limit: "public".into(),
+            raw_attribute: Some("#[macro_export]".into()),
+        },
+        Output {
+            name: "not_exported".into(),
+            public_api_eligible: false,
+            visibility_limit: "crate".into(),
+            raw_attribute: Some("#[allow(unused_macros)]".into()),
+        },
+        Output {
+            name: "hidden_parent".into(),
+            public_api_eligible: true,
+            visibility_limit: "public".into(),
+            raw_attribute: Some("#[macro_export]".into()),
+        },
+        Output {
+            name: "hidden".into(),
+            public_api_eligible: false,
+            visibility_limit: "public".into(),
+            raw_attribute: Some("#[doc(hidden)]".into()),
+        },
+        Output {
+            name: "hidden".into(),
+            public_api_eligible: false,
+            visibility_limit: "public".into(),
+            raw_attribute: Some("#[macro_export]".into()),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn proc_macros() {
+    get_test_data!(data, proc_macros);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on ProcMacro {
+                kind: __typename @output
+                name @output
+                public_api_eligible @output
+                visibility_limit @output
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        kind: String,
+        name: String,
+        public_api_eligible: bool,
+        visibility_limit: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            kind: "FunctionLikeProcMacro".into(),
+            name: "make_answer".into(),
+            public_api_eligible: true,
+            visibility_limit: "public".into(),
+        },
+        Output {
+            kind: "AttributeProcMacro".into(),
+            name: "return_as_is".into(),
+            public_api_eligible: true,
+            visibility_limit: "public".into(),
+        },
+        Output {
+            kind: "DeriveProcMacro".into(),
+            name: "AnswerFn".into(),
+            public_api_eligible: true,
+            visibility_limit: "public".into(),
+        },
+        Output {
+            kind: "DeriveProcMacro".into(),
+            name: "HelperAttr".into(),
+            public_api_eligible: true,
+            visibility_limit: "public".into(),
+        },
+        Output {
+            kind: "FunctionLikeProcMacro".into(),
+            name: "hidden".into(),
+            public_api_eligible: false,
+            visibility_limit: "public".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+
+    // Ensure that derive macro helper attributes can be queried correctly.
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on DeriveProcMacro {
+                name @output
+
+                helper_attribute {
+                    attr: name @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct DeriveOutput {
+        name: String,
+        attr: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        DeriveOutput {
+            name: "HelperAttr".into(),
+            attr: "helper".into(),
+        },
+        DeriveOutput {
+            name: "HelperAttr".into(),
+            attr: "second".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn generic_parameters() {
+    get_test_data!(data, generic_parameters);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+
+    let top_level_query = r#"
+{
+    Crate {
+        item {
+            ... on GenericItem {
+                name @output
+
+                # TODO: HACK, remove this -- workaround for issue:
+                # https://github.com/obi1kenobi/trustfall-rustdoc-adapter/issues/400
+                #
+                # This clause ensures this query doesn't return methods while #400 isn't resolved.
+                name @filter(op: "!=", value: ["$method_name"])
+
+                generic_parameter {
+                    generic_kind: __typename @output
+                    generic_name: name @output
+                }
+            }
+        }
+    }
+}
+"#;
+    let impl_owner_methods_query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                impl {
+                    method {
+                        name @output
+
+                        generic_parameter {
+                            generic_kind: __typename @output
+                            generic_name: name @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let trait_methods_query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                method {
+                    name @output
+
+                    generic_parameter {
+                        generic_kind: __typename @output
+                        generic_name: name @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, i64> = BTreeMap::default();
+    let mut top_level_variables: BTreeMap<&str, &str> = BTreeMap::default();
+    top_level_variables.insert("method_name", "method");
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        generic_kind: String,
+        generic_name: String,
+    }
+
+    let mut results: Vec<_> = trustfall::execute_query(
+        &schema,
+        adapter.clone(),
+        top_level_query,
+        top_level_variables.clone(),
+    )
+    .expect("failed to run top level query")
+    .chain(
+        trustfall::execute_query(
+            &schema,
+            adapter.clone(),
+            impl_owner_methods_query,
+            variables.clone(),
+        )
+        .expect("failed to run impl owners query"),
+    )
+    .chain(
+        trustfall::execute_query(
+            &schema,
+            adapter.clone(),
+            trait_methods_query,
+            variables.clone(),
+        )
+        .expect("failed to run trait methods query"),
+    )
+    .map(|row| row.try_into_struct().expect("shape mismatch"))
+    .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "GenericStruct".into(),
+            generic_kind: "GenericLifetimeParameter".into(),
+            generic_name: "'a".into(),
+        },
+        Output {
+            name: "GenericStruct".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "GenericStruct".into(),
+            generic_kind: "GenericConstParameter".into(),
+            generic_name: "N".into(),
+        },
+        Output {
+            name: "GenericEnum".into(),
+            generic_kind: "GenericLifetimeParameter".into(),
+            generic_name: "'a".into(),
+        },
+        Output {
+            name: "GenericEnum".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "GenericEnum".into(),
+            generic_kind: "GenericConstParameter".into(),
+            generic_name: "N".into(),
+        },
+        Output {
+            name: "GenericUnion".into(),
+            generic_kind: "GenericLifetimeParameter".into(),
+            generic_name: "'a".into(),
+        },
+        Output {
+            name: "GenericUnion".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "GenericUnion".into(),
+            generic_kind: "GenericConstParameter".into(),
+            generic_name: "N".into(),
+        },
+        Output {
+            name: "GenericTrait".into(),
+            generic_kind: "GenericLifetimeParameter".into(),
+            generic_name: "'a".into(),
+        },
+        Output {
+            name: "GenericTrait".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "GenericTrait".into(),
+            generic_kind: "GenericConstParameter".into(),
+            generic_name: "N".into(),
+        },
+        Output {
+            name: "method".into(),
+            generic_kind: "GenericLifetimeParameter".into(),
+            generic_name: "'b".into(),
+        },
+        Output {
+            name: "method".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "U".into(),
+        },
+        Output {
+            name: "method".into(),
+            generic_kind: "GenericConstParameter".into(),
+            generic_name: "M".into(),
+        },
+        Output {
+            name: "generic_fn".into(),
+            generic_kind: "GenericLifetimeParameter".into(),
+            generic_name: "'a".into(),
+        },
+        Output {
+            name: "generic_fn".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "generic_fn".into(),
+            generic_kind: "GenericConstParameter".into(),
+            generic_name: "N".into(),
+        },
+        Output {
+            name: "impl_trait".into(),
+            generic_kind: "GenericLifetimeParameter".into(),
+            generic_name: "'a".into(),
+        },
+        Output {
+            name: "impl_trait".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "impl_trait".into(),
+            generic_kind: "GenericConstParameter".into(),
+            generic_name: "N".into(),
+        },
+        Output {
+            name: "impl_trait".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "impl GenericTrait<'a, T, N>".into(),
+        },
+        Output {
+            name: "non_included_bound".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "explicit_where_bound".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "combined_explicit_where_bound".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "complex_explicit_where_bound".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "combined_bounds".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "full_path_trait_bound".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "renamed_trait_bound".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "DefaultGenerics".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "T".into(),
+        },
+        Output {
+            name: "DefaultGenerics".into(),
+            generic_kind: "GenericConstParameter".into(),
+            generic_name: "N".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn generic_type_parameters() {
+    get_test_data!(data, generic_parameters);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+
+    let top_level_query = r#"
+{
+    Crate {
+        item {
+            ... on GenericItem {
+                name @output
+
+                # TODO: HACK, remove this -- workaround for issue:
+                # https://github.com/obi1kenobi/trustfall-rustdoc-adapter/issues/400
+                #
+                # This clause ensures this query doesn't return methods while #400 isn't resolved.
+                name @filter(op: "!=", value: ["$method_name"])
+
+                generic_parameter {
+                    ... on GenericTypeParameter {
+                        generic_name: name @output
+                        synthetic @output
+                        has_default @output
+
+                        type_bound @fold {
+                            bound: name @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let impl_owner_methods_query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                impl {
+                    method {
+                        name @output
+
+                        generic_parameter {
+                            ... on GenericTypeParameter {
+                                generic_name: name @output
+                                synthetic @output
+                                has_default @output
+
+                                type_bound @fold {
+                                    bound: name @output
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let trait_methods_query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                method {
+                    name @output
+
+                    generic_parameter {
+                        ... on GenericTypeParameter {
+                            generic_name: name @output
+                            synthetic @output
+                            has_default @output
+
+                            type_bound @fold {
+                                bound: name @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, i64> = BTreeMap::default();
+    let mut top_level_variables: BTreeMap<&str, &str> = BTreeMap::default();
+    top_level_variables.insert("method_name", "method");
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        generic_name: String,
+        synthetic: bool,
+        has_default: bool,
+        bound: Vec<String>,
+    }
+
+    let mut results: Vec<Output> = trustfall::execute_query(
+        &schema,
+        adapter.clone(),
+        top_level_query,
+        top_level_variables.clone(),
+    )
+    .expect("failed to run top level query")
+    .chain(
+        trustfall::execute_query(
+            &schema,
+            adapter.clone(),
+            impl_owner_methods_query,
+            variables.clone(),
+        )
+        .expect("failed to run impl owners query"),
+    )
+    .chain(
+        trustfall::execute_query(
+            &schema,
+            adapter.clone(),
+            trait_methods_query,
+            variables.clone(),
+        )
+        .expect("failed to run trait methods query"),
+    )
+    .map(|row| row.try_into_struct().expect("shape mismatch"))
+    .collect();
+
+    // Ensure that the results are in sorted order, and also that the aggregated bounds are sorted.
+    results.sort_unstable();
+    results.iter_mut().for_each(|row| row.bound.sort_unstable());
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "GenericStruct".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: ["Clone", "PartialOrd"]
+                .into_iter()
+                .map(ToString::to_string)
+                .collect(),
+        },
+        Output {
+            name: "GenericEnum".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: ["Clone", "PartialOrd"]
+                .into_iter()
+                .map(ToString::to_string)
+                .collect(),
+        },
+        Output {
+            name: "GenericUnion".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: ["Clone", "PartialOrd"]
+                .into_iter()
+                .map(ToString::to_string)
+                .collect(),
+        },
+        Output {
+            name: "GenericTrait".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: ["Clone", "PartialOrd"]
+                .into_iter()
+                .map(ToString::to_string)
+                .collect(),
+        },
+        Output {
+            name: "method".into(),
+            generic_name: "U".into(),
+            synthetic: false,
+            has_default: false,
+            bound: ["Hash"].into_iter().map(ToString::to_string).collect(),
+        },
+        Output {
+            name: "generic_fn".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: ["Clone", "PartialOrd"]
+                .into_iter()
+                .map(ToString::to_string)
+                .collect(),
+        },
+        Output {
+            name: "impl_trait".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: ["Clone", "PartialOrd"]
+                .into_iter()
+                .map(ToString::to_string)
+                .collect(),
+        },
+        Output {
+            name: "impl_trait".into(),
+            generic_name: "impl GenericTrait<'a, T, N>".into(),
+            synthetic: true,
+            has_default: false,
+            bound: ["GenericTrait"]
+                .into_iter()
+                .map(ToString::to_string)
+                .collect(),
+        },
+        Output {
+            name: "non_included_bound".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: ["Unpin"].into_iter().map(ToString::to_string).collect(),
+        },
+        Output {
+            name: "explicit_where_bound".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: { ["Iterator"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "combined_explicit_where_bound".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: {
+                ["Clone", "Iterator"]
+                    .into_iter()
+                    .map(ToString::to_string)
+                    .collect()
+            },
+        },
+        Output {
+            name: "complex_explicit_where_bound".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: { ["Iterator"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "combined_bounds".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: {
+                ["Clone", "Iterator"]
+                    .into_iter()
+                    .map(ToString::to_string)
+                    .collect()
+            },
+        },
+        Output {
+            name: "full_path_trait_bound".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: { ["Debug"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "renamed_trait_bound".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: false,
+            bound: { ["Write"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "DefaultGenerics".into(),
+            generic_name: "T".into(),
+            synthetic: false,
+            has_default: true,
+            bound: ["Copy"].into_iter().map(ToString::to_string).collect(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn generic_const_parameters() {
+    get_test_data!(data, generic_parameters);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+
+    let top_level_query = r#"
+{
+    Crate {
+        item {
+            ... on GenericItem {
+                name @output
+
+                # TODO: HACK, remove this -- workaround for issue:
+                # https://github.com/obi1kenobi/trustfall-rustdoc-adapter/issues/400
+                #
+                # This clause ensures this query doesn't return methods while #400 isn't resolved.
+                name @filter(op: "!=", value: ["$method_name"])
+
+                generic_parameter {
+                    ... on GenericConstParameter {
+                        generic_name: name @output
+                        has_default @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let impl_owner_methods_query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                impl {
+                    method {
+                        name @output
+
+                        generic_parameter {
+                            ... on GenericConstParameter {
+                                generic_name: name @output
+                                has_default @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let trait_methods_query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                method {
+                    name @output
+
+                    generic_parameter {
+                        ... on GenericConstParameter {
+                            generic_name: name @output
+                            has_default @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, i64> = BTreeMap::default();
+    let mut top_level_variables: BTreeMap<&str, &str> = BTreeMap::default();
+    top_level_variables.insert("method_name", "method");
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        generic_name: String,
+        has_default: bool,
+    }
+
+    let mut results: Vec<_> = trustfall::execute_query(
+        &schema,
+        adapter.clone(),
+        top_level_query,
+        top_level_variables.clone(),
+    )
+    .expect("failed to run top level query")
+    .chain(
+        trustfall::execute_query(
+            &schema,
+            adapter.clone(),
+            impl_owner_methods_query,
+            variables.clone(),
+        )
+        .expect("failed to run impl owners query"),
+    )
+    .chain(
+        trustfall::execute_query(
+            &schema,
+            adapter.clone(),
+            trait_methods_query,
+            variables.clone(),
+        )
+        .expect("failed to run trait methods query"),
+    )
+    .map(|row| row.try_into_struct().expect("shape mismatch"))
+    .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "GenericStruct".into(),
+            generic_name: "N".into(),
+            has_default: false,
+        },
+        Output {
+            name: "GenericEnum".into(),
+            generic_name: "N".into(),
+            has_default: false,
+        },
+        Output {
+            name: "GenericUnion".into(),
+            generic_name: "N".into(),
+            has_default: false,
+        },
+        Output {
+            name: "GenericTrait".into(),
+            generic_name: "N".into(),
+            has_default: false,
+        },
+        // TODO: The below items in principle should only be reachable via the trait's contents,
+        //       not from top-level. This is unintentional behavior on the part of the adapter
+        //       due to code unrelated to what we're testing here.
+        //       When that change is applied, we'll need separate test queries
+        //       for generic methods that navigate both via `ImplOwner` and via `Trait`.
+        Output {
+            name: "method".into(),
+            generic_name: "M".into(),
+            has_default: false,
+        },
+        // ^ end TODO region ^
+        Output {
+            name: "generic_fn".into(),
+            generic_name: "N".into(),
+            has_default: false,
+        },
+        Output {
+            name: "impl_trait".into(),
+            generic_name: "N".into(),
+            has_default: false,
+        },
+        Output {
+            name: "DefaultGenerics".into(),
+            generic_name: "N".into(),
+            has_default: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn implemented_trait_instantiated_name() {
+    get_test_data!(data, rust_type_name);
+    let adapter = RustdocAdapter::new(&data, None);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                name @filter(op: "=", value: ["$struct"])
+
+                impl {
+                    implemented_trait {
+                        bare_name @output @filter(op: "one_of", value: ["$traits"])
+                        instantiated_name @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let mut variables: BTreeMap<&str, FieldValue> = BTreeMap::default();
+    variables.insert("struct", "A".into());
+    variables.insert(
+        "traits",
+        vec![
+            "MyTrait",
+            "MyTrait2",
+            "Any",
+            "Borrow",
+            "BorrowMut",
+            "From",
+            "Into",
+            "RefUnwindSafe",
+            "Send",
+            "Sync",
+            "TryFrom",
+            "TryInto",
+            "Unpin",
+            "UnwindSafe",
+        ]
+        .into(),
+    );
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        bare_name: String,
+        instantiated_name: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, Arc::new(adapter), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            bare_name: "Any".into(),
+            instantiated_name: "Any".into(),
+        },
+        Output {
+            bare_name: "Borrow".into(),
+            instantiated_name: "Borrow<T>".into(),
+        },
+        Output {
+            bare_name: "BorrowMut".into(),
+            instantiated_name: "BorrowMut<T>".into(),
+        },
+        Output {
+            bare_name: "From".into(),
+            instantiated_name: "From<T>".into(),
+        },
+        Output {
+            bare_name: "Into".into(),
+            instantiated_name: "Into<U>".into(),
+        },
+        Output {
+            bare_name: "MyTrait".into(),
+            instantiated_name: "MyTrait".into(),
+        },
+        Output {
+            bare_name: "MyTrait2".into(),
+            instantiated_name: "MyTrait2<'a, N, i64>".into(),
+        },
+        Output {
+            bare_name: "RefUnwindSafe".into(),
+            instantiated_name: "RefUnwindSafe".into(),
+        },
+        Output {
+            bare_name: "Send".into(),
+            instantiated_name: "Send".into(),
+        },
+        Output {
+            bare_name: "Sync".into(),
+            instantiated_name: "Sync".into(),
+        },
+        Output {
+            bare_name: "TryFrom".into(),
+            instantiated_name: "TryFrom<U>".into(),
+        },
+        Output {
+            bare_name: "TryInto".into(),
+            instantiated_name: "TryInto<U>".into(),
+        },
+        Output {
+            bare_name: "Unpin".into(),
+            instantiated_name: "Unpin".into(),
+        },
+        Output {
+            bare_name: "UnwindSafe".into(),
+            instantiated_name: "UnwindSafe".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn parenthesized_type_bounds_on_type_and_impl() {
+    get_test_data!(data, rust_type_name);
+    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                name @filter(op: "=", value: ["$struct"]) @output
+
+                generic_parameter {
+                    ... on GenericTypeParameter {
+                        generic: name @output
+                        bound_: type_bound {
+                            instantiated_name @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let mut variables: BTreeMap<&str, &str> = BTreeMap::default();
+    variables.insert("struct", "ParenthesizedGenericType");
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        generic: String,
+        bound_instantiated_name: String,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![Output {
+        name: "ParenthesizedGenericType".into(),
+        generic: "T".into(),
+        bound_instantiated_name: "for<'a> Fn(&'a i64) -> &'a i64".into(),
+    }];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                name @filter(op: "=", value: ["$struct"]) @output
+
+                generic_parameter {
+                    ... on GenericTypeParameter {
+                        generic: name @output
+                    }
+                }
+
+                impl_: inherent_impl {
+                    generic_parameter {
+                        ... on GenericTypeParameter {
+                            generic: name @output
+                            bound_: type_bound {
+                                instantiated_name @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let mut variables: BTreeMap<&str, &str> = BTreeMap::default();
+    variables.insert("struct", "ParenthesizedGenericImpl");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct LatterOutput {
+        name: String,
+        generic: String,
+        impl_generic: String,
+        impl_bound_instantiated_name: String,
+    }
+
+    let mut results: Vec<LatterOutput> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![LatterOutput {
+        name: "ParenthesizedGenericImpl".into(),
+        generic: "T".into(),
+        impl_generic: "T".into(),
+        impl_bound_instantiated_name: "for<'a> Fn(&'a i64) -> &'a i64".into(),
+    }];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
 fn features() {
     get_test_data!(data, features);
     let adapter = Arc::new(RustdocAdapter::new(&data, None));
@@ -2213,15 +3433,9 @@ fn features() {
         DefaultsOutput {
             name: "default".into(),
         },
-        DefaultsOutput {
-            name: "foo".into(),
-        },
-        DefaultsOutput {
-            name: "bar".into(),
-        },
-        DefaultsOutput {
-            name: "baz".into(),
-        },
+        DefaultsOutput { name: "foo".into() },
+        DefaultsOutput { name: "bar".into() },
+        DefaultsOutput { name: "baz".into() },
     ];
     expected_results.sort_unstable();
 

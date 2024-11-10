@@ -1,0 +1,45 @@
+pub trait MyTrait {
+    type A<'a, K: 'a>;
+}
+
+struct A;
+impl MyTrait for A {
+    type A<'a, K: 'a> = Option<&'a K>;
+}
+
+pub trait MyTrait2<'a, const N: u8, T = ()> {
+    type B;
+}
+
+impl<'a, const N: u8> MyTrait2<'a, N, i64> for A {
+    type B = i64;
+}
+
+mod a {
+    pub type B = ();
+}
+
+pub struct Struct<'a, T> {
+    pub a: String,
+    pub b: T,
+    pub c: Option<T>,
+    pub d: <A as MyTrait>::A<'static, ()>,
+    pub e: a::B,
+    pub f: unsafe extern "C-unwind" fn() -> T,
+    pub g: Box<dyn for<'b> MyTrait2<'b, b'a', B = &'b ()> + Send + 'a>,
+    pub h: Box<dyn Fn(&'a i64) -> &'a i64>,
+}
+
+const unsafe fn x() {}
+
+pub struct ParenthesizedGenericType<T: for<'a> Fn(&'a i64) -> &'a i64> {
+    value: T,
+}
+
+pub struct ParenthesizedGenericImpl<T> {
+    value: T,
+}
+
+impl<T: for<'a> Fn(&'a i64) -> &'a i64> ParenthesizedGenericImpl<T> {
+    const N: usize = 42;
+}

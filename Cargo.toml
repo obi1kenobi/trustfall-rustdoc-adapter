@@ -1,6 +1,6 @@
 [package]
 name = "trustfall-rustdoc-adapter"
-version = "34.0.0"
+version = "36.1.0"
 edition = "2021"
 authors = ["Predrag Gruevski <obi1kenobi82@gmail.com>"]
 license = "Apache-2.0 OR MIT"
@@ -11,7 +11,7 @@ readme = "./README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-trustfall = "0.7.1"
+trustfall = "0.8.0"
 rayon = { version = "1.10.0", optional = true }
 rustc-hash = { version = "2.0.0", optional = true }
 cargo_toml = { version = "0.20.4", features = ["features"] }
@@ -21,7 +21,7 @@ cargo_metadata = "0.18.1"
 # Keep this dependency last, its own block, since we change it often via automated means
 # and we'd like to avoid merge conflicts.
 #
-rustdoc-types = "0.30.0"
+rustdoc-types = "0.32.0"
 #
 # No dependencies after this point. Put all dependencies above this section.
 #
@@ -43,11 +43,11 @@ harness = false
 debug = 1 # We only need function name information (for flamegraphs)
 
 [dev-dependencies]
-anyhow = "1.0.58"
+anyhow = "1.0.89"
 criterion = "0.5.1"
-itertools = "0.12.0"
-serde_json = "1.0.85"
-serde = { version = "1.0.185", features = ["derive"] }
+itertools = "0.13.0"
+serde_json = "1.0.128"
+serde = { version = "1.0.210", features = ["derive"] }
 maplit = "1.0.2"
-version_check = "0.9.4"
-similar-asserts = { version = "1.4.2", features = ["serde"] }
+version_check = "0.9.5"
+similar-asserts = { version = "1.6.0", features = ["serde"] }

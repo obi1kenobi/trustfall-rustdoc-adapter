@@ -1,8 +1,8 @@
 use std::{borrow::Cow, rc::Rc};
 
 use rustdoc_types::{
-    Abi, Constant, Crate, Enum, Function, Impl, Item, Module, Path, Span, Static, Struct, Trait,
-    Type, Union, VariantKind,
+    Abi, Constant, Crate, Enum, Function, GenericBound, GenericParamDef, Impl, Item, Module, Path,
+    Span, Static, Struct, Trait, Type, Union, VariantKind,
 };
 use trustfall::provider::Typename;
 
@@ -32,15 +32,17 @@ pub enum VertexKind<'a> {
     RawType(&'a Type),
     Attribute(Attribute<'a>),
     AttributeMetaItem(Rc<AttributeMetaItem<'a>>),
-    ImplementedTrait(&'a Path, &'a Item),
+    ImplementedTrait(ImplementedTrait<'a>),
     FunctionParameter(&'a str),
     FunctionAbi(&'a Abi),
     Discriminant(Cow<'a, str>),
     Variant(EnumVariant<'a>),
+    DeriveHelperAttr(&'a str),
+    GenericParameter(&'a rustdoc_types::Generics, &'a GenericParamDef),
     Feature(Feature<'a>),
 }
 
-impl<'a> Typename for Vertex<'a> {
+impl Typename for Vertex<'_> {
     /// The name of the actual runtime type of this vertex,
     /// intended to fulfill resolution requests for the __typename property.
     #[inline]
@@ -63,6 +65,12 @@ impl<'a> Typename for Vertex<'a> {
                 rustdoc_types::ItemEnum::Constant { .. } => "Constant",
                 rustdoc_types::ItemEnum::Static(..) => "Static",
                 rustdoc_types::ItemEnum::AssocType { .. } => "AssociatedType",
+                rustdoc_types::ItemEnum::Macro { .. } => "Macro",
+                rustdoc_types::ItemEnum::ProcMacro(proc) => match proc.kind {
+                    rustdoc_types::MacroKind::Bang => "FunctionLikeProcMacro",
+                    rustdoc_types::MacroKind::Attr => "AttributeProcMacro",
+                    rustdoc_types::MacroKind::Derive => "DeriveProcMacro",
+                },
                 _ => unreachable!("unexpected item.inner for item: {item:?}"),
             },
             VertexKind::Span(..) => "Span",
@@ -84,6 +92,12 @@ impl<'a> Typename for Vertex<'a> {
                 VariantKind::Plain => "PlainVariant",
                 VariantKind::Tuple(..) => "TupleVariant",
                 VariantKind::Struct { .. } => "StructVariant",
+            },
+            VertexKind::DeriveHelperAttr(..) => "DeriveMacroHelperAttribute",
+            VertexKind::GenericParameter(_, param) => match &param.kind {
+                rustdoc_types::GenericParamDefKind::Lifetime { .. } => "GenericLifetimeParameter",
+                rustdoc_types::GenericParamDefKind::Type { .. } => "GenericTypeParameter",
+                rustdoc_types::GenericParamDefKind::Const { .. } => "GenericConstParameter",
             },
             VertexKind::Feature(..) => "Feature",
         }
@@ -245,6 +259,13 @@ impl<'a> Vertex<'a> {
         })
     }
 
+    pub(super) fn as_proc_macro(&self) -> Option<&'a rustdoc_types::ProcMacro> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::ProcMacro(m) => Some(m),
+            _ => None,
+        })
+    }
+
     pub(super) fn as_attribute(&self) -> Option<&'_ Attribute<'a>> {
         match &self.kind {
             VertexKind::Attribute(attr) => Some(attr),
@@ -266,9 +287,9 @@ impl<'a> Vertex<'a> {
         }
     }
 
-    pub(super) fn as_implemented_trait(&self) -> Option<(&'a rustdoc_types::Path, &'a Item)> {
+    pub(super) fn as_implemented_trait(&self) -> Option<&ImplementedTrait<'a>> {
         match &self.kind {
-            VertexKind::ImplementedTrait(path, trait_item) => Some((*path, *trait_item)),
+            VertexKind::ImplementedTrait(impld) => Some(impld),
             _ => None,
         }
     }
@@ -285,6 +306,34 @@ impl<'a> Vertex<'a> {
             VertexKind::Feature(f) => Some(f),
             _ => None,
         }
+    }
+
+    pub(super) fn as_derive_helper_attr(&self) -> Option<&'a str> {
+        match &self.kind {
+            VertexKind::DeriveHelperAttr(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_generic_parameter(
+        &self,
+    ) -> Option<(&'a rustdoc_types::Generics, &'a GenericParamDef)> {
+        match &self.kind {
+            VertexKind::GenericParameter(generics, param) => Some((generics, param)),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_generics(&self) -> Option<&'a rustdoc_types::Generics> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::Struct(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Enum(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Function(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Trait(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Union(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Impl(x) => Some(&x.generics),
+            _ => None,
+        })
     }
 }
 
@@ -315,4 +364,17 @@ impl<'a> From<&'a Abi> for VertexKind<'a> {
 #[derive(Debug, Clone)]
 pub struct Feature<'a> {
     pub(super) inner: &'a cargo_toml::features::Feature<'a>,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub struct ImplementedTrait<'a> {
+    /// The rustdoc `Path` item that contains the
+    pub(crate) path: &'a Path,
+
+    /// Keep higher-rank trait bound (HRTBs) information, if any.
+    pub(crate) bound: Option<&'a GenericBound>,
+
+    /// `None` if not in our crate
+    pub(crate) resolved_item: Option<&'a Item>,
 }

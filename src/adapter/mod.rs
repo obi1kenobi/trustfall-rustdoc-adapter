@@ -21,6 +21,7 @@ mod enum_variant;
 mod optimizations;
 mod origin;
 mod properties;
+mod rust_type_name;
 mod vertex;
 
 #[cfg(test)]
@@ -91,11 +92,33 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
         } else {
             match type_name.as_ref() {
                 "Crate" => properties::resolve_crate_property(contexts, property_name),
-                "Item" => properties::resolve_item_property(contexts, property_name),
-                "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant" | "PlainVariant"
-                | "TupleVariant" | "StructVariant" | "Union" | "Trait" | "Function" | "Method"
-                | "Impl" | "GlobalValue" | "Constant" | "Static" | "AssociatedType"
-                | "AssociatedConstant" | "Module"
+                "Item" | "GenericItem" => {
+                    properties::resolve_item_property(contexts, property_name)
+                }
+                "ImplOwner"
+                | "Struct"
+                | "StructField"
+                | "Enum"
+                | "Variant"
+                | "PlainVariant"
+                | "TupleVariant"
+                | "StructVariant"
+                | "Union"
+                | "Trait"
+                | "Function"
+                | "Method"
+                | "Impl"
+                | "GlobalValue"
+                | "Constant"
+                | "Static"
+                | "AssociatedType"
+                | "AssociatedConstant"
+                | "Module"
+                | "Macro"
+                | "ProcMacro"
+                | "FunctionLikeProcMacro"
+                | "AttributeProcMacro"
+                | "DeriveProcMacro"
                     if matches!(
                         property_name.as_ref(),
                         "id" | "crate_id"
@@ -144,9 +167,12 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     self.current_crate,
                     self.previous_crate,
                 ),
-                "ImplementedTrait" => {
-                    properties::resolve_implemented_trait_property(contexts, property_name)
-                }
+                "ImplementedTrait" => properties::resolve_implemented_trait_property(
+                    contexts,
+                    property_name,
+                    self.current_crate,
+                    self.previous_crate,
+                ),
                 "Static" => properties::resolve_static_property(contexts, property_name),
                 "RawType" | "ResolvedPathType" if matches!(property_name.as_ref(), "name") => {
                     // fields from "RawType"
@@ -163,6 +189,26 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     properties::resolve_discriminant_property(contexts, property_name)
                 }
                 "Feature" => properties::resolve_feature_property(contexts, property_name),
+                "DeriveMacroHelperAttribute" => {
+                    properties::resolve_derive_macro_helper_attribute_property(
+                        contexts,
+                        property_name,
+                    )
+                }
+                "GenericParameter"
+                | "GenericTypeParameter"
+                | "GenericLifetimeParameter"
+                | "GenericConstParameter"
+                    if matches!(property_name.as_ref(), "name") =>
+                {
+                    properties::resolve_generic_parameter_property(contexts, property_name)
+                }
+                "GenericTypeParameter" => {
+                    properties::resolve_generic_type_parameter_property(contexts, property_name)
+                }
+                "GenericConstParameter" => {
+                    properties::resolve_generic_const_parameter_property(contexts, property_name)
+                }
                 _ => unreachable!("resolve_property {type_name} {property_name}"),
             }
         }
@@ -190,10 +236,32 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     self.previous_crate,
                 )
             }
-            "Item" | "ImplOwner" | "Struct" | "StructField" | "Enum" | "Variant"
-            | "PlainVariant" | "TupleVariant" | "Union" | "StructVariant" | "Trait"
-            | "Function" | "Method" | "Impl" | "GlobalValue" | "Constant" | "Static"
-            | "AssociatedType" | "AssociatedConstant" | "Module"
+            "Item"
+            | "GenericItem"
+            | "ImplOwner"
+            | "Struct"
+            | "StructField"
+            | "Enum"
+            | "Variant"
+            | "PlainVariant"
+            | "TupleVariant"
+            | "Union"
+            | "StructVariant"
+            | "Trait"
+            | "Function"
+            | "Method"
+            | "Impl"
+            | "GlobalValue"
+            | "Constant"
+            | "Static"
+            | "AssociatedType"
+            | "AssociatedConstant"
+            | "Module"
+            | "Macro"
+            | "ProcMacro"
+            | "FunctionLikeProcMacro"
+            | "AttributeProcMacro"
+            | "DeriveProcMacro"
                 if matches!(edge_name.as_ref(), "span" | "attribute") =>
             {
                 edges::resolve_item_edge(contexts, edge_name)
@@ -207,6 +275,12 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 if matches!(edge_name.as_ref(), "parameter" | "abi") =>
             {
                 edges::resolve_function_like_edge(contexts, edge_name)
+            }
+            "GenericItem" | "Struct" | "Enum" | "Union" | "Trait" | "Function" | "Method"
+            | "Impl"
+                if matches!(edge_name.as_ref(), "generic_parameter") =>
+            {
+                edges::resolve_generic_parameter_edge(contexts, edge_name)
             }
             "Module" => edges::resolve_module_edge(
                 contexts,
@@ -257,6 +331,13 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 self.current_crate,
                 self.previous_crate,
             ),
+            "DeriveProcMacro" => edges::resolve_derive_proc_macro_edge(contexts, edge_name),
+            "GenericTypeParameter" => edges::resolve_generic_type_parameter_edge(
+                contexts,
+                edge_name,
+                self.current_crate,
+                self.previous_crate,
+            ),
             _ => unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}"),
         }
     }
@@ -270,18 +351,26 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
     ) -> ContextOutcomeIterator<'a, V, bool> {
         let coerce_to_type = coerce_to_type.clone();
         match type_name.as_ref() {
-            "Item" | "Variant" | "FunctionLike" | "Importable" | "ImplOwner" | "RawType"
-            | "GlobalValue" => {
+            "Item" | "GenericItem" | "Variant" | "FunctionLike" | "Importable" | "ImplOwner"
+            | "RawType" | "GlobalValue" | "ProcMacro" => {
                 resolve_coercion_with(contexts, move |vertex| {
                     let actual_type_name = vertex.typename();
 
                     match coerce_to_type.as_ref() {
+                        "GenericItem" => matches!(
+                            actual_type_name,
+                            "Struct" | "Enum" | "Union" | "Trait" | "Function" | "Method"
+                        ),
                         "Variant" => matches!(
                             actual_type_name,
                             "PlainVariant" | "TupleVariant" | "StructVariant"
                         ),
                         "ImplOwner" => matches!(actual_type_name, "Struct" | "Enum" | "Union"),
                         "GlobalValue" => matches!(actual_type_name, "Constant" | "Static",),
+                        "ProcMacro" => matches!(
+                            actual_type_name,
+                            "FunctionLikeProcMacro" | "AttributeProcMacro" | "DeriveProcMacro"
+                        ),
                         _ => {
                             // The remaining types are final (don't have any subtypes)
                             // so we can just compare the actual type name to
@@ -291,6 +380,14 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                     }
                 })
             }
+            "GenericParameter" => resolve_coercion_with(contexts, move |vertex| {
+                let actual_type_name = vertex.typename();
+
+                // The possible types are final (don't have any subtypes)
+                // so we can just compare the actual type name to
+                // the type we are attempting to coerce to.
+                actual_type_name == coerce_to_type.as_ref()
+            }),
             _ => unreachable!("resolve_coercion {type_name} {coerce_to_type}"),
         }
     }
@@ -311,5 +408,7 @@ pub(crate) fn supported_item_kind(item: &Item) -> bool {
             | rustdoc_types::ItemEnum::Static(..)
             | rustdoc_types::ItemEnum::AssocType { .. }
             | rustdoc_types::ItemEnum::Module { .. }
+            | rustdoc_types::ItemEnum::Macro { .. }
+            | rustdoc_types::ItemEnum::ProcMacro { .. }
     )
 }

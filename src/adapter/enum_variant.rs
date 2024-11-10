@@ -21,7 +21,7 @@ pub(super) struct LazyDiscriminants<'a> {
     discriminants: OnceCell<Vec<Cow<'a, str>>>,
 }
 
-impl<'a> Debug for LazyDiscriminants<'a> {
+impl Debug for LazyDiscriminants<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LazyDiscriminants")
             .field("discriminants", &self.discriminants)

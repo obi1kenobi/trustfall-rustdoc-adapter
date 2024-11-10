@@ -103,6 +103,7 @@ impl PackageStorage {
 pub struct PackageHandler<'a> {
     pub(crate) own_crate: IndexedCrate<'a>,
     pub(crate) features: Option<cargo_toml::features::Features<'a, 'a>>,
+    #[allow(dead_code)]
     pub(crate) dependencies: HashMap<DependencyKey, IndexedCrate<'a>>,
 }
 
@@ -442,7 +443,7 @@ impl<'a> IndexedCrate<'a> {
     pub fn publicly_importable_names(&self, id: &'a Id) -> Vec<ImportablePath<'a>> {
         if self.inner.index.contains_key(id) {
             self.visibility_tracker
-                .collect_publicly_importable_names(id.as_ref())
+                .collect_publicly_importable_names(id.0)
         } else {
             Default::default()
         }
@@ -685,7 +686,7 @@ fn new_trait(manual_trait_item: &ManualTraitItem, id: Id, crate_id: u32) -> Item
         inner: rustdoc_types::ItemEnum::Trait(rustdoc_types::Trait {
             is_auto: manual_trait_item.is_auto,
             is_unsafe: manual_trait_item.is_unsafe,
-            is_object_safe: matches!(
+            is_dyn_compatible: matches!(
                 manual_trait_item.name,
                 "Debug"
                     | "PartialEq"
@@ -730,7 +731,7 @@ fn create_manually_inlined_builtin_traits(crate_: &Crate) -> HashMap<Id, Item> {
         MANUAL_TRAIT_ITEMS
             .iter()
             .find(|t| t.path == entry.path)
-            .map(|manual| (id.clone(), new_trait(manual, id.clone(), entry.crate_id)))
+            .map(|manual| (*id, new_trait(manual, *id, entry.crate_id)))
     })
     .collect()
 }
@@ -767,23 +768,23 @@ mod tests {
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(top_level_function.as_ref()));
+            .contains_key(&top_level_function.0));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(method.as_ref()));
+            .contains_key(&method.0));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(associated_fn.as_ref()));
+            .contains_key(&associated_fn.0));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(field.as_ref()));
+            .contains_key(&field.0));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(const_item.as_ref()));
+            .contains_key(&const_item.0));
 
         // But only `top_level_function` is importable.
         assert_eq!(
@@ -829,23 +830,23 @@ mod tests {
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(top_level_function.as_ref()));
+            .contains_key(&top_level_function.0));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(variant.as_ref()));
+            .contains_key(&variant.0));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(method.as_ref()));
+            .contains_key(&method.0));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(associated_fn.as_ref()));
+            .contains_key(&associated_fn.0));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(const_item.as_ref()));
+            .contains_key(&const_item.0));
 
         // But only `top_level_function` and `Foo::variant` is importable.
         assert_eq!(
@@ -895,27 +896,27 @@ mod tests {
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(top_level_function.as_ref()));
+            .contains_key(&top_level_function.0));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(method.as_ref()));
+            .contains_key(&method.0));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(associated_fn.as_ref()));
+            .contains_key(&associated_fn.0));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(left_field.as_ref()));
+            .contains_key(&left_field.0));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(right_field.as_ref()));
+            .contains_key(&right_field.0));
         assert!(indexed_crate
             .visibility_tracker
             .visible_parent_ids()
-            .contains_key(const_item.as_ref()));
+            .contains_key(&const_item.0));
 
         // But only `top_level_function` is importable.
         assert_eq!(

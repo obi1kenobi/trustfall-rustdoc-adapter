@@ -9,7 +9,7 @@ use crate::{
 
 use super::{
     enum_variant::{EnumVariant, LazyDiscriminants},
-    vertex::{Vertex, VertexKind},
+    vertex::{ImplementedTrait, Vertex, VertexKind},
 };
 
 #[non_exhaustive]
@@ -78,11 +78,16 @@ impl Origin {
     pub(super) fn make_implemented_trait_vertex<'a>(
         &self,
         path: &'a rustdoc_types::Path,
-        trait_def: &'a Item,
+        bound: Option<&'a rustdoc_types::GenericBound>,
+        trait_def: Option<&'a Item>,
     ) -> Vertex<'a> {
         Vertex {
             origin: *self,
-            kind: VertexKind::ImplementedTrait(path, trait_def),
+            kind: VertexKind::ImplementedTrait(ImplementedTrait {
+                path,
+                bound,
+                resolved_item: trait_def,
+            }),
         }
     }
 
@@ -126,6 +131,24 @@ impl Origin {
         Vertex {
             origin: *self,
             kind: VertexKind::Feature(super::vertex::Feature { inner: feature }),
+        }
+    }
+
+    pub(super) fn make_derive_helper_attr_vertex<'a>(&self, helper: &'a str) -> Vertex<'a> {
+        Vertex {
+            origin: *self,
+            kind: VertexKind::DeriveHelperAttr(helper),
+        }
+    }
+
+    pub(super) fn make_generic_parameter_vertex<'a>(
+        &self,
+        generics: &'a rustdoc_types::Generics,
+        param: &'a rustdoc_types::GenericParamDef,
+    ) -> Vertex<'a> {
+        Vertex {
+            origin: *self,
+            kind: VertexKind::GenericParameter(generics, param),
         }
     }
 }

@@ -1,4 +1,4 @@
-use rustdoc_types::{GenericBound::TraitBound, Id, ItemEnum, VariantKind};
+use rustdoc_types::{GenericBound::TraitBound, Id, ItemEnum, VariantKind, WherePredicate};
 use std::rc::Rc;
 use trustfall::provider::{
     resolve_neighbors_with, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
@@ -251,6 +251,30 @@ pub(super) fn resolve_function_like_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             Box::new(std::iter::once(origin.make_function_abi_vertex(abi)))
         }),
         _ => unreachable!("resolve_function_like_edge {edge_name}"),
+    }
+}
+
+pub(super) fn resolve_generic_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    edge_name: &str,
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
+    match edge_name {
+        "generic_parameter" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            Box::new(
+                vertex
+                    .as_generics()
+                    .map(move |generics| {
+                        generics
+                            .params
+                            .iter()
+                            .map(move |param| origin.make_generic_parameter_vertex(generics, param))
+                    })
+                    .into_iter()
+                    .flatten(),
+            )
+        }),
+        _ => unreachable!("resolve_generic_parameter_edge {edge_name}"),
     }
 }
 
@@ -574,13 +598,10 @@ pub(super) fn resolve_impl_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                     };
                     manually_inlined_builtin_traits.get(&path.id)
                 });
-                if let Some(item) = found_item {
-                    Box::new(std::iter::once(
-                        origin.make_implemented_trait_vertex(path, item),
-                    ))
-                } else {
-                    Box::new(std::iter::empty())
-                }
+
+                Box::new(std::iter::once(
+                    origin.make_implemented_trait_vertex(path, None, found_item),
+                ))
             } else {
                 Box::new(std::iter::empty())
             }
@@ -658,8 +679,13 @@ pub(super) fn resolve_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                         manually_inlined_builtin_traits.get(&trait_.id)
                     });
 
-                    found_item
-                        .map(|next_item| origin.make_implemented_trait_vertex(trait_, next_item))
+                    // TODO: Remove this once rust-analyzer stops falsely inferring the type of
+                    //       `bound` as `GenericBound` when in fact it's `&GenericBound`.
+                    //       It shows a phantom compile error unless we add `&` before `bound`.
+                    #[allow(clippy::needless_borrow)]
+                    let trait_bound: Option<&rustdoc_types::GenericBound> = Some(&bound);
+
+                    Some(origin.make_implemented_trait_vertex(trait_, trait_bound, found_item))
                 } else {
                     None
                 }
@@ -756,10 +782,16 @@ pub(super) fn resolve_implemented_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
         "trait" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
 
-            let (_, trait_item) = vertex
+            let impld_trait = vertex
                 .as_implemented_trait()
                 .expect("vertex was not an ImplementedTrait");
-            Box::new(std::iter::once(origin.make_item_vertex(trait_item)))
+
+            Box::new(
+                impld_trait
+                    .resolved_item
+                    .into_iter()
+                    .map(move |item| origin.make_item_vertex(item)),
+            )
         }),
         _ => unreachable!("resolve_implemented_trait_edge {edge_name}"),
     }
@@ -804,6 +836,135 @@ pub(super) fn resolve_attribute_meta_item_edge<'a, V: AsVertex<Vertex<'a>> + 'a>
             }
         }),
         _ => unreachable!("resolve_attribute_meta_item_edge {edge_name}"),
+    }
+}
+
+pub(super) fn resolve_derive_proc_macro_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    edge_name: &str,
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
+    match edge_name {
+        "helper_attribute" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+
+            let proc_macro = vertex
+                .as_proc_macro()
+                .expect("vertex was not a DeriveProcMacro");
+            Box::new(
+                proc_macro
+                    .helpers
+                    .iter()
+                    .map(move |helper| origin.make_derive_helper_attr_vertex(helper)),
+            )
+        }),
+        _ => unreachable!("resolve_derive_proc_macro_edge {edge_name}"),
+    }
+}
+
+pub(super) fn resolve_generic_type_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    edge_name: &str,
+    current_crate: &'a PackageHandler<'a>,
+    previous_crate: Option<&'a PackageHandler<'a>>,
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
+    match edge_name {
+        "type_bound" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let item_index = match origin {
+                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
+                Origin::PreviousCrate => {
+                    &previous_crate
+                        .expect("no previous crate provided")
+                        .own_crate
+                        .inner
+                        .index
+                }
+            };
+
+            let (generics, param): (
+                &'a rustdoc_types::Generics,
+                &'a rustdoc_types::GenericParamDef,
+            ) = vertex
+                .as_generic_parameter()
+                .expect("vertex was not a GenericTypeParameter");
+
+            // Bounds directly applied to the generic, like `<T: Clone>`.
+            let explicit_bounds = match &param.kind {
+                rustdoc_types::GenericParamDefKind::Type { bounds, .. } => bounds.as_slice(),
+                _ => unreachable!("vertex was not a GenericTypeParameter: {vertex:?}"),
+            };
+
+            // Lift `where` bounds that could have been written as bounds on the generic.
+            // For example: `where T: Clone` is the same as `<T: Clone>` so we want to extract it.
+            // For cases like `where T: Iterator, T::Item: Clone`, we only extract `<T: Iterator>`.
+            // We leave more complex cases alone, like `where Arc<T>: Clone`
+            // or `where for<'a> &'a: Iterator`.
+            let where_bounds = generics.where_predicates.iter().filter_map(move |predicate| {
+                match predicate {
+                    WherePredicate::BoundPredicate { type_, bounds, generic_params } => {
+                        if !generic_params.is_empty() {
+                            // `generic_params` is only used for HRTBs,
+                            // which can't be represented as bounds on the generic itself.
+                            return None;
+                        }
+
+                        if !matches!(type_, rustdoc_types::Type::Generic(name) if name == &param.name) {
+                            // This bound is not directly on the generic we're looking at.
+                            // For example, it might be `where T::Item: Clone`,
+                            // or it might be on a different generic parameter, like `U: Clone`.
+                            return None;
+                        }
+
+                        Some(bounds.as_slice())
+                    }
+                    WherePredicate::LifetimePredicate { .. } | WherePredicate::EqPredicate { .. } => {
+                        // Neither of these cases can be written as a bound on a generic parameter.
+                        None
+                    }
+                }
+            }).flatten();
+
+            Box::new(
+                explicit_bounds
+                    .iter()
+                    .chain(where_bounds)
+                    .filter_map(move |bound| {
+                        if let TraitBound { trait_, .. } = &bound {
+                            // When the implemented trait is from the same crate
+                            // as its definition, the trait is expected to be present
+                            // in `item_index`. Otherwise, the
+                            // `rustdoc_types::Trait` is not in this rustdoc,
+                            // even if the trait is part of Rust `core` or `std`.
+                            // As a temporary workaround, some common
+                            // Rust built-in traits are manually "inlined"
+                            // with items stored in `manually_inlined_builtin_traits`.
+                            let found_item = item_index.get(&trait_.id).or_else(|| {
+                                let manually_inlined_builtin_traits = match origin {
+                                    Origin::CurrentCrate => {
+                                        &current_crate.own_crate.manually_inlined_builtin_traits
+                                    }
+                                    Origin::PreviousCrate => {
+                                        &previous_crate
+                                            .expect("no previous crate provided")
+                                            .own_crate
+                                            .manually_inlined_builtin_traits
+                                    }
+                                };
+                                manually_inlined_builtin_traits.get(&trait_.id)
+                            });
+
+                            Some(origin.make_implemented_trait_vertex(
+                                trait_,
+                                Some(bound),
+                                found_item,
+                            ))
+                        } else {
+                            None
+                        }
+                    }),
+            )
+        }),
+        _ => unreachable!("resolve_generic_type_parameter_edge {edge_name}"),
     }
 }
 
