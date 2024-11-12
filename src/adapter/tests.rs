@@ -3437,3 +3437,130 @@ fn parenthesized_type_bounds_on_type_and_impl() {
 
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn type_generic_bounds() {
+    let path = "./localdata/test_data/type_generic_bounds/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                kind: __typename @output
+                name @output
+
+                generic_parameter {
+                    ... on GenericTypeParameter {
+                        generic: name @output
+
+                        type_bound {
+                            bound: instantiated_name @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        kind: String,
+        name: String,
+        generic: String,
+        bound: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            kind: "Struct".into(),
+            name: "ExampleStruct".into(),
+            generic: "T".into(),
+            bound: "Ord".into(),
+        },
+        Output {
+            kind: "Enum".into(),
+            name: "ExampleEnum".into(),
+            generic: "T".into(),
+            bound: "PartialEq".into(),
+        },
+        Output {
+            kind: "Enum".into(),
+            name: "ExampleEnum".into(),
+            generic: "T".into(),
+            bound: "Sync".into(),
+        },
+        Output {
+            kind: "Union".into(),
+            name: "ExampleUnion".into(),
+            generic: "T".into(),
+            bound: "std::fmt::Debug".into(),
+        },
+        Output {
+            kind: "Union".into(),
+            name: "ExampleUnion".into(),
+            generic: "T".into(),
+            bound: "Copy".into(),
+        },
+        Output {
+            kind: "Struct".into(),
+            name: "IteratorWrapper".into(),
+            generic: "T".into(),
+            bound: "Sync".into(),
+        },
+        Output {
+            kind: "Struct".into(),
+            name: "IteratorWrapper".into(),
+            generic: "T".into(),
+            bound: "Iterator<Item = i64>".into(),
+        },
+        Output {
+            kind: "Struct".into(),
+            name: "LifetimedIterator".into(),
+            generic: "T".into(),
+            // `T: Iterator<Item = &'a str> + 'a` is equivalent to:
+            // ```
+            // where
+            //   T: Iterator<Item = &'a str>,
+            //   T: 'a
+            // ```
+            // and only the `Iterator` portion is a *type* bound.
+            bound: "Iterator<Item = &'a str>".into(),
+        },
+        Output {
+            kind: "Struct".into(),
+            name: "SeparateIteratorBounds".into(),
+            generic: "T".into(),
+            // confirming the equivalence of the previous case
+            bound: "Iterator<Item = &'a str>".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
