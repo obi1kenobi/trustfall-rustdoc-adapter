@@ -869,7 +869,7 @@ interface Importable {
 """
 An item that can have impl blocks, like a struct or enum.
 """
-interface ImplOwner implements Item & Importable {
+interface ImplOwner implements Item & Importable & GenericItem {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -917,6 +917,12 @@ interface ImplOwner implements Item & Importable {
   # edges from Importable
   importable_path: [ImportablePath!]
   canonical_path: Path
+
+  # edges from GenericItem
+  """
+  Generic type, lifetime, or const parameters by which this item is parameterized.
+  """
+  generic_parameter: [GenericParameter]
 
   # own edges
   """
