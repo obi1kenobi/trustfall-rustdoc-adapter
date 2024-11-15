@@ -16,7 +16,7 @@ use crate::{
 };
 
 pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
-    adapter: &RustdocAdapter<'a>,
+    adapter: &'a RustdocAdapter<'a>,
     contexts: ContextIterator<'a, V>,
     resolve_info: &ResolveEdgeInfo,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
@@ -32,7 +32,7 @@ pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
     // statically vs dynamically, so we check the dynamic case first since
     // it might be more specific.
     if let Some(resolver) = neighbor_info.dynamically_required_property("name") {
-        resolver.resolve_with(adapter, contexts, move |vertex, candidate| {
+        resolver.resolve_with(&adapter, contexts, move |vertex, candidate| {
             resolve_method_from_candidate_value(current_crate, previous_crate, vertex, candidate)
         })
     } else if let Some(candidate) = neighbor_info.statically_required_property("name") {

@@ -552,7 +552,7 @@ mod tests {
         }
 
         let mut results: Vec<Output> =
-            trustfall::execute_query(&schema, Arc::new(adapter), query, variables.clone())
+            trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
                 .expect("failed to run query")
                 .map(|row| row.try_into_struct().expect("shape mismatch"))
                 .collect();

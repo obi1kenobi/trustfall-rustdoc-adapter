@@ -49,7 +49,11 @@ impl<'a> RustdocAdapter<'a> {
     }
 }
 
-impl<'a> Adapter<'a> for RustdocAdapter<'a> {
+impl Drop for RustdocAdapter<'_> {
+    fn drop(&mut self) {}
+}
+
+impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
     type Vertex = Vertex<'a>;
 
     fn resolve_starting_vertices(

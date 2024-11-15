@@ -82,7 +82,7 @@ fn adapter_invariants() {
     let schema =
         Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
 
-    trustfall::provider::check_adapter_invariants(&schema, adapter)
+    trustfall::provider::check_adapter_invariants(&schema, &adapter)
 }
 
 /// Ensure that methods implemented on references (like `&Foo`) show up in queries.
@@ -122,7 +122,7 @@ fn impl_for_ref() {
     }
 
     let mut results: Vec<_> =
-        trustfall::execute_query(&schema, adapter.into(), query, variables.clone())
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
             .expect("failed to run query")
             .map(|row| row.try_into_struct().expect("shape mismatch"))
             .collect();
@@ -169,7 +169,7 @@ fn rustdoc_finds_supertrait() {
     }
 
     let mut results: Vec<_> =
-        trustfall::execute_query(&schema, adapter.into(), query, variables.clone())
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
             .expect("failed to run query")
             .map(|row| row.try_into_struct().expect("shape mismatch"))
             .collect();
@@ -231,7 +231,7 @@ fn rustdoc_sealed_traits() {
     }
 
     let mut results: Vec<_> =
-        trustfall::execute_query(&schema, adapter.into(), query, variables.clone())
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
             .expect("failed to run query")
             .map(|row| row.try_into_struct().expect("shape mismatch"))
             .collect();
@@ -447,7 +447,8 @@ fn rustdoc_sealed_traits() {
 #[test]
 fn rustdoc_finds_consts() {
     get_test_data!(data, consts);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let query = r#"
 {
@@ -555,7 +556,8 @@ fn rustdoc_finds_consts() {
 #[test]
 fn rustdoc_trait_has_associated_types() {
     get_test_data!(data, traits_with_associated_types);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let query = r#"
 {
@@ -608,7 +610,8 @@ fn rustdoc_trait_has_associated_types() {
 #[test]
 fn rustdoc_finds_statics() {
     get_test_data!(data, statics);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let query = r#"
 {
@@ -705,7 +708,8 @@ fn rustdoc_finds_statics() {
 #[test]
 fn rustdoc_modules() {
     get_test_data!(data, modules);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let mod_query = r#"
 {
@@ -842,7 +846,8 @@ fn rustdoc_modules() {
 #[test]
 fn rustdoc_associated_consts() {
     get_test_data!(data, associated_consts);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let impl_owner_query = r#"
 {
@@ -942,7 +947,8 @@ fn rustdoc_associated_consts() {
 #[test]
 fn function_abi() {
     get_test_data!(data, function_abi);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let query = r#"
 {
@@ -1010,7 +1016,8 @@ fn function_abi() {
 #[test]
 fn function_export_name() {
     get_test_data!(data, function_export_name);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let query = r#"
 {
@@ -1080,7 +1087,8 @@ fn function_export_name() {
 #[test]
 fn importable_paths() {
     get_test_data!(data, importable_paths);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let query = r#"
 {
@@ -1291,7 +1299,8 @@ fn importable_paths() {
 #[test]
 fn item_own_public_api_properties() {
     get_test_data!(data, importable_paths);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let query = r#"
 {
@@ -1414,7 +1423,8 @@ fn item_own_public_api_properties() {
 #[test]
 fn enum_variant_public_api_eligible() {
     get_test_data!(data, importable_paths);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let query = r#"
 {
@@ -1494,7 +1504,8 @@ fn enum_variant_public_api_eligible() {
 #[test]
 fn trait_associated_items_public_api_eligible() {
     get_test_data!(data, importable_paths);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let query = r#"
 {
@@ -1623,7 +1634,8 @@ fn trait_associated_items_public_api_eligible() {
 #[test]
 fn unions() {
     get_test_data!(data, unions);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     // Part 1: make sure unions have correct visibility (similart to importable_paths
     // test case)
@@ -1882,7 +1894,8 @@ fn unions() {
 #[test]
 fn function_has_body() {
     get_test_data!(data, function_has_body);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let query = r#"
 {
@@ -1981,7 +1994,7 @@ fn enum_discriminants() {
     }
 
     let mut results: Vec<Output> =
-        trustfall::execute_query(&schema, adapter.into(), query, variables.clone())
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
             .expect("failed to run query")
             .map(|row| row.try_into_struct().expect("shape mismatch"))
             .collect();
@@ -2141,7 +2154,7 @@ fn declarative_macros() {
     }
 
     let mut results: Vec<_> =
-        trustfall::execute_query(&schema, Arc::new(adapter), query, variables.clone())
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
             .expect("failed to run query")
             .map(|row| row.try_into_struct().expect("shape mismatch"))
             .collect();
@@ -2203,7 +2216,8 @@ fn declarative_macros() {
 #[test]
 fn proc_macros() {
     get_test_data!(data, proc_macros);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let query = r#"
 {
@@ -2332,7 +2346,8 @@ fn proc_macros() {
 #[test]
 fn generic_parameters() {
     get_test_data!(data, generic_parameters);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let top_level_query = r#"
 {
@@ -2607,7 +2622,8 @@ fn generic_parameters() {
 #[test]
 fn generic_type_parameters() {
     get_test_data!(data, generic_parameters);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let top_level_query = r#"
 {
@@ -2896,7 +2912,8 @@ fn generic_type_parameters() {
 #[test]
 fn generic_const_parameters() {
     get_test_data!(data, generic_parameters);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let top_level_query = r#"
 {
@@ -3122,7 +3139,7 @@ fn implemented_trait_instantiated_name() {
     }
 
     let mut results: Vec<_> =
-        trustfall::execute_query(&schema, Arc::new(adapter), query, variables.clone())
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
             .expect("failed to run query")
             .map(|row| row.try_into_struct().expect("shape mismatch"))
             .collect();
@@ -3198,7 +3215,8 @@ fn implemented_trait_instantiated_name() {
 #[test]
 fn parenthesized_type_bounds_on_type_and_impl() {
     get_test_data!(data, rust_type_name);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let query = r#"
 {
@@ -3319,7 +3337,8 @@ fn parenthesized_type_bounds_on_type_and_impl() {
 #[test]
 fn features() {
     get_test_data!(data, features);
-    let adapter = Arc::new(RustdocAdapter::new(&data, None));
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
 
     let query = r#"
 {

@@ -35,7 +35,7 @@ pub(super) fn resolve_crate_diff_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 }
 
 pub(super) fn resolve_crate_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
-    adapter: &RustdocAdapter<'a>,
+    adapter: &'a RustdocAdapter<'a>,
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
     resolve_info: &ResolveEdgeInfo,
@@ -206,7 +206,7 @@ pub(super) fn resolve_item_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 }
 
 pub(super) fn resolve_impl_owner_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
-    adapter: &RustdocAdapter<'a>,
+    adapter: &'a RustdocAdapter<'a>,
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
     resolve_info: &ResolveEdgeInfo,
@@ -549,7 +549,7 @@ pub(super) fn resolve_struct_field_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 }
 
 pub(super) fn resolve_impl_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
-    adapter: &RustdocAdapter<'a>,
+    adapter: &'a RustdocAdapter<'a>,
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
     resolve_info: &ResolveEdgeInfo,

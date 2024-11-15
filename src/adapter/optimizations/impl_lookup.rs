@@ -15,7 +15,7 @@ use super::super::{origin::Origin, vertex::Vertex, RustdocAdapter};
 
 /// Resolve the `ImplOwner.impl` and `ImplOwner.inherent_impl` edges.
 pub(crate) fn resolve_owner_impl<'a, V: AsVertex<Vertex<'a>> + 'a>(
-    adapter: &RustdocAdapter<'a>,
+    adapter: &'a RustdocAdapter<'a>,
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
     resolve_info: &ResolveEdgeInfo,
@@ -53,7 +53,7 @@ pub(crate) fn resolve_owner_impl<'a, V: AsVertex<Vertex<'a>> + 'a>(
 }
 
 fn resolve_owner_impl_based_on_method_info<'a, V: AsVertex<Vertex<'a>> + 'a>(
-    adapter: &RustdocAdapter<'a>,
+    adapter: &'a RustdocAdapter<'a>,
     contexts: ContextIterator<'a, V>,
     current_crate: &'a PackageHandler<'a>,
     previous_crate: Option<&'a PackageHandler<'a>>,
@@ -67,7 +67,7 @@ fn resolve_owner_impl_based_on_method_info<'a, V: AsVertex<Vertex<'a>> + 'a>(
     // statically vs dynamically, so we check the dynamic case first since
     // it might be more specific.
     if let Some(resolver) = method_vertex_info.dynamically_required_property("name") {
-        resolver.resolve_with(adapter, contexts, move |vertex, candidate| {
+        resolver.resolve_with(&adapter, contexts, move |vertex, candidate| {
             resolve_impl_based_on_method_name_candidate(
                 vertex,
                 current_crate,
