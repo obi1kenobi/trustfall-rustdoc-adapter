@@ -317,7 +317,13 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
             trait_,
         } => {
             if let Some(trait_) = trait_ {
-                write!(f, "<{} as {}>", Type(self_type, false), Path(trait_, false))?;
+                // In a trait declaration, Self::Assoc is encoded as <Self as "">::Assoc
+                // where `trait_.name` is the empty string.
+                if !trait_.name.is_empty() {
+                    write!(f, "<{} as {}>", Type(self_type, false), Path(trait_, false))?;
+                } else {
+                    write!(f, "{}", Type(self_type, false))?;
+                }
             } else {
                 write!(f, "{}", Type(self_type, false))?;
             }

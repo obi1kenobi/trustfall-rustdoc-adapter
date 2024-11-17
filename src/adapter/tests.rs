@@ -3635,7 +3635,7 @@ fn method_signature() {
             ... on Trait {
                 name @filter(op: "=", value: ["$trait"])
                 method {
-                    name @filter(op: "=", value: ["$method"]) @output
+                    name @output
                     signature @output
                 }
             }
@@ -3644,8 +3644,71 @@ fn method_signature() {
 }
     "#;
 
-    let variables: BTreeMap<&str, &str> =
-        BTreeMap::from_iter([("trait", "MyTrait"), ("method", "method")]);
+    let variables: BTreeMap<&str, &str> = BTreeMap::from_iter([("trait", "MyTrait")]);
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        signature: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            name: "associated_types".into(),
+            signature:
+                "fn associated_types<T, U>(a: Self::Assoc<T>, b: <Self as MyTrait>::Assoc<U>) \
+                    where Self::Assoc<()>: Send + 'static"
+                    .into(),
+        },
+        Output {
+            name: "method".into(),
+            signature: "fn method<'a, T, U: GAT<(T, ())>>() where Self: Sized,\n\
+                for<'b> <U as GAT<(T, ())>>::Type<'b, ()>: 'static"
+                .into(),
+        },
+    ];
+    expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn trait_method_nested_generics() {
+    let path = "./localdata/test_data/raw_type_json/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                name @filter(op: "=", value: ["$trait"])
+                method {
+                    name @output
+                    signature @output
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::from_iter([("trait", "GenericTrait")]);
 
     let schema =
         Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
@@ -3664,10 +3727,8 @@ fn method_signature() {
     results.sort_unstable();
 
     let mut expected_results = vec![Output {
-        name: "method".into(),
-        signature: "fn method<'a, T, U: GAT<(T, ())>>() where Self: Sized,\n\
-                for<'b> <U as GAT<(T, ())>>::Type<'b, ()>: 'static"
-            .into(),
+        name: "nested_generics".into(),
+        signature: "fn nested_generics<U>(t: T, u: U)".into(),
     }];
     expected_results.sort_unstable();
     similar_asserts::assert_eq!(expected_results, results);

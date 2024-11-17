@@ -89,8 +89,18 @@ pub fn awesome_function<'a, const N: usize>(a: &'a Constant<N>, b: &impl Clone) 
 }
 
 pub trait MyTrait {
+    type Assoc<T>;
+
     fn method<'a, T, U: GAT<(T, ())>>()
     where
         Self: Sized,
         for<'b> <U as GAT<(T, ())>>::Type<'b, ()>: 'static;
+
+    fn associated_types<T, U>(a: Self::Assoc<T>, b: <Self as MyTrait>::Assoc<U>)
+    where
+        Self::Assoc<()>: Send + 'static;
+}
+
+pub trait GenericTrait<T> {
+    fn nested_generics<U>(t: T, u: U);
 }

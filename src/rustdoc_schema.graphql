@@ -1200,7 +1200,9 @@ interface FunctionLike {
   has_body: Boolean!
   """
   Stringified representation of the function's signature, as close to the
-  original source code as possible.
+  original source code as possible.  May not preserve whitespace, constant
+  expressions in types, or path names, but the output will be semantically
+  equivalent to the original.
   """
   signature: String!
 
@@ -1318,7 +1320,9 @@ type Function implements Item & FunctionLike & Importable & GenericItem {
   has_body: Boolean!
   """
   Stringified representation of the function's signature, as close to the
-  original source code as possible.
+  original source code as possible.  May not preserve whitespace, constant
+  expressions in types, or path names, but the output will be semantically
+  equivalent to the original.
   """
   signature: String!
 
@@ -1418,7 +1422,9 @@ type Method implements Item & FunctionLike & GenericItem {
   has_body: Boolean!
   """
   Stringified representation of the function's signature, as close to the
-  original source code as possible.
+  original source code as possible.  May not preserve whitespace, constant
+  expressions in types, or path names, but the output will be semantically
+  equivalent to the original.
   """
   signature: String!
 
