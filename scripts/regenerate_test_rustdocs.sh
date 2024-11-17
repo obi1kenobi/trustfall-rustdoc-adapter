@@ -10,13 +10,27 @@ TARGET_DIR="$TOPLEVEL/localdata/test_data"
 
 # Allow setting an explicit toolchain, like +nightly or +beta.
 set +u
-TOOLCHAIN="$1"
+case "$1" in
+    "+"*)
+        TOOLCHAIN="$1"
+        shift
+        ;;
+    *)
+        TOOLCHAIN=""
+        ;;
+esac
 set -u
 echo "Generating rustdoc with: $(cargo $TOOLCHAIN --version)"
 RUSTDOC_CMD="cargo $TOOLCHAIN rustdoc"
 
+if [ "$#" -eq 0 ]; then
+    CRATES="$(find "$TOPLEVEL/test_crates/" -maxdepth 1 -mindepth 1 -type d)"
+else
+    CRATES="$@"
+fi
+
 # Run rustdoc on test_crates/*/
-for crate_path in $(find "$TOPLEVEL/test_crates/" -maxdepth 1 -mindepth 1 -type d); do
+for crate_path in $CRATES; do
     # Removing path prefix, leaving only the directory name without forward slashes
     crate=${crate_path#"$TOPLEVEL/test_crates/"}
 
