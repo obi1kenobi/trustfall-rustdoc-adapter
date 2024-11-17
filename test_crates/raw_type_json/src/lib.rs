@@ -12,7 +12,11 @@ pub trait GAT<T> {
 pub struct Struct<'a>(&'a ());
 
 impl<'a> GAT<&'a ()> for Struct<'a> {
-    type Type<'b, U> = Result<&'a (), &'b U> where Self: 'b, U: 'b;
+    type Type<'b, U>
+        = Result<&'a (), &'b U>
+    where
+        Self: 'b,
+        U: 'b;
 }
 
 pub struct Constant<const N: usize>;
@@ -78,4 +82,15 @@ pub fn my_generic_function<'a, T, U: GAT<T>>(
 ) -> impl std::future::Future<Output: Iterator<Item: 'a + Send> + for<'z> FnMut(&'z ()) -> &'z &'a ()>
 {
     unimplemented!()
+}
+
+pub fn awesome_function<'a, const N: usize>(a: &'a Constant<N>, b: &impl Clone) -> impl Send {
+    unimplemented!()
+}
+
+pub trait MyTrait {
+    fn method<'a, T, U: GAT<(T, ())>>()
+    where
+        Self: Sized,
+        for<'b> <U as GAT<(T, ())>>::Type<'b, ()>: 'static;
 }
