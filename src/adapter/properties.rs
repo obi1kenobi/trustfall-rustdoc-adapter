@@ -9,7 +9,7 @@ use trustfall::{
 
 use crate::{attributes::Attribute, IndexedCrate};
 
-use super::{origin::Origin, vertex::Vertex};
+use super::{origin::Origin, rust_type_name, vertex::Vertex};
 
 pub(super) fn resolve_crate_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
@@ -251,6 +251,18 @@ pub(super) fn resolve_function_like_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             contexts,
             field_property!(as_function, has_body, { (*has_body).into() }),
         ),
+        "signature" => resolve_property_with(contexts, move |vertex| {
+            let item = vertex.as_item().expect("FunctionLike not an item");
+            let func = vertex.as_function().expect("FunctionLike not a function");
+
+            rust_type_name::function_signature(
+                func,
+                item.name
+                    .as_ref()
+                    .expect("FunctionLike does not have a name"),
+            )
+            .into()
+        }),
         _ => unreachable!("FunctionLike property {property_name}"),
     }
 }
