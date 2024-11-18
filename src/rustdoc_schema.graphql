@@ -1198,6 +1198,13 @@ interface FunctionLike {
   unsafe: Boolean!
   async: Boolean!
   has_body: Boolean!
+  """
+  Stringified representation of the function's signature, as close to the
+  original source code as possible.  May not preserve whitespace, constant
+  expressions in types, or path names, but the output will be semantically
+  equivalent to the original.
+  """
+  signature: String!
 
   # own edges
   parameter: [FunctionParameter!]
@@ -1311,6 +1318,13 @@ type Function implements Item & FunctionLike & Importable & GenericItem {
   unsafe: Boolean!
   async: Boolean!
   has_body: Boolean!
+  """
+  Stringified representation of the function's signature, as close to the
+  original source code as possible.  May not preserve whitespace, constant
+  expressions in types, or path names, but the output will be semantically
+  equivalent to the original.
+  """
+  signature: String!
 
   # own properties
   """
@@ -1406,6 +1420,13 @@ type Method implements Item & FunctionLike & GenericItem {
   unsafe: Boolean!
   async: Boolean!
   has_body: Boolean!
+  """
+  Stringified representation of the function's signature, as close to the
+  original source code as possible.  May not preserve whitespace, constant
+  expressions in types, or path names, but the output will be semantically
+  equivalent to the original.
+  """
+  signature: String!
 
   # edge from Item
   span: Span
