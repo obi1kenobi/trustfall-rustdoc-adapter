@@ -146,7 +146,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "FunctionLike" | "Function" | "Method"
                     if matches!(
                         property_name.as_ref(),
-                        "const" | "unsafe" | "async" | "has_body"
+                        "const" | "unsafe" | "async" | "has_body" | "signature"
                     ) =>
                 {
                     properties::resolve_function_like_property(contexts, property_name)
