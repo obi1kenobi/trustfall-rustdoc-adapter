@@ -21,6 +21,15 @@ pub(crate) fn implemented_trait_instantiated_name(
     }
 }
 
+/// Serializes a [`Function`] to a `String` containing the function signature,
+/// including generic parameter definitions, to be as close to the original code
+/// as possible.
+///
+/// [`Function`]: rustdoc_types::Function
+pub(crate) fn function_signature(func: &rustdoc_types::Function, name: &str) -> String {
+    Function(func, name).to_string()
+}
+
 fn rustdoc_path_instantiated_name(path: &rustdoc_types::Path) -> String {
     Path(path, false).to_string()
 }
@@ -32,7 +41,7 @@ fn generic_bound_instantiated_name(bound: &rustdoc_types::GenericBound) -> Strin
 /// Creates a struct named `$t` that wraps a `rustdoc_types::$t` reference,
 /// and implements `Display` on it by calling the given `$formatter` function.
 macro_rules! display_wrapper {
-    ($vis:vis $t:ident, $formatter:ident $(,  $extra:ident)*) => {
+    ($vis:vis $t:ident, $formatter:ident $(,  $extra:ty)*) => {
         #[doc = concat!(
             "Wraps a &rustdoc_types::",
             stringify!($t),
@@ -82,6 +91,8 @@ fn intersperse_with<T, I: IntoIterator<Item = T>, U: Display, F: Fn(T) -> U>(
     intersperse(fmt, delim, items, |x, fmt| f(x).fmt(fmt))
 }
 
+/// It is an error to print a generic param that is marked as `is_synthetic`.
+/// Consider using [`GenericParamDefs`] to filter these out if you have a collection.
 fn fmt_generic_param_def(this: &GenericParamDef, f: &mut Formatter<'_>) -> Result {
     match &this.0.kind {
         rustdoc_types::GenericParamDefKind::Lifetime { outlives } => {
@@ -97,15 +108,16 @@ fn fmt_generic_param_def(this: &GenericParamDef, f: &mut Formatter<'_>) -> Resul
             is_synthetic,
         } => {
             if *is_synthetic {
-                unreachable!(
-                    "synthetic generic definitions do not occur in types.\n\
-                    This code will need to be updated if used to format generic definitions \
-                    (e.g., in functions)."
+                unreachable!("synthetic generic parameters should not be printed.\n\
+                    They do not occur in types, and in function definitions they should be filtered out."
                 )
             }
 
             write!(f, "{}", this.0.name)?;
-            intersperse_with(f, " + ", bounds, |gb| GenericBound(gb, bounds.len() > 1))?;
+            if !bounds.is_empty() {
+                write!(f, ": ")?;
+                intersperse_with(f, " + ", bounds, |gb| GenericBound(gb, bounds.len() > 1))?;
+            }
 
             if let Some(def) = default {
                 write!(f, " = {}", Type(def, false))?;
@@ -124,11 +136,52 @@ fn fmt_generic_param_def(this: &GenericParamDef, f: &mut Formatter<'_>) -> Resul
 
 display_wrapper!(GenericParamDef, fmt_generic_param_def);
 
+/// Wrapper to print a collection of [`GenericParamDef`]s while filtering out
+/// those that are marked as `is_synthetic`.
+struct GenericParamDefs<'a>(&'a [rustdoc_types::GenericParamDef]);
+
+impl Display for GenericParamDefs<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        intersperse_with(
+            f,
+            ", ",
+            self.0.iter().filter(|def| {
+                !matches!(
+                    def.kind,
+                    rustdoc_types::GenericParamDefKind::Type {
+                        is_synthetic: true,
+                        ..
+                    }
+                )
+            }),
+            GenericParamDef,
+        )
+    }
+}
+
+impl GenericParamDefs<'_> {
+    /// returns whether this declaration is really empty in terms of printing,
+    /// after synthetic parameters are removed.
+    fn is_empty(&self) -> bool {
+        self.0
+            .iter()
+            .filter(|x| {
+                !matches!(
+                    x.kind,
+                    rustdoc_types::GenericParamDefKind::Type {
+                        is_synthetic: true,
+                        ..
+                    }
+                )
+            })
+            .count()
+            == 0
+    }
+}
+
 fn fmt_poly_trait(this: &PolyTrait, f: &mut Formatter<'_>) -> Result {
-    if !this.0.generic_params.is_empty() {
-        write!(f, "for<")?;
-        intersperse_with(f, ", ", &this.0.generic_params, GenericParamDef)?;
-        write!(f, "> ")?;
+    if !GenericParamDefs(&this.0.generic_params).is_empty() {
+        write!(f, "for<{}> ", GenericParamDefs(&this.0.generic_params))?;
     }
 
     write!(f, "{}", Path(&this.0.trait_, this.1))
@@ -181,78 +234,16 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
         rustdoc_types::Type::Primitive(t) => write!(f, "{t}"),
         rustdoc_types::Type::FunctionPointer(fnp) => {
             // order: for<_> const async unsafe fn()
-            if !fnp.generic_params.is_empty() {
-                write!(f, "for<")?;
-                intersperse_with(f, ", ", &fnp.generic_params, GenericParamDef)?;
-                write!(f, "> ")?;
+            if !GenericParamDefs(&fnp.generic_params).is_empty() {
+                write!(f, "for<{}> ", GenericParamDefs(&fnp.generic_params))?;
             }
 
-            if fnp.header.is_const {
-                write!(f, "const ")?;
-            }
-
-            if fnp.header.is_async {
-                write!(f, "async ")?;
-            }
-
-            if fnp.header.is_unsafe {
-                write!(f, "unsafe ")?;
-            }
-
-            macro_rules! abi_name {
-                ($f:expr, $name:literal, $unwind:expr) => {{
-                    write!($f, concat!("extern \"", $name))?;
-
-                    if *$unwind {
-                        write!(f, "-unwind")?;
-                    }
-
-                    write!(f, "\" ")?;
-                }};
-            }
-
-            match &fnp.header.abi {
-                rustdoc_types::Abi::Rust => (),
-                rustdoc_types::Abi::C { unwind } => abi_name!(f, "C", unwind),
-                rustdoc_types::Abi::Cdecl { unwind } => abi_name!(f, "cdecl", unwind),
-                rustdoc_types::Abi::Stdcall { unwind } => abi_name!(f, "stdcall", unwind),
-                rustdoc_types::Abi::Fastcall { unwind } => abi_name!(f, "fastcall", unwind),
-                rustdoc_types::Abi::Aapcs { unwind } => abi_name!(f, "aapcs", unwind),
-                rustdoc_types::Abi::Win64 { unwind } => abi_name!(f, "win64", unwind),
-                rustdoc_types::Abi::SysV64 { unwind } => abi_name!(f, "sysv64", unwind),
-                rustdoc_types::Abi::System { unwind } => abi_name!(f, "system", unwind),
-                rustdoc_types::Abi::Other(other) => write!(f, r#"extern "{other}" "#)?,
-            }
-
-            write!(f, "fn(")?;
-
-            enum Arg<'a> {
-                Named(&'a str, Type<'a>),
-                Dots,
-            }
-
-            intersperse(
+            write!(
                 f,
-                ", ",
-                fnp.sig
-                    .inputs
-                    .iter()
-                    .map(|(name, ty)| Arg::Named(name, Type(ty, false)))
-                    .chain(fnp.sig.is_c_variadic.then_some(Arg::Dots)),
-                |arg, f| match arg {
-                    Arg::Named(name, ty) => write!(f, "{name}: {ty}"),
-                    Arg::Dots => write!(f, "..."),
-                },
+                "{}fn{}",
+                FunctionHeader(&fnp.header),
+                FunctionSignature(&fnp.sig, this.1)
             )?;
-
-            write!(f, ")")?;
-
-            if let Some(output) = &fnp.sig.output {
-                // If `this` follows + bounds, so does the output, so the output
-                // will need to be wrapped in parentheses if `this.1` is true and it
-                // is a `dyn/impl Trait`.
-                write!(f, " -> {}", Type(output, this.1))?;
-            }
 
             Ok(())
         }
@@ -326,7 +317,13 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
             trait_,
         } => {
             if let Some(trait_) = trait_ {
-                write!(f, "<{} as {}>", Type(self_type, false), Path(trait_, false))?;
+                // In a trait declaration, Self::Assoc is encoded as <Self as "">::Assoc
+                // where `trait_.name` is the empty string.
+                if !trait_.name.is_empty() {
+                    write!(f, "<{} as {}>", Type(self_type, false), Path(trait_, false))?;
+                } else {
+                    write!(f, "{}", Type(self_type, false))?;
+                }
             } else {
                 write!(f, "{}", Type(self_type, false))?;
             }
@@ -354,10 +351,8 @@ fn fmt_generic_bound(this: &GenericBound, f: &mut Formatter<'_>) -> Result {
             generic_params,
             modifier,
         } => {
-            if !generic_params.is_empty() {
-                write!(f, "for<")?;
-                intersperse_with(f, ", ", generic_params, GenericParamDef)?;
-                write!(f, "> ")?;
+            if !GenericParamDefs(generic_params).is_empty() {
+                write!(f, "for<{}> ", GenericParamDefs(generic_params))?;
             }
 
             match modifier {
@@ -477,6 +472,135 @@ fn fmt_path(this: &Path, f: &mut Formatter<'_>) -> Result {
 }
 
 display_wrapper!(Path, fmt_path, bool);
+
+fn fmt_function_header(this: &FunctionHeader, f: &mut Formatter<'_>) -> Result {
+    if this.0.is_const {
+        write!(f, "const ")?;
+    }
+
+    if this.0.is_async {
+        write!(f, "async ")?;
+    }
+
+    if this.0.is_unsafe {
+        write!(f, "unsafe ")?;
+    }
+
+    macro_rules! abi_name {
+        ($f:expr, $name:literal, $unwind:expr) => {{
+            write!($f, concat!("extern \"", $name))?;
+
+            if *$unwind {
+                write!(f, "-unwind")?;
+            }
+
+            write!(f, "\" ")?;
+        }};
+    }
+
+    match &this.0.abi {
+        rustdoc_types::Abi::Rust => (),
+        rustdoc_types::Abi::C { unwind } => abi_name!(f, "C", unwind),
+        rustdoc_types::Abi::Cdecl { unwind } => abi_name!(f, "cdecl", unwind),
+        rustdoc_types::Abi::Stdcall { unwind } => abi_name!(f, "stdcall", unwind),
+        rustdoc_types::Abi::Fastcall { unwind } => abi_name!(f, "fastcall", unwind),
+        rustdoc_types::Abi::Aapcs { unwind } => abi_name!(f, "aapcs", unwind),
+        rustdoc_types::Abi::Win64 { unwind } => abi_name!(f, "win64", unwind),
+        rustdoc_types::Abi::SysV64 { unwind } => abi_name!(f, "sysv64", unwind),
+        rustdoc_types::Abi::System { unwind } => abi_name!(f, "system", unwind),
+        rustdoc_types::Abi::Other(other) => write!(f, r#"extern "{other}" "#)?,
+    }
+
+    Ok(())
+}
+
+display_wrapper!(FunctionHeader, fmt_function_header);
+
+fn fmt_function_signature(this: &FunctionSignature, f: &mut Formatter<'_>) -> Result {
+    write!(f, "(")?;
+    enum Arg<'a> {
+        Named(&'a str, Type<'a>),
+        Dots,
+    }
+
+    intersperse(
+        f,
+        ", ",
+        this.0
+            .inputs
+            .iter()
+            .map(|(name, ty)| Arg::Named(name, Type(ty, false)))
+            .chain(this.0.is_c_variadic.then_some(Arg::Dots)),
+        |arg, f| match arg {
+            Arg::Named(name, ty) => write!(f, "{name}: {ty}"),
+            Arg::Dots => write!(f, "..."),
+        },
+    )?;
+
+    write!(f, ")")?;
+
+    if let Some(output) = &this.0.output {
+        // If `this` follows + bounds, so does the output, so the output
+        // will need to be wrapped in parentheses if `this.1` is true and it
+        // is a `dyn/impl Trait`.
+        write!(f, " -> {}", Type(output, this.1))?;
+    }
+
+    Ok(())
+}
+
+display_wrapper!(FunctionSignature, fmt_function_signature, bool);
+
+fn fmt_where_predicate(this: &WherePredicate, f: &mut Formatter<'_>) -> Result {
+    match &this.0 {
+        rustdoc_types::WherePredicate::BoundPredicate {
+            type_,
+            bounds,
+            generic_params,
+        } => {
+            if !GenericParamDefs(generic_params).is_empty() {
+                write!(f, "for<{}> ", GenericParamDefs(generic_params))?;
+            }
+
+            write!(f, "{}: ", Type(type_, false))?;
+
+            intersperse_with(f, " + ", bounds, |b| GenericBound(b, bounds.len() > 1))
+        }
+        rustdoc_types::WherePredicate::LifetimePredicate { lifetime, outlives } => {
+            write!(f, "'{lifetime}: ")?;
+
+            intersperse(f, " + ", outlives, |s, f| f.write_str(s))
+        }
+        rustdoc_types::WherePredicate::EqPredicate { lhs, rhs } => {
+            write!(f, "{} = ", Type(lhs, false))?;
+
+            match rhs {
+                rustdoc_types::Term::Type(ty) => write!(f, "{}", Type(ty, false)),
+                rustdoc_types::Term::Constant(constant) => write!(f, "{}", Constant(constant)),
+            }
+        }
+    }
+}
+
+display_wrapper!(WherePredicate, fmt_where_predicate);
+
+fn fmt_function(this: &Function, f: &mut Formatter<'_>) -> Result {
+    write!(f, "{}fn {}", FunctionHeader(&this.0.header), this.1)?;
+    if !GenericParamDefs(&this.0.generics.params).is_empty() {
+        write!(f, "<{}>", GenericParamDefs(&this.0.generics.params))?;
+    }
+
+    write!(f, "{}", FunctionSignature(&this.0.sig, false))?;
+
+    if !this.0.generics.where_predicates.is_empty() {
+        write!(f, " where ")?;
+        intersperse_with(f, ",\n", &this.0.generics.where_predicates, WherePredicate)?;
+    }
+
+    Ok(())
+}
+
+display_wrapper!(Function, fmt_function, &'a str);
 
 #[cfg(test)]
 mod tests {
@@ -717,14 +841,15 @@ mod tests {
     #[test]
     fn is_synthetic() {
         with_crate_root(|crate_, module| {
-            let func = module
+            let (name, func) = module
                 .items
                 .iter()
                 .find_map(|x| {
                     let item = crate_.index.get(x)?;
-                    if item.name.as_ref()? == "is_synthetic" {
+                    let name = item.name.as_ref()?;
+                    if name == "is_synthetic" {
                         if let rustdoc_types::ItemEnum::Function(func) = &item.inner {
-                            return Some(func);
+                            return Some((name, func));
                         }
                     }
 
@@ -732,23 +857,9 @@ mod tests {
                 })
                 .expect("couldn't find `is_synthetic`");
 
-            let inputs: Vec<_> = func
-                .sig
-                .inputs
-                .iter()
-                .map(|(k, v)| (k, rust_type_name(v)))
-                .collect();
-
             similar_asserts::assert_eq!(
-                inputs
-                    .iter()
-                    .map(|(k, v)| (k.as_str(), v.as_str()))
-                    .collect::<Vec<_>>(),
-                vec![("x", "impl std::any::Any"),]
-            );
-            similar_asserts::assert_eq!(
-                rust_type_name(func.sig.output.as_ref().expect("no output")),
-                "impl std::any::Any"
+                super::function_signature(func, name),
+                "fn is_synthetic(x: impl std::any::Any) -> impl std::any::Any"
             );
         });
     }
@@ -790,6 +901,43 @@ mod tests {
                     ("sanity", "&dyn std::fmt::Display"),
                 ]
             );
+        });
+    }
+
+    #[test]
+    fn function_signature() {
+        with_crate_root(|crate_, module| {
+            let (name, func) = module
+                .items
+                .iter()
+                .find_map(|x| {
+                    let item = crate_.index.get(x)?;
+                    let name = item.name.as_ref()?;
+                    if name == "my_generic_function" {
+                        if let rustdoc_types::ItemEnum::Function(func) = &item.inner {
+                            return Some((name, func));
+                        }
+                    }
+
+                    None
+                })
+                .expect("couldn't find `my_generic_function`");
+
+            similar_asserts::assert_eq!(super::function_signature(func, name), "fn my_generic_function<'a, T, U: GAT<T>>(\
+                a: &'a &'static mut *const T, \
+                b: &(dyn Iterator<Item = T> + Unpin + Send), \
+                c: Constant<25>, \
+                d: impl for<'x> FnMut(\
+                    &'a unsafe extern \"C\" fn(\
+                        _: *const [u8], \
+                        _: &'x mut *mut (), \
+                        ...\
+                    ) -> std::borrow::Cow<'static, [u8]>\
+                ) -> &'x (dyn std::fmt::Display) \
+                + Send \
+                + 'static, \
+                e: <U as GAT<T>>::Type<'a, &'static *const ()>\
+                ) -> impl std::future::Future<Output: Iterator<Item: 'a + Send> + for<'z> FnMut(&'z ()) -> &'z &'a ()>");
         });
     }
 }
