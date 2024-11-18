@@ -10,6 +10,9 @@ TARGET_DIR="$TOPLEVEL/localdata/test_data"
 
 # Allow setting an explicit toolchain, like +nightly or +beta.
 set +u
+# If the first argument starts with +, it's specifying a toolchain,
+# and we need to not count it when checking if the user is running
+# `regenerate_test_rustdocs.sh crate1 crate2 ...`
 case "$1" in
     "+"*)
         TOOLCHAIN="$1"
@@ -23,13 +26,14 @@ set -u
 echo "Generating rustdoc with: $(cargo $TOOLCHAIN --version)"
 RUSTDOC_CMD="cargo $TOOLCHAIN rustdoc"
 
+# If there are no arguments, run rustdoc on test_crates/*
 if [ "$#" -eq 0 ]; then
     CRATES="$(find "$TOPLEVEL/test_crates/" -maxdepth 1 -mindepth 1 -type d)"
+# If there are arguments, just regenerate test_crates/$arg for each argument
 else
     CRATES="$@"
 fi
 
-# Run rustdoc on test_crates/*/
 for crate_path in $CRATES; do
     # Removing path prefix, leaving only the directory name without forward slashes
     crate=${crate_path#"$TOPLEVEL/test_crates/"}
