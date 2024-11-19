@@ -58,7 +58,7 @@ for crate_path in $CRATES; do
         pushd "$TOPLEVEL/test_crates/$crate"
         RUSTC_BOOTSTRAP=1 $RUSTDOC_CMD -- -Zunstable-options --document-private-items --document-hidden-items --output-format=json
         mkdir -p "$TARGET_DIR/$crate"
-        mv "$RUSTDOC_OUTPUT_DIR/$crate.json" "$TARGET_DIR/$crate/rustdoc.json"
+        mv "$RUSTDOC_OUTPUT_DIR/$crate.json" "$target"
         popd
     fi
 done
