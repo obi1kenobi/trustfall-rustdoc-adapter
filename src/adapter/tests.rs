@@ -1958,6 +1958,11 @@ fn function_has_body() {
     let indexed_crate = IndexedCrate::new(&crate_);
     let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
 
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    // This query should only return functions defined at top level,
+    // not ones inside traits or `impl` blocks. Those are supposed to be of type `Method` instead.
     let query = r#"
 {
     Crate {
@@ -1970,11 +1975,7 @@ fn function_has_body() {
     }
 }
 "#;
-
     let variables: BTreeMap<&str, &str> = BTreeMap::default();
-
-    let schema =
-        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
 
     #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
     struct Output {
@@ -1999,22 +2000,97 @@ fn function_has_body() {
             has_body: true,
         },
         Output {
-            name: "inside_impl_block".into(),
-            has_body: true,
-        },
-        Output {
-            name: "trait_no_body".into(),
-            has_body: false,
-        },
-        Output {
-            name: "trait_with_body".into(),
-            has_body: true,
-        },
-        Output {
             name: "extern_no_body".into(),
             has_body: false,
         },
     ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                owner: name @output
+
+                method {
+                    name @output
+                    has_body @output
+                }
+            }
+        }
+    }
+}
+"#;
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct OutputWithOwner {
+        owner: String,
+        name: String,
+        has_body: bool,
+    }
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        OutputWithOwner {
+            owner: "Bar".into(),
+            name: "trait_no_body".into(),
+            has_body: false,
+        },
+        OutputWithOwner {
+            owner: "Bar".into(),
+            name: "trait_with_body".into(),
+            has_body: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                owner: name @output
+
+                inherent_impl {
+                    method {
+                        name @output
+                        has_body @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![OutputWithOwner {
+        owner: "Foo".into(),
+        name: "inside_impl_block".into(),
+        has_body: true,
+    }];
     expected_results.sort_unstable();
 
     similar_asserts::assert_eq!(expected_results, results);
