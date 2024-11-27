@@ -3733,3 +3733,88 @@ fn trait_method_nested_generics() {
     expected_results.sort_unstable();
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn extern_fn() {
+    let path = "./localdata/test_data/extern_fn/rustdoc.json";
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        .expect("failed to load rustdoc");
+
+    let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
+    let indexed_crate = IndexedCrate::new(&crate_);
+    let adapter = Arc::new(RustdocAdapter::new(&indexed_crate, None));
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+                is_unsafe: unsafe @output
+                has_body @output
+
+                importable_path @optional {
+                    public_api @output
+                    path @output
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::new();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        is_unsafe: bool,
+        has_body: bool,
+        public_api: Option<bool>,
+        path: Option<Vec<String>>,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            name: "legacy_extern_fn".into(),
+            is_unsafe: true,
+            has_body: false,
+            public_api: Some(true),
+            path: Some(vec!["extern_fn".into(), "legacy_extern_fn".into()]),
+        },
+        Output {
+            name: "implicit_unsafe_extern_fn".into(),
+            is_unsafe: true,
+            has_body: false,
+            public_api: Some(true),
+            path: Some(vec!["extern_fn".into(), "implicit_unsafe_extern_fn".into()]),
+        },
+        Output {
+            name: "explicit_unsafe_extern_fn".into(),
+            is_unsafe: true,
+            has_body: false,
+            public_api: Some(true),
+            path: Some(vec!["extern_fn".into(), "explicit_unsafe_extern_fn".into()]),
+        },
+        Output {
+            name: "safe_extern_fn".into(),
+            is_unsafe: false,
+            has_body: false,
+            public_api: Some(true),
+            path: Some(vec!["extern_fn".into(), "safe_extern_fn".into()]),
+        },
+    ];
+    expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+}
