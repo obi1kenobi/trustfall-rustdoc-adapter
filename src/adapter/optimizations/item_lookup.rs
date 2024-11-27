@@ -16,9 +16,10 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     resolve_info: &ResolveEdgeInfo,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
+    let destination = resolve_info.destination();
+
     // Is the `importable_path` edge being resolved in a subsequent step?
-    if let Some(neighbor_info) = resolve_info
-        .destination()
+    if let Some(neighbor_info) = destination
         .first_edge("importable_path")
         .as_ref()
         .map(|x| x.destination())
@@ -40,6 +41,26 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 let crate_vertex = vertex.as_indexed_crate().expect("vertex was not a Crate");
                 let origin = vertex.origin;
                 resolve_items_by_importable_path(crate_vertex, origin, path_value.clone())
+            });
+        }
+    }
+
+    // For this edge, normally the destination is of type `Item`.
+    // But if the destination is coerced to type `Function`, and is then filtered on `export_name`,
+    // we have another index we can apply to look up the relevant functions directly.
+    if destination.coerced_to_type().map(|x| x.as_ref()) == Some("Function") {
+        if let Some(candidate) = destination.statically_required_property("export_name") {
+            return resolve_neighbors_with(contexts, move |vertex| {
+                let crate_vertex = vertex.as_indexed_crate().expect("vertex was not a Crate");
+                let origin = vertex.origin;
+                resolve_function_by_export_name(crate_vertex, origin, candidate.clone())
+            });
+        } else if let Some(dynamic_value) = destination.dynamically_required_property("export_name")
+        {
+            return dynamic_value.resolve_with(adapter, contexts, |vertex, candidate| {
+                let crate_vertex = vertex.as_indexed_crate().expect("vertex was not a Crate");
+                let origin = vertex.origin;
+                resolve_function_by_export_name(crate_vertex, origin, candidate)
             });
         }
     }
@@ -92,6 +113,42 @@ fn resolve_items_by_importable_path_field_value<'a>(
     } else {
         // No such items found.
         Box::new(std::iter::empty())
+    }
+}
+
+fn resolve_function_by_export_name<'a>(
+    crate_vertex: &'a IndexedCrate<'a>,
+    origin: Origin,
+    export_name: CandidateValue<FieldValue>,
+) -> VertexIterator<'a, Vertex<'a>> {
+    match export_name {
+        CandidateValue::Impossible => Box::new(std::iter::empty()),
+        CandidateValue::Single(value) => Box::new(
+            resolve_function_by_export_name_field_value(crate_vertex, origin, &value).into_iter(),
+        ),
+        CandidateValue::Multiple(values) => Box::new(values.into_iter().filter_map(move |value| {
+            resolve_function_by_export_name_field_value(crate_vertex, origin, &value)
+        })),
+        _ => {
+            // fall through to slow path
+            resolve_items_slow_path(crate_vertex, origin)
+        }
+    }
+}
+
+fn resolve_function_by_export_name_field_value<'a>(
+    crate_vertex: &'a IndexedCrate<'a>,
+    origin: Origin,
+    export_name: &FieldValue,
+) -> Option<Vertex<'a>> {
+    match export_name {
+        FieldValue::String(export_name) => crate_vertex
+            .export_name_index
+            .as_ref()
+            .expect("export name index was never built")
+            .get(export_name.as_ref())
+            .map(|item| origin.make_item_vertex(item)),
+        _ => None,
     }
 }
 
