@@ -29,7 +29,7 @@ pub struct IndexedCrate<'a> {
 
     /// index: method ("owned function") `Id` -> the struct/enum/union/trait that defines it;
     /// functions at top level will not have an index entry here
-    pub(crate) fn_owner_index: Option<HashMap<Id, &'a Item>>,
+    pub(crate) fn_owner_index: Option<HashMap<&'a Id, &'a Item>>,
 
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
     /// even if they are implemented by a type in that crate. This also includes
@@ -336,7 +336,7 @@ impl<'a> IndexedCrate<'a> {
     }
 }
 
-fn build_fn_owner_index(index: &HashMap<Id, Item>) -> HashMap<Id, &Item> {
+fn build_fn_owner_index(index: &HashMap<Id, Item>) -> HashMap<&Id, &Item> {
     #[cfg(feature = "rayon")]
     let iter = index.par_iter().map(|(_, value)| value);
     #[cfg(not(feature = "rayon"))]
@@ -356,14 +356,14 @@ fn build_fn_owner_index(index: &HashMap<Id, Item>) -> HashMap<Id, &Item> {
                 .filter_map(|id| index.get(id))
                 // Only keep the functions inside.
                 .filter_map(move |inner_item| match &inner_item.inner {
-                    rustdoc_types::ItemEnum::Function(..) => Some((inner_item.id, owner_item)),
+                    rustdoc_types::ItemEnum::Function(..) => Some((&inner_item.id, owner_item)),
                     _ => None,
                 });
 
             #[cfg(feature = "rayon")]
             let return_value = rayon::iter::Either::Left(output);
             #[cfg(not(feature = "rayon"))]
-            let return_value: Box<dyn Iterator<Item = (Id, &Item)>> = Box::new(output);
+            let return_value: Box<dyn Iterator<Item = (&Id, &Item)>> = Box::new(output);
 
             return_value
         } else {
@@ -395,14 +395,14 @@ fn build_fn_owner_index(index: &HashMap<Id, Item>) -> HashMap<Id, &Item> {
                 .filter_map(|id| index.get(id))
                 // Only keep the functions inside.
                 .filter_map(move |item| match &item.inner {
-                    rustdoc_types::ItemEnum::Function(..) => Some((item.id, owner_item)),
+                    rustdoc_types::ItemEnum::Function(..) => Some((&item.id, owner_item)),
                     _ => None,
                 });
 
             #[cfg(feature = "rayon")]
             let return_value = rayon::iter::Either::Right(output);
             #[cfg(not(feature = "rayon"))]
-            let return_value: Box<dyn Iterator<Item = (Id, &Item)>> = Box::new(output);
+            let return_value: Box<dyn Iterator<Item = (&Id, &Item)>> = Box::new(output);
 
             return_value
         }
