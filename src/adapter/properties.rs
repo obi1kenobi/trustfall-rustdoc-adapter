@@ -274,34 +274,7 @@ pub(super) fn resolve_function_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     match property_name {
         "export_name" => resolve_property_with(contexts, move |vertex| {
             let item = vertex.as_item().expect("not an Item vertex");
-
-            if item.attrs.iter().any(|attr| attr == "#[no_mangle]") {
-                // Items with `#[no_mangle]` attributes are exported under their item name.
-                // Ref: https://doc.rust-lang.org/reference/abi.html#the-no_mangle-attribute
-                item.name.clone().into()
-            } else {
-                // Look for an `#[export_name = "something"]` attribute.
-                // Ref: https://doc.rust-lang.org/reference/abi.html#the-export_name-attribute
-                item.attrs
-                    .iter()
-                    .filter_map(|attr| {
-                        if attr.starts_with("#[export_name") {
-                            let parsed = Attribute::new(attr);
-                            if parsed.content.base == "export_name" {
-                                parsed
-                                    .content
-                                    .assigned_item
-                                    .map(|name| name.trim_matches('"'))
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    })
-                    .next()
-                    .into()
-            }
+            crate::exported_name::function_export_name(item).into()
         }),
         _ => unreachable!("Function property {property_name}"),
     }

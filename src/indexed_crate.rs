@@ -31,6 +31,10 @@ pub struct IndexedCrate<'a> {
     /// functions at top level will not have an index entry here
     pub(crate) fn_owner_index: Option<HashMap<Id, &'a Item>>,
 
+    /// index: function export name (`#[no_mangle]` or `#[export_name = "..."]` attribute)
+    /// -> function item with that export name; exported symbol names must be unique.
+    pub(crate) export_name_index: Option<HashMap<&'a str, &'a Item>>,
+
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
     /// even if they are implemented by a type in that crate. This also includes
     /// Rust's built-in traits like `Debug, Send, Eq` etc.
@@ -243,6 +247,7 @@ impl<'a> IndexedCrate<'a> {
             imports_index: None,
             impl_index: None,
             fn_owner_index: None,
+            export_name_index: None,
         };
 
         debug_assert!(
@@ -282,6 +287,7 @@ impl<'a> IndexedCrate<'a> {
 
         value.impl_index = Some(build_impl_index(&crate_.index).into_inner());
         value.fn_owner_index = Some(build_fn_owner_index(&crate_.index));
+        value.export_name_index = Some(build_export_name_index(&crate_.index));
 
         value
     }
@@ -406,6 +412,22 @@ fn build_fn_owner_index(index: &HashMap<Id, Item>) -> HashMap<Id, &Item> {
 
             return_value
         }
+    })
+    .collect()
+}
+
+fn build_export_name_index(index: &HashMap<Id, Item>) -> HashMap<&str, &Item> {
+    #[cfg(feature = "rayon")]
+    let iter = index.par_iter().map(|(_, value)| value);
+    #[cfg(not(feature = "rayon"))]
+    let iter = index.values();
+
+    iter.filter_map(|item| {
+        if !matches!(item.inner, rustdoc_types::ItemEnum::Function(..)) {
+            return None;
+        }
+
+        crate::exported_name::function_export_name(item).map(move |name| (name, item))
     })
     .collect()
 }
