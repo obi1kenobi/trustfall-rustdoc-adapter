@@ -112,7 +112,20 @@ fn resolve_items_slow_path<'a>(
         .inner
         .index
         .values()
-        .filter(move |item| item.crate_id == own_crate_id);
+        .filter(move |item| item.crate_id == own_crate_id)
+        .filter(move |item| {
+            // We don't consider methods as top-level items in a crate.
+            // We should only return methods as owned items within a trait or impl.
+            // If we are to return this item, then either the item isn't a function at all,
+            // or it's a top-level function (i.e. has no owner listed in the index).
+            !matches!(item.inner, rustdoc_types::ItemEnum::Function(..))
+                || crate_vertex
+                    .fn_owner_index
+                    .as_ref()
+                    .expect("no fn_owner_index defined")
+                    .get(&item.id)
+                    .is_none()
+        });
 
     resolve_item_vertices(origin, items)
 }
