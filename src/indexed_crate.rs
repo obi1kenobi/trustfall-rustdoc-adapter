@@ -27,6 +27,10 @@ pub struct IndexedCrate<'a> {
     /// index: impl owner + impl'd item name -> list of (impl itself, the named item))
     pub(crate) impl_index: Option<HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>>,
 
+    /// index: method ("owned function") `Id` -> the struct/enum/union/trait that defines it;
+    /// functions at top level will not have an index entry here
+    pub(crate) fn_owner_index: Option<HashMap<Id, &'a Item>>,
+
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
     /// even if they are implemented by a type in that crate. This also includes
     /// Rust's built-in traits like `Debug, Send, Eq` etc.
@@ -238,6 +242,7 @@ impl<'a> IndexedCrate<'a> {
             manually_inlined_builtin_traits: create_manually_inlined_builtin_traits(crate_),
             imports_index: None,
             impl_index: None,
+            fn_owner_index: None,
         };
 
         debug_assert!(
@@ -276,6 +281,7 @@ impl<'a> IndexedCrate<'a> {
         );
 
         value.impl_index = Some(build_impl_index(&crate_.index).into_inner());
+        value.fn_owner_index = Some(build_fn_owner_index(&crate_.index));
 
         value
     }
@@ -328,6 +334,80 @@ impl<'a> IndexedCrate<'a> {
         let trait_item = &self.inner.index[id];
         sealed_trait::is_trait_sealed(self, trait_item)
     }
+}
+
+fn build_fn_owner_index(index: &HashMap<Id, Item>) -> HashMap<Id, &Item> {
+    #[cfg(feature = "rayon")]
+    let iter = index.par_iter().map(|(_, value)| value);
+    #[cfg(not(feature = "rayon"))]
+    let iter = index.values();
+
+    iter.flat_map(|owner_item| {
+        if let rustdoc_types::ItemEnum::Trait(value) = &owner_item.inner {
+            #[cfg(feature = "rayon")]
+            let trait_items = value.items.par_iter();
+            #[cfg(not(feature = "rayon"))]
+            let trait_items = value.items.iter();
+
+            let output = trait_items
+                // Try to resolve each trait item ID to an item in the index.
+                // In principle, this *should* always find a match, but we don't want to crash
+                // if rustdoc happens to omit an item due to a bug.
+                .filter_map(|id| index.get(id))
+                // Only keep the functions inside.
+                .filter_map(move |inner_item| match &inner_item.inner {
+                    rustdoc_types::ItemEnum::Function(..) => Some((inner_item.id, owner_item)),
+                    _ => None,
+                });
+
+            #[cfg(feature = "rayon")]
+            let return_value = rayon::iter::Either::Left(output);
+            #[cfg(not(feature = "rayon"))]
+            let return_value: Box<dyn Iterator<Item = (Id, &Item)>> = Box::new(output);
+
+            return_value
+        } else {
+            let impls = match &owner_item.inner {
+                rustdoc_types::ItemEnum::Union(value) => value.impls.as_slice(),
+                rustdoc_types::ItemEnum::Struct(value) => value.impls.as_slice(),
+                rustdoc_types::ItemEnum::Enum(value) => value.impls.as_slice(),
+                _ => &[],
+            };
+
+            #[cfg(feature = "rayon")]
+            let impl_iter = impls.into_par_iter();
+            #[cfg(not(feature = "rayon"))]
+            let impl_iter = impls.into_iter();
+
+            // Resolve the impl block, if we can find it in the index.
+            // In principle, this *should* always find a match, but we don't want to crash
+            // if rustdoc happens to omit an item due to a bug.
+            let output = impl_iter
+                .filter_map(|id| index.get(id))
+                // Get the IDs of the items inside it.
+                .flat_map(|impl_item| match &impl_item.inner {
+                    rustdoc_types::ItemEnum::Impl(contents) => contents.items.as_slice(),
+                    _ => &[],
+                })
+                // Resolve each item, if we can find it in the index.
+                // In principle, this *should* always find a match, but we don't want to crash
+                // if rustdoc happens to omit an item due to a bug.
+                .filter_map(|id| index.get(id))
+                // Only keep the functions inside.
+                .filter_map(move |item| match &item.inner {
+                    rustdoc_types::ItemEnum::Function(..) => Some((item.id, owner_item)),
+                    _ => None,
+                });
+
+            #[cfg(feature = "rayon")]
+            let return_value = rayon::iter::Either::Right(output);
+            #[cfg(not(feature = "rayon"))]
+            let return_value: Box<dyn Iterator<Item = (Id, &Item)>> = Box::new(output);
+
+            return_value
+        }
+    })
+    .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
