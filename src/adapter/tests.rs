@@ -1113,6 +1113,39 @@ fn function_export_name() {
         ],
         results
     );
+
+    // Ensure that looking up functions by export name works correctly,
+    // since this path is expected to hit our index instead of iterating over everything.
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Function {
+                    name @output
+                    export_name @filter(op: "=", value: ["$export_name"]) @output
+                    visibility_limit @output
+                }
+            }
+        }
+    }
+    "#;
+    for row in results {
+        let Some(export_name) = &row.export_name else {
+            continue;
+        };
+        let variables: BTreeMap<&str, &str> = [("export_name", export_name.as_str())]
+            .into_iter()
+            .collect();
+
+        let mut results: Vec<_> =
+            trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+                .expect("failed to run query")
+                .map(|row| row.try_into_struct().expect("shape mismatch"))
+                .collect();
+        results.sort_unstable();
+
+        similar_asserts::assert_eq!(vec![row], results);
+    }
 }
 
 #[test]
