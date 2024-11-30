@@ -1,0 +1,31 @@
+[package]
+name = "features"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["foo", "bar"]
+
+# these are (transitively) enabled by default
+foo = ["baz"]
+bar = []
+baz = []
+
+# this feature is considered internal
+_internal = []
+
+# this feature is opt-in only, not default
+opt_in = []
+
+# this feature enables a dependency
+serde = ["dep:serde"]
+
+# this feature is nightly-only and not considered stable
+nightly = []
+
+# there's also an implicit `serde_json` dependency that's opt-in
+# due to the optional dependency that isn't referenced in a `dep:` or `/` or `?` operator
+
+[dependencies]
+serde = { version = "1.0", optional = true }
+serde_json = { version = "1.0", optional = true }

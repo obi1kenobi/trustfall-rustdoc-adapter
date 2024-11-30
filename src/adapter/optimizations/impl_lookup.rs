@@ -9,13 +9,13 @@ use trustfall::{
     FieldValue,
 };
 
-use crate::{indexed_crate::ImplEntry, IndexedCrate};
+use crate::{adapter::PackageIndex, indexed_crate::ImplEntry};
 
 use super::super::{origin::Origin, vertex::Vertex, RustdocAdapter};
 
 /// Resolve the `ImplOwner.impl` and `ImplOwner.inherent_impl` edges.
 pub(crate) fn resolve_owner_impl<'a, V: AsVertex<Vertex<'a>> + 'a>(
-    adapter: &RustdocAdapter<'a>,
+    adapter: &'a RustdocAdapter<'a>,
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
     resolve_info: &ResolveEdgeInfo,
@@ -53,10 +53,10 @@ pub(crate) fn resolve_owner_impl<'a, V: AsVertex<Vertex<'a>> + 'a>(
 }
 
 fn resolve_owner_impl_based_on_method_info<'a, V: AsVertex<Vertex<'a>> + 'a>(
-    adapter: &RustdocAdapter<'a>,
+    adapter: &'a RustdocAdapter<'a>,
     contexts: ContextIterator<'a, V>,
-    current_crate: &'a IndexedCrate<'a>,
-    previous_crate: Option<&'a IndexedCrate<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
     inherent_impls_only: bool,
     method_vertex_info: &impl VertexInfo,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
@@ -67,7 +67,7 @@ fn resolve_owner_impl_based_on_method_info<'a, V: AsVertex<Vertex<'a>> + 'a>(
     // statically vs dynamically, so we check the dynamic case first since
     // it might be more specific.
     if let Some(resolver) = method_vertex_info.dynamically_required_property("name") {
-        resolver.resolve_with(adapter, contexts, move |vertex, candidate| {
+        resolver.resolve_with(&adapter, contexts, move |vertex, candidate| {
             resolve_impl_based_on_method_name_candidate(
                 vertex,
                 current_crate,
@@ -96,19 +96,21 @@ fn resolve_owner_impl_based_on_method_info<'a, V: AsVertex<Vertex<'a>> + 'a>(
 
 fn resolve_impl_based_on_method_name_candidate<'a>(
     vertex: &Vertex<'a>,
-    current_crate: &'a IndexedCrate<'a>,
-    previous_crate: Option<&'a IndexedCrate<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
     inherent_impls_only: bool,
     method_name: CandidateValue<FieldValue>,
 ) -> VertexIterator<'a, Vertex<'a>> {
     let origin = vertex.origin;
     let impl_index = match origin {
         Origin::CurrentCrate => current_crate
+            .own_crate
             .impl_index
             .as_ref()
             .expect("no impl index present"),
         Origin::PreviousCrate => previous_crate
             .expect("no previous crate provided")
+            .own_crate
             .impl_index
             .as_ref()
             .expect("no impl index provided"),
@@ -173,16 +175,17 @@ the `impl_index` returned a value where the `impl_item` was not an impl: {impl_i
 
 fn resolve_owner_impl_slow_path<'a>(
     vertex: &Vertex<'a>,
-    current_crate: &'a IndexedCrate<'a>,
-    previous_crate: Option<&'a IndexedCrate<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
     inherent_impls_only: bool,
 ) -> VertexIterator<'a, Vertex<'a>> {
     let origin = vertex.origin;
     let item_index = match origin {
-        Origin::CurrentCrate => &current_crate.inner.index,
+        Origin::CurrentCrate => &current_crate.own_crate.inner.index,
         Origin::PreviousCrate => {
             &previous_crate
                 .expect("no previous crate provided")
+                .own_crate
                 .inner
                 .index
         }
