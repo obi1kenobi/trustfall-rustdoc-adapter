@@ -104,18 +104,18 @@ impl PackageStorage {
 
 #[non_exhaustive]
 #[derive(Debug)]
-pub struct PackageHandler<'a> {
+pub struct PackageIndex<'a> {
     pub(crate) own_crate: IndexedCrate<'a>,
     pub(crate) features: Option<cargo_toml::features::Features<'a, 'a>>,
     #[allow(dead_code)]
     pub(crate) dependencies: HashMap<DependencyKey, IndexedCrate<'a>>,
 }
 
-impl<'a> PackageHandler<'a> {
-    /// Create a new [`PackageHandler`] for a given crate, in order to query it with Trustfall.
+impl<'a> PackageIndex<'a> {
+    /// Create a new [`PackageIndex`] for a given crate, in order to query it with Trustfall.
     ///
-    /// Prefer the [`PackageHandler::from_storage`] function when possible, since it makes features
-    /// information available as well. Values constructed with the [`PackageHandler::from_crate`]
+    /// Prefer the [`PackageIndex::from_storage`] function when possible, since it makes features
+    /// information available as well. Values constructed with the [`PackageIndex::from_crate`]
     /// function will appear to have no information on features or other manifest data.
     pub fn from_crate(crate_: &'a Crate) -> Self {
         Self {
@@ -125,7 +125,7 @@ impl<'a> PackageHandler<'a> {
         }
     }
 
-    /// Create a new [`PackageHandler`] for a given crate, in order to query it with Trustfall.
+    /// Create a new [`PackageIndex`] for a given crate, in order to query it with Trustfall.
     pub fn from_storage(storage: &'a PackageStorage) -> Self {
         #[cfg(not(feature = "rayon"))]
         let dependencies_iter = storage.dependencies.iter();

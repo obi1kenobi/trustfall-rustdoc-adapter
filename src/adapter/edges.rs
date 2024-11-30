@@ -5,7 +5,7 @@ use trustfall::provider::{
     VertexIterator,
 };
 
-use crate::{adapter::supported_item_kind, attributes::Attribute, PackageHandler};
+use crate::{adapter::supported_item_kind, attributes::Attribute, PackageIndex};
 
 use super::{
     enum_variant::LazyDiscriminants,
@@ -127,8 +127,8 @@ pub(super) fn resolve_crate_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_importable_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageHandler<'a>,
-    previous_crate: Option<&'a PackageHandler<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "canonical_path" => resolve_neighbors_with(contexts, move |vertex| {
@@ -281,8 +281,8 @@ pub(super) fn resolve_generic_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_module_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageHandler<'a>,
-    previous_crate: Option<&'a PackageHandler<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "item" => resolve_neighbors_with(contexts, move |vertex| {
@@ -314,8 +314,8 @@ pub(super) fn resolve_module_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_struct_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageHandler<'a>,
-    previous_crate: Option<&'a PackageHandler<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "field" => resolve_neighbors_with(contexts, move |vertex| {
@@ -352,8 +352,8 @@ pub(super) fn resolve_struct_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageHandler<'a>,
-    previous_crate: Option<&'a PackageHandler<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "field" => resolve_neighbors_with(contexts, move |vertex| {
@@ -410,8 +410,8 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_enum_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageHandler<'a>,
-    previous_crate: Option<&'a PackageHandler<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "variant" => resolve_neighbors_with(contexts, move |vertex| {
@@ -507,8 +507,8 @@ pub(super) fn resolve_enum_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_union_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageHandler<'a>,
-    previous_crate: Option<&'a PackageHandler<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "field" => resolve_neighbors_with(contexts, move |vertex| {
@@ -636,8 +636,8 @@ pub(super) fn resolve_impl_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageHandler<'a>,
-    previous_crate: Option<&'a PackageHandler<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "supertrait" => resolve_neighbors_with(contexts, move |vertex| {
@@ -864,8 +864,8 @@ pub(super) fn resolve_derive_proc_macro_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_generic_type_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageHandler<'a>,
-    previous_crate: Option<&'a PackageHandler<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "type_bound" => resolve_neighbors_with(contexts, move |vertex| {
@@ -971,8 +971,8 @@ pub(super) fn resolve_generic_type_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 
 pub(super) fn resolve_feature_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageHandler<'a>,
-    previous_crate: Option<&'a PackageHandler<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "directly_enables" => resolve_neighbors_with(contexts, move |vertex| {

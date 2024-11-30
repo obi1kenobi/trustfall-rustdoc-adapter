@@ -14,7 +14,7 @@ use crate::RustdocAdapter;
 
 #[allow(dead_code)]
 mod type_level_invariants {
-    use crate::{IndexedCrate, PackageHandler, RustdocAdapter};
+    use crate::{IndexedCrate, PackageIndex, RustdocAdapter};
 
     fn ensure_send_and_sync<T: Send + Sync>(_value: &T) {}
 
@@ -22,7 +22,7 @@ mod type_level_invariants {
         ensure_send_and_sync(value);
     }
 
-    fn ensure_crate_handler_is_send_and_sync(value: &PackageHandler<'_>) {
+    fn ensure_crate_handler_is_send_and_sync(value: &PackageIndex<'_>) {
         ensure_send_and_sync(value);
     }
 
@@ -52,7 +52,7 @@ macro_rules! get_test_data {
             package,
         );
 
-        let $data = crate::PackageHandler::from_storage(&storage);
+        let $data = crate::PackageIndex::from_storage(&storage);
     }
 }
 

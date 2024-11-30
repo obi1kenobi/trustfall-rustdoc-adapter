@@ -516,7 +516,7 @@ mod tests {
 
         let storage = crate::PackageStorage::from_rustdoc_and_package(crate_, package);
 
-        let data = crate::PackageHandler::from_storage(&storage);
+        let data = crate::PackageIndex::from_storage(&storage);
         let adapter = RustdocAdapter::new(&data, None);
 
         let query = r#"
