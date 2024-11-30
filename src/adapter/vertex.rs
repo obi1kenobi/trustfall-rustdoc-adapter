@@ -8,8 +8,7 @@ use trustfall::provider::Typename;
 
 use crate::{
     attributes::{Attribute, AttributeMetaItem},
-    indexed_crate::ImportablePath,
-    IndexedCrate,
+    ImportablePath, IndexedCrate, PackageIndex,
 };
 
 use super::{enum_variant::EnumVariant, origin::Origin};
@@ -24,8 +23,8 @@ pub struct Vertex<'a> {
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum VertexKind<'a> {
-    CrateDiff((&'a IndexedCrate<'a>, &'a IndexedCrate<'a>)),
-    Crate(&'a IndexedCrate<'a>),
+    CrateDiff((&'a PackageIndex<'a>, &'a PackageIndex<'a>)),
+    Crate(&'a PackageIndex<'a>),
     Item(&'a Item),
     Span(&'a Span),
     Path(&'a [String]),
@@ -40,6 +39,7 @@ pub enum VertexKind<'a> {
     Variant(EnumVariant<'a>),
     DeriveHelperAttr(&'a str),
     GenericParameter(&'a rustdoc_types::Generics, &'a GenericParamDef),
+    Feature(Feature<'a>),
 }
 
 impl Typename for Vertex<'_> {
@@ -99,20 +99,21 @@ impl Typename for Vertex<'_> {
                 rustdoc_types::GenericParamDefKind::Type { .. } => "GenericTypeParameter",
                 rustdoc_types::GenericParamDefKind::Const { .. } => "GenericConstParameter",
             },
+            VertexKind::Feature(..) => "Feature",
         }
     }
 }
 
 #[allow(dead_code)]
 impl<'a> Vertex<'a> {
-    pub(super) fn new_crate(origin: Origin, crate_: &'a IndexedCrate<'a>) -> Self {
+    pub(super) fn new_crate(origin: Origin, crate_: &'a PackageIndex<'a>) -> Self {
         Self {
             origin,
             kind: VertexKind::Crate(crate_),
         }
     }
 
-    pub(super) fn as_crate_diff(&self) -> Option<(&'a IndexedCrate<'a>, &'a IndexedCrate<'a>)> {
+    pub(super) fn as_crate_diff(&self) -> Option<(&'a PackageIndex<'a>, &'a PackageIndex<'a>)> {
         match &self.kind {
             VertexKind::CrateDiff(tuple) => Some(*tuple),
             _ => None,
@@ -121,7 +122,15 @@ impl<'a> Vertex<'a> {
 
     pub(super) fn as_indexed_crate(&self) -> Option<&'a IndexedCrate<'a>> {
         match self.kind {
-            VertexKind::Crate(c) => Some(c),
+            VertexKind::Crate(c) => Some(&c.own_crate),
+            _ => None,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn as_crate_handler(&self) -> Option<&'a PackageIndex<'a>> {
+        match self.kind {
+            VertexKind::Crate(h) => Some(h),
             _ => None,
         }
     }
@@ -292,6 +301,13 @@ impl<'a> Vertex<'a> {
         }
     }
 
+    pub(super) fn as_feature(&self) -> Option<&Feature<'a>> {
+        match &self.kind {
+            VertexKind::Feature(f) => Some(f),
+            _ => None,
+        }
+    }
+
     pub(super) fn as_derive_helper_attr(&self) -> Option<&'a str> {
         match &self.kind {
             VertexKind::DeriveHelperAttr(value) => Some(value),
@@ -327,8 +343,8 @@ impl<'a> From<&'a Item> for VertexKind<'a> {
     }
 }
 
-impl<'a> From<&'a IndexedCrate<'a>> for VertexKind<'a> {
-    fn from(c: &'a IndexedCrate<'a>) -> Self {
+impl<'a> From<&'a PackageIndex<'a>> for VertexKind<'a> {
+    fn from(c: &'a PackageIndex<'a>) -> Self {
         Self::Crate(c)
     }
 }
@@ -343,6 +359,11 @@ impl<'a> From<&'a Abi> for VertexKind<'a> {
     fn from(a: &'a Abi) -> Self {
         Self::FunctionAbi(a)
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Feature<'a> {
+    pub(super) inner: &'a cargo_toml::features::Feature<'a>,
 }
 
 #[non_exhaustive]
