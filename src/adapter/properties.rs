@@ -7,7 +7,7 @@ use trustfall::{
     FieldValue,
 };
 
-use crate::{attributes::Attribute, IndexedCrate};
+use crate::{attributes::Attribute, PackageIndex};
 
 use super::{origin::Origin, rust_type_name, vertex::Vertex};
 
@@ -442,8 +442,8 @@ pub(super) fn resolve_raw_type_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
-    current_crate: &'a IndexedCrate<'a>,
-    previous_crate: Option<&'a IndexedCrate<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "unsafe" => resolve_property_with(contexts, field_property!(as_trait, is_unsafe)),
@@ -452,12 +452,12 @@ pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let trait_item = vertex.as_item().expect("not an Item");
             let origin = vertex.origin;
 
-            let indexed_crate = match origin {
+            let handler = match origin {
                 Origin::CurrentCrate => current_crate,
                 Origin::PreviousCrate => previous_crate.expect("no previous crate provided"),
             };
 
-            indexed_crate.is_trait_sealed(&trait_item.id).into()
+            handler.own_crate.is_trait_sealed(&trait_item.id).into()
         }),
         _ => unreachable!("Trait property {property_name}"),
     }
@@ -466,8 +466,8 @@ pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_implemented_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
-    current_crate: &'a IndexedCrate<'a>,
-    previous_crate: Option<&'a IndexedCrate<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "name" | "bare_name" => resolve_property_with(contexts, move |vertex| {
@@ -484,7 +484,7 @@ pub(super) fn resolve_implemented_trait_property<'a, V: AsVertex<Vertex<'a>> + '
             if let Some(item) = impld.resolved_item {
                 // We have the full item already. Use the original declaration name.
                 item.name.clone().into()
-            } else if let Some(summary) = origin_crate.inner.paths.get(&impld.path.id) {
+            } else if let Some(summary) = origin_crate.own_crate.inner.paths.get(&impld.path.id) {
                 // The item is from a foreign crate.
                 // The last component of the canonical path should match its declaration name,
                 // so use that.
@@ -623,6 +623,23 @@ pub(crate) fn resolve_discriminant_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 .into()
         }),
         _ => unreachable!("Discriminant property {property_name}"),
+    }
+}
+
+pub(crate) fn resolve_feature_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    match property_name {
+        "name" => resolve_property_with(contexts, |vertex| {
+            vertex
+                .as_feature()
+                .expect("vertex was not a Feature")
+                .inner
+                .key
+                .into()
+        }),
+        _ => unreachable!("Feature property {property_name}"),
     }
 }
 

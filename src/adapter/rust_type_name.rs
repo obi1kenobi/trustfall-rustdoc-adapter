@@ -604,24 +604,44 @@ display_wrapper!(Function, fmt_function, &'a str);
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use anyhow::Context as _;
     use maplit::btreemap;
     use rustdoc_types::{Item, ItemEnum, StructKind};
     use trustfall::{Schema, TryIntoStruct as _};
 
-    use crate::{IndexedCrate, RustdocAdapter};
+    use crate::RustdocAdapter;
 
     use super::rust_type_name;
 
     #[test]
     fn typename() {
-        let path = "./localdata/test_data/rust_type_name/rustdoc.json";
-        let content = std::fs::read_to_string(path)
-            .with_context(|| format!("could not load {path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+        let test_case = "rust_type_name";
+
+        let rustdoc_path = format!("./localdata/test_data/{}/rustdoc.json", test_case);
+        let content = std::fs::read_to_string(&rustdoc_path)
+            .with_context(|| format!("Could not load {rustdoc_path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
             .expect("failed to load rustdoc");
         let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
-        let indexed_crate = IndexedCrate::new(&crate_);
-        let adapter = RustdocAdapter::new(&indexed_crate, None);
+
+        let manifest_path = format!("./test_crates/{}/Cargo.toml", test_case);
+
+        let mut metadata = cargo_metadata::MetadataCommand::new()
+            .manifest_path(&manifest_path)
+            .no_deps()
+            .exec()
+            .expect("failed to run cargo metadata");
+        assert_eq!(metadata.packages.len(), 1, "{metadata:?}");
+        let package = metadata
+            .packages
+            .pop()
+            .expect("failed to pop only item in vec");
+
+        let storage = crate::PackageStorage::from_rustdoc_and_package(crate_, package);
+
+        let data = crate::PackageIndex::from_storage(&storage);
+        let adapter = RustdocAdapter::new(&data, None);
 
         let query = r#"
             {
@@ -656,7 +676,7 @@ mod tests {
         }
 
         let mut results: Vec<Output> =
-            trustfall::execute_query(&schema, adapter.into(), query, variables.clone())
+            trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
                 .expect("failed to run query")
                 .map(|row| row.try_into_struct().expect("shape mismatch"))
                 .collect();

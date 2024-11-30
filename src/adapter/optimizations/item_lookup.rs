@@ -12,7 +12,7 @@ use super::super::{origin::Origin, vertex::Vertex, RustdocAdapter};
 use crate::IndexedCrate;
 
 pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
-    adapter: &RustdocAdapter<'a>,
+    adapter: &'a RustdocAdapter<'a>,
     contexts: ContextIterator<'a, V>,
     resolve_info: &ResolveEdgeInfo,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
@@ -31,7 +31,7 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
         // statically vs dynamically, so we check the dynamic case first since
         // it might be more specific.
         if let Some(dynamic_value) = neighbor_info.dynamically_required_property("path") {
-            return dynamic_value.resolve_with(adapter, contexts, |vertex, candidate| {
+            return dynamic_value.resolve_with(&adapter, contexts, |vertex, candidate| {
                 let crate_vertex = vertex.as_indexed_crate().expect("vertex was not a Crate");
                 let origin = vertex.origin;
                 resolve_items_by_importable_path(crate_vertex, origin, candidate)
@@ -57,7 +57,7 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
             });
         } else if let Some(dynamic_value) = destination.dynamically_required_property("export_name")
         {
-            return dynamic_value.resolve_with(adapter, contexts, |vertex, candidate| {
+            return dynamic_value.resolve_with(&adapter, contexts, |vertex, candidate| {
                 let crate_vertex = vertex.as_indexed_crate().expect("vertex was not a Crate");
                 let origin = vertex.origin;
                 resolve_function_by_export_name(crate_vertex, origin, candidate)
