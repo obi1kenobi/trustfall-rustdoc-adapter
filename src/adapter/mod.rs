@@ -9,7 +9,7 @@ use trustfall::{
     FieldValue, Schema,
 };
 
-use crate::indexed_crate::IndexedCrate;
+use crate::PackageIndex;
 
 use self::{
     origin::Origin,
@@ -29,14 +29,14 @@ mod tests;
 
 #[non_exhaustive]
 pub struct RustdocAdapter<'a> {
-    current_crate: &'a IndexedCrate<'a>,
-    previous_crate: Option<&'a IndexedCrate<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
 }
 
 impl<'a> RustdocAdapter<'a> {
     pub fn new(
-        current_crate: &'a IndexedCrate<'a>,
-        previous_crate: Option<&'a IndexedCrate<'a>>,
+        current_crate: &'a PackageIndex<'a>,
+        previous_crate: Option<&'a PackageIndex<'a>>,
     ) -> Self {
         Self {
             current_crate,
@@ -49,7 +49,11 @@ impl<'a> RustdocAdapter<'a> {
     }
 }
 
-impl<'a> Adapter<'a> for RustdocAdapter<'a> {
+impl Drop for RustdocAdapter<'_> {
+    fn drop(&mut self) {}
+}
+
+impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
     type Vertex = Vertex<'a>;
 
     fn resolve_starting_vertices(
@@ -188,6 +192,7 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
                 "Discriminant" => {
                     properties::resolve_discriminant_property(contexts, property_name)
                 }
+                "Feature" => properties::resolve_feature_property(contexts, property_name),
                 "DeriveMacroHelperAttribute" => {
                     properties::resolve_derive_macro_helper_attribute_property(
                         contexts,
@@ -324,6 +329,12 @@ impl<'a> Adapter<'a> for RustdocAdapter<'a> {
             "ImplementedTrait" => edges::resolve_implemented_trait_edge(contexts, edge_name),
             "Attribute" => edges::resolve_attribute_edge(contexts, edge_name),
             "AttributeMetaItem" => edges::resolve_attribute_meta_item_edge(contexts, edge_name),
+            "Feature" => edges::resolve_feature_edge(
+                contexts,
+                edge_name,
+                self.current_crate,
+                self.previous_crate,
+            ),
             "DeriveProcMacro" => edges::resolve_derive_proc_macro_edge(contexts, edge_name),
             "GenericTypeParameter" => edges::resolve_generic_type_parameter_edge(
                 contexts,
