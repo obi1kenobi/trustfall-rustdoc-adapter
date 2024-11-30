@@ -81,6 +81,10 @@ pub struct PackageStorage {
 }
 
 impl PackageStorage {
+    pub fn crate_version(&self) -> Option<&str> {
+        self.own_crate.crate_version.as_deref()
+    }
+
     pub fn from_rustdoc(own_crate: Crate) -> Self {
         Self {
             own_crate,
