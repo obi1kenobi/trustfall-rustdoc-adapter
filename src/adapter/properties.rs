@@ -9,7 +9,7 @@ use trustfall::{
 
 use crate::{attributes::Attribute, PackageIndex};
 
-use super::{origin::Origin, vertex::Vertex};
+use super::{origin::Origin, rust_type_name, vertex::Vertex};
 
 pub(super) fn resolve_crate_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
@@ -251,6 +251,18 @@ pub(super) fn resolve_function_like_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             contexts,
             field_property!(as_function, has_body, { (*has_body).into() }),
         ),
+        "signature" => resolve_property_with(contexts, move |vertex| {
+            let item = vertex.as_item().expect("FunctionLike not an item");
+            let func = vertex.as_function().expect("FunctionLike not a function");
+
+            rust_type_name::function_signature(
+                func,
+                item.name
+                    .as_ref()
+                    .expect("FunctionLike does not have a name"),
+            )
+            .into()
+        }),
         _ => unreachable!("FunctionLike property {property_name}"),
     }
 }
@@ -262,34 +274,7 @@ pub(super) fn resolve_function_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     match property_name {
         "export_name" => resolve_property_with(contexts, move |vertex| {
             let item = vertex.as_item().expect("not an Item vertex");
-
-            if item.attrs.iter().any(|attr| attr == "#[no_mangle]") {
-                // Items with `#[no_mangle]` attributes are exported under their item name.
-                // Ref: https://doc.rust-lang.org/reference/abi.html#the-no_mangle-attribute
-                item.name.clone().into()
-            } else {
-                // Look for an `#[export_name = "something"]` attribute.
-                // Ref: https://doc.rust-lang.org/reference/abi.html#the-export_name-attribute
-                item.attrs
-                    .iter()
-                    .filter_map(|attr| {
-                        if attr.starts_with("#[export_name") {
-                            let parsed = Attribute::new(attr);
-                            if parsed.content.base == "export_name" {
-                                parsed
-                                    .content
-                                    .assigned_item
-                                    .map(|name| name.trim_matches('"'))
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    })
-                    .next()
-                    .into()
-            }
+            crate::exported_name::function_export_name(item).into()
         }),
         _ => unreachable!("Function property {property_name}"),
     }

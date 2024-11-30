@@ -12,7 +12,11 @@ pub trait GAT<T> {
 pub struct Struct<'a>(&'a ());
 
 impl<'a> GAT<&'a ()> for Struct<'a> {
-    type Type<'b, U> = Result<&'a (), &'b U> where Self: 'b, U: 'b;
+    type Type<'b, U>
+        = Result<&'a (), &'b U>
+    where
+        Self: 'b,
+        U: 'b;
 }
 
 pub struct Constant<const N: usize>;
@@ -78,4 +82,25 @@ pub fn my_generic_function<'a, T, U: GAT<T>>(
 ) -> impl std::future::Future<Output: Iterator<Item: 'a + Send> + for<'z> FnMut(&'z ()) -> &'z &'a ()>
 {
     unimplemented!()
+}
+
+pub fn awesome_function<'a, const N: usize>(a: &'a Constant<N>, b: &impl Clone) -> impl Send {
+    unimplemented!()
+}
+
+pub trait MyTrait {
+    type Assoc<T>;
+
+    fn method<'a, T, U: GAT<(T, ())>>()
+    where
+        Self: Sized,
+        for<'b> <U as GAT<(T, ())>>::Type<'b, ()>: 'static;
+
+    fn associated_types<T, U>(a: Self::Assoc<T>, b: <Self as MyTrait>::Assoc<U>)
+    where
+        Self::Assoc<()>: Send + 'static;
+}
+
+pub trait GenericTrait<T> {
+    fn nested_generics<U>(t: T, u: U);
 }

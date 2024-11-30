@@ -1082,6 +1082,39 @@ fn function_export_name() {
         ],
         results
     );
+
+    // Ensure that looking up functions by export name works correctly,
+    // since this path is expected to hit our index instead of iterating over everything.
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Function {
+                    name @output
+                    export_name @filter(op: "=", value: ["$export_name"]) @output
+                    visibility_limit @output
+                }
+            }
+        }
+    }
+    "#;
+    for row in results {
+        let Some(export_name) = &row.export_name else {
+            continue;
+        };
+        let variables: BTreeMap<&str, &str> = [("export_name", export_name.as_str())]
+            .into_iter()
+            .collect();
+
+        let mut results: Vec<_> =
+            trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+                .expect("failed to run query")
+                .map(|row| row.try_into_struct().expect("shape mismatch"))
+                .collect();
+        results.sort_unstable();
+
+        similar_asserts::assert_eq!(vec![row], results);
+    }
 }
 
 #[test]
@@ -1897,6 +1930,11 @@ fn function_has_body() {
     let adapter = RustdocAdapter::new(&data, None);
     let adapter = Arc::new(&adapter);
 
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    // This query should only return functions defined at top level,
+    // not ones inside traits or `impl` blocks. Those are supposed to be of type `Method` instead.
     let query = r#"
 {
     Crate {
@@ -1909,11 +1947,7 @@ fn function_has_body() {
     }
 }
 "#;
-
     let variables: BTreeMap<&str, &str> = BTreeMap::default();
-
-    let schema =
-        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
 
     #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
     struct Output {
@@ -1938,22 +1972,97 @@ fn function_has_body() {
             has_body: true,
         },
         Output {
-            name: "inside_impl_block".into(),
-            has_body: true,
-        },
-        Output {
-            name: "trait_no_body".into(),
-            has_body: false,
-        },
-        Output {
-            name: "trait_with_body".into(),
-            has_body: true,
-        },
-        Output {
             name: "extern_no_body".into(),
             has_body: false,
         },
     ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                owner: name @output
+
+                method {
+                    name @output
+                    has_body @output
+                }
+            }
+        }
+    }
+}
+"#;
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct OutputWithOwner {
+        owner: String,
+        name: String,
+        has_body: bool,
+    }
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        OutputWithOwner {
+            owner: "Bar".into(),
+            name: "trait_no_body".into(),
+            has_body: false,
+        },
+        OutputWithOwner {
+            owner: "Bar".into(),
+            name: "trait_with_body".into(),
+            has_body: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                owner: name @output
+
+                inherent_impl {
+                    method {
+                        name @output
+                        has_body @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![OutputWithOwner {
+        owner: "Foo".into(),
+        name: "inside_impl_block".into(),
+        has_body: true,
+    }];
     expected_results.sort_unstable();
 
     similar_asserts::assert_eq!(expected_results, results);
@@ -3457,6 +3566,361 @@ fn features() {
         DefaultsOutput { name: "baz".into() },
     ];
     expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+}
 
+#[test]
+fn type_generic_bounds() {
+    get_test_data!(data, type_generic_bounds);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                kind: __typename @output
+                name @output
+
+                generic_parameter {
+                    ... on GenericTypeParameter {
+                        generic: name @output
+
+                        type_bound {
+                            bound: instantiated_name @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        kind: String,
+        name: String,
+        generic: String,
+        bound: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            kind: "Struct".into(),
+            name: "ExampleStruct".into(),
+            generic: "T".into(),
+            bound: "Ord".into(),
+        },
+        Output {
+            kind: "Enum".into(),
+            name: "ExampleEnum".into(),
+            generic: "T".into(),
+            bound: "PartialEq".into(),
+        },
+        Output {
+            kind: "Enum".into(),
+            name: "ExampleEnum".into(),
+            generic: "T".into(),
+            bound: "Sync".into(),
+        },
+        Output {
+            kind: "Union".into(),
+            name: "ExampleUnion".into(),
+            generic: "T".into(),
+            bound: "std::fmt::Debug".into(),
+        },
+        Output {
+            kind: "Union".into(),
+            name: "ExampleUnion".into(),
+            generic: "T".into(),
+            bound: "Copy".into(),
+        },
+        Output {
+            kind: "Struct".into(),
+            name: "IteratorWrapper".into(),
+            generic: "T".into(),
+            bound: "Sync".into(),
+        },
+        Output {
+            kind: "Struct".into(),
+            name: "IteratorWrapper".into(),
+            generic: "T".into(),
+            bound: "Iterator<Item = i64>".into(),
+        },
+        Output {
+            kind: "Struct".into(),
+            name: "LifetimedIterator".into(),
+            generic: "T".into(),
+            // `T: Iterator<Item = &'a str> + 'a` is equivalent to:
+            // ```
+            // where
+            //   T: Iterator<Item = &'a str>,
+            //   T: 'a
+            // ```
+            // and only the `Iterator` portion is a *type* bound.
+            bound: "Iterator<Item = &'a str>".into(),
+        },
+        Output {
+            kind: "Struct".into(),
+            name: "SeparateIteratorBounds".into(),
+            generic: "T".into(),
+            // confirming the equivalence of the previous case
+            bound: "Iterator<Item = &'a str>".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn function_signatures() {
+    get_test_data!(data, raw_type_json);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output @filter(op: "=", value: ["$func"])
+                signature @output
+            }
+        }
+    }
+}
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::from_iter([("func", "awesome_function")]);
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        signature: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            name: "awesome_function".into(),
+            signature: "fn awesome_function<'a, const N: usize>(a: &'a Constant<N>, b: &impl Clone) -> impl Send".into()
+        },
+    ];
+    expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn method_signature() {
+    get_test_data!(data, raw_type_json);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                name @filter(op: "=", value: ["$trait"])
+                method {
+                    name @output
+                    signature @output
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::from_iter([("trait", "MyTrait")]);
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        signature: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            name: "associated_types".into(),
+            signature:
+                "fn associated_types<T, U>(a: Self::Assoc<T>, b: <Self as MyTrait>::Assoc<U>) \
+                    where Self::Assoc<()>: Send + 'static"
+                    .into(),
+        },
+        Output {
+            name: "method".into(),
+            signature: "fn method<'a, T, U: GAT<(T, ())>>() where Self: Sized,\n\
+                for<'b> <U as GAT<(T, ())>>::Type<'b, ()>: 'static"
+                .into(),
+        },
+    ];
+    expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn trait_method_nested_generics() {
+    get_test_data!(data, raw_type_json);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                name @filter(op: "=", value: ["$trait"])
+                method {
+                    name @output
+                    signature @output
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::from_iter([("trait", "GenericTrait")]);
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        signature: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![Output {
+        name: "nested_generics".into(),
+        signature: "fn nested_generics<U>(t: T, u: U)".into(),
+    }];
+    expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn extern_fn() {
+    get_test_data!(data, extern_fn);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+                is_unsafe: unsafe @output
+                has_body @output
+
+                importable_path @optional {
+                    public_api @output
+                    path @output
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::new();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        is_unsafe: bool,
+        has_body: bool,
+        public_api: Option<bool>,
+        path: Option<Vec<String>>,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            name: "legacy_extern_fn".into(),
+            is_unsafe: true,
+            has_body: false,
+            public_api: Some(true),
+            path: Some(vec!["extern_fn".into(), "legacy_extern_fn".into()]),
+        },
+        Output {
+            name: "implicit_unsafe_extern_fn".into(),
+            is_unsafe: true,
+            has_body: false,
+            public_api: Some(true),
+            path: Some(vec!["extern_fn".into(), "implicit_unsafe_extern_fn".into()]),
+        },
+        Output {
+            name: "explicit_unsafe_extern_fn".into(),
+            is_unsafe: true,
+            has_body: false,
+            public_api: Some(true),
+            path: Some(vec!["extern_fn".into(), "explicit_unsafe_extern_fn".into()]),
+        },
+        Output {
+            name: "safe_extern_fn".into(),
+            is_unsafe: false,
+            has_body: false,
+            public_api: Some(true),
+            path: Some(vec!["extern_fn".into(), "safe_extern_fn".into()]),
+        },
+    ];
+    expected_results.sort_unstable();
     similar_asserts::assert_eq!(expected_results, results);
 }

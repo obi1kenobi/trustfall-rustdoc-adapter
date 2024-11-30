@@ -150,7 +150,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 "FunctionLike" | "Function" | "Method"
                     if matches!(
                         property_name.as_ref(),
-                        "const" | "unsafe" | "async" | "has_body"
+                        "const" | "unsafe" | "async" | "has_body" | "signature"
                     ) =>
                 {
                     properties::resolve_function_like_property(contexts, property_name)
@@ -280,8 +280,8 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
             {
                 edges::resolve_function_like_edge(contexts, edge_name)
             }
-            "GenericItem" | "Struct" | "Enum" | "Union" | "Trait" | "Function" | "Method"
-            | "Impl"
+            "GenericItem" | "ImplOwner" | "Struct" | "Enum" | "Union" | "Trait" | "Function"
+            | "Method" | "Impl"
                 if matches!(edge_name.as_ref(), "generic_parameter") =>
             {
                 edges::resolve_generic_parameter_edge(contexts, edge_name)

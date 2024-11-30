@@ -4,6 +4,7 @@ mod indexed_crate;
 mod sealed_trait;
 mod visibility_tracker;
 
+mod exported_name;
 #[cfg(test)]
 pub(crate) mod test_util;
 
