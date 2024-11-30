@@ -1,6 +1,7 @@
 use std::{
     borrow::Borrow,
     collections::{hash_map::Entry, HashMap, HashSet},
+    sync::Arc,
 };
 
 #[cfg(feature = "rayon")]
@@ -8,6 +9,168 @@ use rayon::prelude::*;
 use rustdoc_types::{Crate, Id, Item};
 
 use crate::{adapter::supported_item_kind, sealed_trait, visibility_tracker::VisibilityTracker};
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct DependencyKey(Arc<str>);
+
+impl Borrow<str> for DependencyKey {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Borrow<Arc<str>> for DependencyKey {
+    fn borrow(&self) -> &Arc<str> {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PackageData {
+    pub(crate) package: cargo_metadata::Package,
+
+    features: HashMap<String, Vec<String>>,
+
+    // (dependency, target selector), parallel to `package.dependencies`
+    dependency_info: Vec<(cargo_toml::Dependency, Option<String>)>,
+}
+
+impl From<cargo_metadata::Package> for PackageData {
+    fn from(value: cargo_metadata::Package) -> Self {
+        let features = value
+            .features
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let dependency_info: Vec<_> = value
+            .dependencies
+            .iter()
+            .map(|dep| {
+                let dependency = if dep.features.is_empty() {
+                    cargo_toml::Dependency::Simple(dep.req.to_string())
+                } else {
+                    cargo_toml::Dependency::Detailed(Box::new(cargo_toml::DependencyDetail {
+                        package: dep.rename.is_none().then(|| dep.name.clone()),
+                        version: (dep.req != cargo_metadata::semver::VersionReq::STAR)
+                            .then(|| dep.req.to_string()),
+                        features: dep.features.clone(),
+                        default_features: dep.uses_default_features,
+                        optional: dep.optional,
+                        path: dep.path.as_ref().map(|p| p.to_string()),
+                        ..Default::default()
+                    }))
+                };
+
+                (dependency, dep.target.as_ref().map(|p| p.to_string()))
+            })
+            .collect();
+
+        Self {
+            package: value,
+            features,
+            dependency_info,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PackageStorage {
+    pub(crate) own_crate: Crate,
+    pub(crate) package_data: Option<PackageData>,
+    pub(crate) dependencies: HashMap<DependencyKey, Crate>,
+}
+
+impl PackageStorage {
+    pub fn crate_version(&self) -> Option<&str> {
+        self.own_crate.crate_version.as_deref()
+    }
+
+    pub fn from_rustdoc(own_crate: Crate) -> Self {
+        Self {
+            own_crate,
+            package_data: None,
+            dependencies: Default::default(),
+        }
+    }
+
+    pub fn from_rustdoc_and_package(own_crate: Crate, package: cargo_metadata::Package) -> Self {
+        Self {
+            own_crate,
+            package_data: Some(package.into()),
+            dependencies: Default::default(),
+        }
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct PackageIndex<'a> {
+    pub(crate) own_crate: IndexedCrate<'a>,
+    pub(crate) features: Option<cargo_toml::features::Features<'a, 'a>>,
+    #[allow(dead_code)]
+    pub(crate) dependencies: HashMap<DependencyKey, IndexedCrate<'a>>,
+}
+
+impl<'a> PackageIndex<'a> {
+    /// Create a new [`PackageIndex`] for a given crate, in order to query it with Trustfall.
+    ///
+    /// Prefer the [`PackageIndex::from_storage`] function when possible, since it makes features
+    /// information available as well. Values constructed with the [`PackageIndex::from_crate`]
+    /// function will appear to have no information on features or other manifest data.
+    pub fn from_crate(crate_: &'a Crate) -> Self {
+        Self {
+            own_crate: IndexedCrate::new(crate_),
+            features: None,
+            dependencies: Default::default(),
+        }
+    }
+
+    /// Create a new [`PackageIndex`] for a given crate, in order to query it with Trustfall.
+    pub fn from_storage(storage: &'a PackageStorage) -> Self {
+        #[cfg(not(feature = "rayon"))]
+        let dependencies_iter = storage.dependencies.iter();
+        #[cfg(feature = "rayon")]
+        let dependencies_iter = storage.dependencies.par_iter();
+
+        Self {
+            own_crate: IndexedCrate::new(&storage.own_crate),
+            features: storage.package_data.as_ref().map(|data| {
+                let resolver = cargo_toml::features::Resolver::new();
+
+                let dependencies = data
+                    .package
+                    .dependencies
+                    .iter()
+                    .zip(data.dependency_info.iter())
+                    .filter_map(|(dep, (dep_data, platform))| {
+                        Some(cargo_toml::features::ParseDependency {
+                            key: dep.rename.as_deref().unwrap_or(dep.name.as_ref()),
+                            kind: match dep.kind {
+                                cargo_metadata::DependencyKind::Normal => {
+                                    cargo_toml::features::Kind::Normal
+                                }
+                                cargo_metadata::DependencyKind::Development => {
+                                    cargo_toml::features::Kind::Dev
+                                }
+                                cargo_metadata::DependencyKind::Build => {
+                                    cargo_toml::features::Kind::Build
+                                }
+                                _ => return None,
+                            },
+                            target: platform.as_deref(),
+                            dep: dep_data,
+                        })
+                    });
+
+                resolver.parse_custom(&data.features, dependencies)
+            }),
+
+            dependencies: dependencies_iter
+                .map(|(k, v)| (k.clone(), IndexedCrate::new(v)))
+                .collect(),
+        }
+    }
+}
 
 /// The rustdoc for a crate, together with associated indexed data to speed up common operations.
 ///

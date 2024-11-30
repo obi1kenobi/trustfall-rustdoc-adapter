@@ -11,9 +11,15 @@ readme = "./README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-trustfall = "0.8.0"
 rayon = { version = "1.10.0", optional = true }
 rustc-hash = { version = "2.0.0", optional = true }
+cargo_toml = { version = "0.20.4", features = ["features"] }
+
+# Packages in our public API, where bumping a major version is a breaking change.
+# Extra spacing included to minimize the chance of merge conflicts.
+#
+trustfall = "0.8.0"
+cargo_metadata = "0.18.1"
 
 #
 # Keep this dependency last, its own block, since we change it often via automated means

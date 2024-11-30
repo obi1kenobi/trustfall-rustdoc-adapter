@@ -124,6 +124,16 @@ impl Origin {
         }
     }
 
+    pub(super) fn make_feature_vertex<'a>(
+        &self,
+        feature: &'a cargo_toml::features::Feature<'a>,
+    ) -> Vertex<'a> {
+        Vertex {
+            origin: *self,
+            kind: VertexKind::Feature(super::vertex::Feature { inner: feature }),
+        }
+    }
+
     pub(super) fn make_derive_helper_attr_vertex<'a>(&self, helper: &'a str) -> Vertex<'a> {
         Vertex {
             origin: *self,

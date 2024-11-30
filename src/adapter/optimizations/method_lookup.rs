@@ -10,13 +10,13 @@ use trustfall::{
 };
 
 use crate::{
-    adapter::{Origin, Vertex},
+    adapter::{Origin, PackageIndex, Vertex},
     indexed_crate::ImplEntry,
-    IndexedCrate, RustdocAdapter,
+    RustdocAdapter,
 };
 
 pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
-    adapter: &RustdocAdapter<'a>,
+    adapter: &'a RustdocAdapter<'a>,
     contexts: ContextIterator<'a, V>,
     resolve_info: &ResolveEdgeInfo,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
@@ -32,7 +32,7 @@ pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
     // statically vs dynamically, so we check the dynamic case first since
     // it might be more specific.
     if let Some(resolver) = neighbor_info.dynamically_required_property("name") {
-        resolver.resolve_with(adapter, contexts, move |vertex, candidate| {
+        resolver.resolve_with(&adapter, contexts, move |vertex, candidate| {
             resolve_method_from_candidate_value(current_crate, previous_crate, vertex, candidate)
         })
     } else if let Some(candidate) = neighbor_info.statically_required_property("name") {
@@ -48,10 +48,11 @@ pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
         resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
             let item_index = match origin {
-                Origin::CurrentCrate => &current_crate.inner.index,
+                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
                 Origin::PreviousCrate => {
                     &previous_crate
                         .expect("no previous crate provided")
+                        .own_crate
                         .inner
                         .index
                 }
@@ -92,16 +93,17 @@ fn find_impl_owner_id(impl_vertex: &Impl) -> Option<&Id> {
 }
 
 fn resolve_method_from_candidate_value<'a>(
-    current_crate: &'a IndexedCrate<'a>,
-    previous_crate: Option<&'a IndexedCrate<'a>>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
     vertex: &Vertex<'a>,
     method_name: CandidateValue<FieldValue>,
 ) -> VertexIterator<'a, Vertex<'a>> {
     let origin = vertex.origin;
     let (item_index, impl_index) = match origin {
         Origin::CurrentCrate => (
-            &current_crate.inner.index,
+            &current_crate.own_crate.inner.index,
             current_crate
+                .own_crate
                 .impl_index
                 .as_ref()
                 .expect("no impl index present"),
@@ -109,8 +111,9 @@ fn resolve_method_from_candidate_value<'a>(
         Origin::PreviousCrate => {
             let previous_crate = previous_crate.expect("no previous crate provided");
             (
-                &previous_crate.inner.index,
+                &previous_crate.own_crate.inner.index,
                 previous_crate
+                    .own_crate
                     .impl_index
                     .as_ref()
                     .expect("no impl index provided"),
