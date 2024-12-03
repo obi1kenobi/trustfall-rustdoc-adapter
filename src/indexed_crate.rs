@@ -544,9 +544,9 @@ fn build_fn_owner_index(index: &HashMap<Id, Item>) -> HashMap<Id, &Item> {
             };
 
             #[cfg(feature = "rayon")]
-            let impl_iter = impls.into_par_iter();
+            let impl_iter = impls.par_iter();
             #[cfg(not(feature = "rayon"))]
-            let impl_iter = impls.into_iter();
+            let impl_iter = impls.iter();
 
             // Resolve the impl block, if we can find it in the index.
             // In principle, this *should* always find a match, but we don't want to crash
