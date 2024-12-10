@@ -19,32 +19,15 @@ cargo_toml = { version = "0.21.0", features = ["features"] }
 # Extra spacing included to minimize the chance of merge conflicts.
 #
 trustfall = "0.8.0"
-<<<<<<< HEAD
-cargo_metadata = "0.18.1"
-rustdoc-types = "0.28.0"
-||||||| parent of baaf43e (Bump the major versions of cargo_metadata and cargo_toml. (#650))
-cargo_metadata = "0.18.1"
-
-#
-# Keep this dependency last, its own block, since we change it often via automated means
-# and we'd like to avoid merge conflicts.
-#
-rustdoc-types = "0.33.0"
-#
-# No dependencies after this point. Put all dependencies above this section.
-#
-=======
 cargo_metadata = "0.19.1"
-
 #
 # Keep this dependency last, its own block, since we change it often via automated means
 # and we'd like to avoid merge conflicts.
 #
-rustdoc-types = "0.33.0"
+rustdoc-types = "0.28.0"
 #
 # No dependencies after this point. Put all dependencies above this section.
 #
->>>>>>> baaf43e (Bump the major versions of cargo_metadata and cargo_toml. (#650))
 
 [features]
 default = []
