@@ -40,6 +40,8 @@ type Crate {
   We heuristically disregard features prefixed with `_`, and features introduced by
   optional dependencies that are never referenced by any other feature.
   We deem those features to be non-user-facing, and do not show them here.
+
+  If feature data is not loaded into the adapter, this edge will not have any instances.
   """
   feature: [Feature!]
 
@@ -52,6 +54,8 @@ type Crate {
   We heuristically disregard features prefixed with `_`, and features introduced by
   optional dependencies that are never referenced by any other feature.
   We deem those features to be non-user-facing, and do not show them here.
+
+  If feature data is not loaded into the adapter, this edge will not have any instances.
   """
   default_feature: [Feature!]
 }
