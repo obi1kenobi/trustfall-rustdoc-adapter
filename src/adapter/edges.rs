@@ -73,14 +73,16 @@ pub(super) fn resolve_crate_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             resolve_neighbors_with(contexts, move |vertex| {
                 let origin = vertex.origin;
 
-                let features_lookup = match origin {
+                let Some(features_lookup) = match origin {
                     Origin::CurrentCrate => &current_crate.features,
                     Origin::PreviousCrate => {
                         &previous_crate.expect("no previous crate provided").features
                     }
                 }
-                .as_ref()
-                .expect("no feature data was loaded");
+                .as_ref() else {
+                    // No feature data was loaded.
+                    return Box::new(std::iter::empty());
+                };
 
                 Box::new(
                     features_lookup
@@ -97,14 +99,16 @@ pub(super) fn resolve_crate_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             resolve_neighbors_with(contexts, move |vertex| {
                 let origin = vertex.origin;
 
-                let features_lookup = match origin {
+                let Some(features_lookup) = match origin {
                     Origin::CurrentCrate => &current_crate.features,
                     Origin::PreviousCrate => {
                         &previous_crate.expect("no previous crate provided").features
                     }
                 }
-                .as_ref()
-                .expect("no feature data was loaded");
+                .as_ref() else {
+                    // No feature data was loaded.
+                    return Box::new(std::iter::empty());
+                };
 
                 // If there's no `default` feature, then no features are enabled by default.
                 let Some(default_feature) = features_lookup.features.get("default") else {
