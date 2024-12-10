@@ -14,13 +14,13 @@ readme = "./README.md"
 rayon = { version = "1.10.0", optional = true }
 rustdoc-types = "0.29.1"
 rustc-hash = { version = "2.0.0", optional = true }
-cargo_toml = { version = "0.20.4", features = ["features"] }
+cargo_toml = { version = "0.21.0", features = ["features"] }
 
 # Packages in our public API, where bumping a major version is a breaking change.
 # Extra spacing included to minimize the chance of merge conflicts.
 #
 trustfall = "0.8.0"
-cargo_metadata = "0.18.1"
+cargo_metadata = "0.19.1"
 
 [features]
 default = []
