@@ -2373,5 +2373,34 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                 }
             }
         }
+
+        #[test]
+        fn reexport_declarative_macro() {
+            let test_crate = "reexport_declarative_macro";
+            let expected_items = btreemap! {
+                "top_level_exported" => btreeset![
+                    "reexport_declarative_macro::top_level_exported",
+                ],
+                "private_mod_exported" => btreeset![
+                    "reexport_declarative_macro::private_mod_exported",
+                ],
+                "top_level_reexported" => btreeset![
+                    "reexport_declarative_macro::top_level_reexported",
+                    "reexport_declarative_macro::macros::top_level_reexported",
+                    "reexport_declarative_macro::reexports::top_level_reexported",
+                    "reexport_declarative_macro::glob_reexports::top_level_reexported",
+                ],
+                "private_mod_reexported" => btreeset![
+                    "reexport_declarative_macro::private_mod_reexported",
+                    "reexport_declarative_macro::macros::private_mod_reexported",
+                    "reexport_declarative_macro::reexports::private_mod_reexported",
+                    "reexport_declarative_macro::glob_reexports::private_mod_reexported",
+                ],
+                "top_level_not_exported" => btreeset![],
+                "private_mod_not_exported" => btreeset![],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
     }
 }
