@@ -2337,6 +2337,11 @@ fn proc_macros() {
                 name @output
                 public_api_eligible @output
                 visibility_limit @output
+
+                importable_path {
+                    path @output
+                    public_api @output
+                }
             }
         }
     }
@@ -2354,6 +2359,8 @@ fn proc_macros() {
         name: String,
         public_api_eligible: bool,
         visibility_limit: String,
+        path: Vec<String>,
+        public_api: bool,
     }
 
     let mut results: Vec<_> =
@@ -2373,30 +2380,40 @@ fn proc_macros() {
             name: "make_answer".into(),
             public_api_eligible: true,
             visibility_limit: "public".into(),
+            path: vec!["proc_macros".into(), "make_answer".into()],
+            public_api: true,
         },
         Output {
             kind: "AttributeProcMacro".into(),
             name: "return_as_is".into(),
             public_api_eligible: true,
             visibility_limit: "public".into(),
+            path: vec!["proc_macros".into(), "return_as_is".into()],
+            public_api: true,
         },
         Output {
             kind: "DeriveProcMacro".into(),
             name: "AnswerFn".into(),
             public_api_eligible: true,
             visibility_limit: "public".into(),
+            path: vec!["proc_macros".into(), "AnswerFn".into()],
+            public_api: true,
         },
         Output {
             kind: "DeriveProcMacro".into(),
             name: "HelperAttr".into(),
             public_api_eligible: true,
             visibility_limit: "public".into(),
+            path: vec!["proc_macros".into(), "HelperAttr".into()],
+            public_api: true,
         },
         Output {
             kind: "FunctionLikeProcMacro".into(),
             name: "hidden".into(),
             public_api_eligible: false,
             visibility_limit: "public".into(),
+            path: vec!["proc_macros".into(), "hidden".into()],
+            public_api: false,
         },
     ];
     expected_results.sort_unstable();
