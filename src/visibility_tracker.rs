@@ -198,6 +198,9 @@ impl<'a> VisibilityTracker<'a> {
 enum NamespacedName<'a> {
     Values(&'a str),
     Types(&'a str),
+    // https://doc.rust-lang.org/reference/names/namespaces.html#sub-namespaces
+    BangMacros(&'a str),
+    AttrOrDeriveMacros(&'a str),
 }
 
 impl<'a> NamespacedName<'a> {
@@ -205,6 +208,8 @@ impl<'a> NamespacedName<'a> {
         match self {
             NamespacedName::Values(_) => NamespacedName::Values(new_name),
             NamespacedName::Types(_) => NamespacedName::Types(new_name),
+            NamespacedName::BangMacros(_) => NamespacedName::BangMacros(new_name),
+            NamespacedName::AttrOrDeriveMacros(_) => NamespacedName::AttrOrDeriveMacros(new_name),
         }
     }
 }
@@ -360,6 +365,21 @@ fn get_names_for_item<'a>(
                 .into_iter()
                 .flatten()
         }
+        ItemEnum::Macro(..) => {
+            let item_name = item.name.as_deref().expect("item did not have a name");
+            [Some(NamespacedName::BangMacros(item_name)), None]
+                .into_iter()
+                .flatten()
+        }
+        ItemEnum::ProcMacro(m) => {
+            let item_name = item.name.as_deref().expect("item did not have a name");
+            let namespaced_name = if m.kind == rustdoc_types::MacroKind::Bang {
+                NamespacedName::BangMacros(item_name)
+            } else {
+                NamespacedName::AttrOrDeriveMacros(item_name)
+            };
+            [Some(namespaced_name), None].into_iter().flatten()
+        }
         _ => [None, None].into_iter().flatten(),
     }
 }
@@ -435,6 +455,24 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
                                     ),
                                 ),
                             );
+                    }
+                }
+            } else if let ItemEnum::Macro(..) = &inner_item.inner {
+                // `#[macro_export]` moves declarative macros to the crate root,
+                // regardless of what module they were declared in. Such macros are always public.
+                // Without `#[macro_export]`, declarative macros have no path-based scope:
+                // https://doc.rust-lang.org/reference/macros-by-example.html#path-based-scope
+                if inner_item
+                    .attrs
+                    .iter()
+                    .any(|attr| attr.as_str() == "#[macro_export]")
+                {
+                    for name in get_names_for_item(crate_, inner_item) {
+                        result
+                            .names_defined_in_module
+                            .entry(crate_.root.0)
+                            .or_default()
+                            .insert(name, (Definition::new_direct(inner_item.id.0), true));
                     }
                 }
             } else {
