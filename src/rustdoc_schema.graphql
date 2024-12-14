@@ -1983,15 +1983,15 @@ type AssociatedConstant implements Item {
 """
 A `macro_rules` declarative macro.
 
-When such macros are exported by a crate, they are always exported at the top level of the crate,
+When declarative macros are exported by a crate, they are always exported at the top level of the crate,
 even if the macro's definition is located inside a `mod`. In essence, the `#[macro_export]`
 attribute behaves as a `pub use` of the macro into the crate's root module.
 
-This is why we don't model macro items as `Importable`:
-- They always have only one importable path: `the_crate::macro_name`.
-- Their names are in their own namespace, and do not mix with the types or values namespaces.
+However, declarative macros *can* be re-exported by other modules as well.
+Those other modules just have to re-export the `#[macro_export]`-ed item from the crate root,
+instead of the item at its original declaration location.
 """
-type Macro implements Item {
+type Macro implements Item & Importable {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -2035,6 +2035,10 @@ type Macro implements Item {
   # edges from Item
   attribute: [Attribute!]
   span: Span
+
+  # edges from Importable
+  importable_path: [ImportablePath!]
+  canonical_path: Path
 }
 
 """
@@ -2049,7 +2053,7 @@ This is why we don't model macro items as `Importable`:
 - They always have only one importable path: `the_crate::macro_name`.
 - Their names are in their own namespace, and do not mix with the types or values namespaces.
 """
-interface ProcMacro implements Item {
+interface ProcMacro implements Item & Importable {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -2093,6 +2097,10 @@ interface ProcMacro implements Item {
   # edges from Item
   attribute: [Attribute!]
   span: Span
+
+  # edges from Importable
+  importable_path: [ImportablePath!]
+  canonical_path: Path
 }
 
 """
@@ -2107,7 +2115,7 @@ This is why we don't model macro items as `Importable`:
 - They always have only one importable path: `the_crate::macro_name`.
 - Their names are in their own namespace, and do not mix with the types or values namespaces.
 """
-type FunctionLikeProcMacro implements Item & ProcMacro {
+type FunctionLikeProcMacro implements Item & Importable & ProcMacro {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -2151,6 +2159,10 @@ type FunctionLikeProcMacro implements Item & ProcMacro {
   # edges from Item
   attribute: [Attribute!]
   span: Span
+
+  # edges from Importable
+  importable_path: [ImportablePath!]
+  canonical_path: Path
 }
 
 """
@@ -2164,7 +2176,7 @@ This is why we don't model macro items as `Importable`:
 - They always have only one importable path: `the_crate::macro_name`.
 - Their names are in their own namespace, and do not mix with the types or values namespaces.
 """
-type AttributeProcMacro implements Item & ProcMacro {
+type AttributeProcMacro implements Item & Importable & ProcMacro {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -2208,6 +2220,10 @@ type AttributeProcMacro implements Item & ProcMacro {
   # edges from Item
   attribute: [Attribute!]
   span: Span
+
+  # edges from Importable
+  importable_path: [ImportablePath!]
+  canonical_path: Path
 }
 
 """
@@ -2221,7 +2237,7 @@ This is why we don't model macro items as `Importable`:
 - They always have only one importable path: `the_crate::MacroName`.
 - Their names are in their own namespace, and do not mix with the types or values namespaces.
 """
-type DeriveProcMacro implements Item & ProcMacro {
+type DeriveProcMacro implements Item & Importable & ProcMacro {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -2265,6 +2281,10 @@ type DeriveProcMacro implements Item & ProcMacro {
   # edges from Item
   attribute: [Attribute!]
   span: Span
+
+  # edges from Importable
+  importable_path: [ImportablePath!]
+  canonical_path: Path
 
   # own edges
   """
