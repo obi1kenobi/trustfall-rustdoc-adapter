@@ -229,8 +229,22 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
         match type_name.as_ref() {
             "CrateDiff" => edges::resolve_crate_diff_edge(contexts, edge_name),
             "Crate" => edges::resolve_crate_edge(self, contexts, edge_name, resolve_info),
-            "Importable" | "ImplOwner" | "Struct" | "Enum" | "Union" | "Trait" | "Function"
-            | "GlobalValue" | "Constant" | "Static" | "Module"
+            "Importable"
+            | "ImplOwner"
+            | "Struct"
+            | "Enum"
+            | "Union"
+            | "Trait"
+            | "Function"
+            | "GlobalValue"
+            | "Constant"
+            | "Static"
+            | "Module"
+            | "Macro"
+            | "ProcMacro"
+            | "FunctionLikeProcMacro"
+            | "AttributeProcMacro"
+            | "DeriveProcMacro"
                 if matches!(edge_name.as_ref(), "importable_path" | "canonical_path") =>
             {
                 edges::resolve_importable_edge(
