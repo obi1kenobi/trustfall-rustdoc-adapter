@@ -203,6 +203,9 @@ pub struct IndexedCrate<'a> {
     /// -> function item with that export name; exported symbol names must be unique.
     pub(crate) export_name_index: Option<HashMap<&'a str, &'a Item>>,
 
+    /// index: kind of public top-level item -> `Vec<&'a Item>` of that kind
+    pub(crate) pub_item_kind_index: PubItemKindIndex<'a>,
+
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
     /// even if they are implemented by a type in that crate. This also includes
     /// Rust's built-in traits like `Debug, Send, Eq` etc.
@@ -224,6 +227,159 @@ pub struct IndexedCrate<'a> {
 
     /// Target feature information about our current target triple.
     pub(crate) target_features: HashMap<&'a str, &'a rustdoc_types::TargetFeature>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PubItemKindIndex<'a> {
+    pub(crate) free_functions: Vec<&'a Item>,
+    pub(crate) structs: Vec<&'a Item>,
+    pub(crate) enums: Vec<&'a Item>,
+    pub(crate) unions: Vec<&'a Item>,
+    pub(crate) traits: Vec<&'a Item>,
+    pub(crate) modules: Vec<&'a Item>,
+    pub(crate) statics: Vec<&'a Item>,
+    pub(crate) free_consts: Vec<&'a Item>,
+    pub(crate) decl_macros: Vec<&'a Item>,
+    pub(crate) proc_macros: Vec<&'a Item>,
+}
+
+impl<'a> PubItemKindIndex<'a> {
+    fn with_capacity_hint(hint: usize) -> Self {
+        let capacity = if hint < 128 * 128 { 128 } else { hint / 128 };
+        Self {
+            // Most top-level items in a crate are functions, structs, enums, or traits.
+            // We want indexing to be fast, and it's okay if we waste a bit of memory.
+            free_functions: Vec::with_capacity(capacity),
+            structs: Vec::with_capacity(capacity),
+            enums: Vec::with_capacity(capacity),
+            traits: Vec::with_capacity(capacity),
+            unions: Vec::new(),
+            modules: Vec::with_capacity(64),
+            statics: Vec::new(),
+            free_consts: Vec::new(),
+            decl_macros: Vec::new(),
+            proc_macros: Vec::new(),
+        }
+    }
+
+    fn from_crate(crate_: &'a Crate, fn_owner_index: &HashMap<Id, &'a Item>) -> Self {
+        #[cfg(feature = "rayon")]
+        let iter = crate_.index.par_iter().map(|(_, value)| value);
+        #[cfg(not(feature = "rayon"))]
+        let iter = crate_.index.values();
+
+        #[cfg(feature = "rayon")]
+        let init = || Self::with_capacity_hint(crate_.index.len());
+        #[cfg(not(feature = "rayon"))]
+        let init = Self::with_capacity_hint(crate_.index.len());
+
+        let folded = iter.fold(init, |mut acc, item| {
+            if item.visibility == rustdoc_types::Visibility::Public {
+                match &item.inner {
+                    rustdoc_types::ItemEnum::Module { .. } => {
+                        acc.modules.push(item);
+                    }
+                    rustdoc_types::ItemEnum::Union { .. } => {
+                        acc.unions.push(item);
+                    }
+                    rustdoc_types::ItemEnum::Struct { .. } => {
+                        acc.structs.push(item);
+                    }
+                    rustdoc_types::ItemEnum::Enum { .. } => {
+                        acc.enums.push(item);
+                    }
+                    rustdoc_types::ItemEnum::Function { .. } => {
+                        if !fn_owner_index.contains_key(&item.id) {
+                            // This is a free function.
+                            acc.free_functions.push(item);
+                        }
+                    }
+                    rustdoc_types::ItemEnum::Trait { .. } => {
+                        acc.traits.push(item);
+                    }
+                    rustdoc_types::ItemEnum::Constant { .. } => {
+                        acc.free_consts.push(item);
+                    }
+                    rustdoc_types::ItemEnum::Static { .. } => {
+                        acc.statics.push(item);
+                    }
+                    rustdoc_types::ItemEnum::Macro { .. } => {
+                        acc.decl_macros.push(item);
+                    }
+                    rustdoc_types::ItemEnum::ProcMacro { .. } => {
+                        acc.proc_macros.push(item);
+                    }
+                    _ => {}
+                }
+            }
+
+            acc
+        });
+
+        #[cfg(feature = "rayon")]
+        let folded = {
+            let collected = folded
+                .map(|index| vec![index])
+                .reduce(Vec::new, |mut left, right| {
+                    left.extend(right);
+                    left
+                });
+
+            let mut fns_len = 0;
+            let mut structs_len = 0;
+            let mut enums_len = 0;
+            let mut unions_len = 0;
+            let mut traits_len = 0;
+            let mut modules_len = 0;
+            let mut statics_len = 0;
+            let mut consts_len = 0;
+            let mut decl_macros_len = 0;
+            let mut proc_macros_len = 0;
+
+            for c in &collected {
+                fns_len += c.free_functions.len();
+                structs_len += c.structs.len();
+                enums_len += c.enums.len();
+                unions_len += c.unions.len();
+                traits_len += c.traits.len();
+                modules_len += c.modules.len();
+                statics_len += c.statics.len();
+                consts_len += c.free_consts.len();
+                decl_macros_len += c.decl_macros.len();
+                proc_macros_len += c.proc_macros.len();
+            }
+
+            let mut value = Self {
+                free_functions: Vec::with_capacity(fns_len),
+                structs: Vec::with_capacity(structs_len),
+                enums: Vec::with_capacity(enums_len),
+                unions: Vec::with_capacity(unions_len),
+                traits: Vec::with_capacity(traits_len),
+                modules: Vec::with_capacity(modules_len),
+                statics: Vec::with_capacity(statics_len),
+                free_consts: Vec::with_capacity(consts_len),
+                decl_macros: Vec::with_capacity(decl_macros_len),
+                proc_macros: Vec::with_capacity(proc_macros_len),
+            };
+
+            for c in collected {
+                value.free_functions.extend(c.free_functions);
+                value.structs.extend(c.structs);
+                value.enums.extend(c.enums);
+                value.unions.extend(c.unions);
+                value.traits.extend(c.traits);
+                value.modules.extend(c.modules);
+                value.statics.extend(c.statics);
+                value.free_consts.extend(c.free_consts);
+                value.decl_macros.extend(c.decl_macros);
+                value.proc_macros.extend(c.proc_macros);
+            }
+
+            value
+        };
+
+        folded
+    }
 }
 
 /// Map a Key to a List (Vec) of values
@@ -463,6 +619,7 @@ impl<'a> IndexedCrate<'a> {
             fn_owner_index: None,
             export_name_index: None,
             target_features,
+            pub_item_kind_index,
         };
 
         debug_assert!(
