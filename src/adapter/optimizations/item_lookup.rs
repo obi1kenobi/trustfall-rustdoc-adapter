@@ -65,6 +65,195 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
         }
     }
 
+    // Is the `importable_path` edge being resolved in a subsequent step in a *mandatory* fashion?
+    // If so, we could only match on public items, so check which kinds of public items
+    // we're looking for and only return those from the index.
+    if destination
+        .first_mandatory_edge("importable_path")
+        .is_some()
+    {
+        if let Some(item_type) = destination.coerced_to_type().map(|x| x.as_ref()) {
+            match item_type {
+                "Function" => {
+                    return resolve_neighbors_with(contexts, move |vertex| {
+                        let crate_vertex =
+                            vertex.as_indexed_crate().expect("vertex was not a Crate");
+                        let origin = vertex.origin;
+                        Box::new(
+                            crate_vertex
+                                .pub_item_kind_index
+                                .free_functions
+                                .iter()
+                                .map(move |item| origin.make_item_vertex(item)),
+                        )
+                    })
+                }
+                "Struct" => {
+                    return resolve_neighbors_with(contexts, move |vertex| {
+                        let crate_vertex =
+                            vertex.as_indexed_crate().expect("vertex was not a Crate");
+                        let origin = vertex.origin;
+                        Box::new(
+                            crate_vertex
+                                .pub_item_kind_index
+                                .structs
+                                .iter()
+                                .map(move |item| origin.make_item_vertex(item)),
+                        )
+                    })
+                }
+                "Enum" => {
+                    return resolve_neighbors_with(contexts, move |vertex| {
+                        let crate_vertex =
+                            vertex.as_indexed_crate().expect("vertex was not a Crate");
+                        let origin = vertex.origin;
+                        Box::new(
+                            crate_vertex
+                                .pub_item_kind_index
+                                .enums
+                                .iter()
+                                .map(move |item| origin.make_item_vertex(item)),
+                        )
+                    })
+                }
+                "Union" => {
+                    return resolve_neighbors_with(contexts, move |vertex| {
+                        let crate_vertex =
+                            vertex.as_indexed_crate().expect("vertex was not a Crate");
+                        let origin = vertex.origin;
+                        Box::new(
+                            crate_vertex
+                                .pub_item_kind_index
+                                .unions
+                                .iter()
+                                .map(move |item| origin.make_item_vertex(item)),
+                        )
+                    })
+                }
+                "Trait" => {
+                    return resolve_neighbors_with(contexts, move |vertex| {
+                        let crate_vertex =
+                            vertex.as_indexed_crate().expect("vertex was not a Crate");
+                        let origin = vertex.origin;
+                        Box::new(
+                            crate_vertex
+                                .pub_item_kind_index
+                                .traits
+                                .iter()
+                                .map(move |item| origin.make_item_vertex(item)),
+                        )
+                    })
+                }
+                "ImplOwner" => {
+                    return resolve_neighbors_with(contexts, move |vertex| {
+                        let crate_vertex =
+                            vertex.as_indexed_crate().expect("vertex was not a Crate");
+                        let origin = vertex.origin;
+                        Box::new(
+                            crate_vertex
+                                .pub_item_kind_index
+                                .structs
+                                .iter()
+                                .chain(crate_vertex.pub_item_kind_index.enums.iter())
+                                .chain(crate_vertex.pub_item_kind_index.unions.iter())
+                                .map(move |item| origin.make_item_vertex(item)),
+                        )
+                    })
+                }
+                "Constant" => {
+                    return resolve_neighbors_with(contexts, move |vertex| {
+                        let crate_vertex =
+                            vertex.as_indexed_crate().expect("vertex was not a Crate");
+                        let origin = vertex.origin;
+                        Box::new(
+                            crate_vertex
+                                .pub_item_kind_index
+                                .free_consts
+                                .iter()
+                                .map(move |item| origin.make_item_vertex(item)),
+                        )
+                    })
+                }
+                "Static" => {
+                    return resolve_neighbors_with(contexts, move |vertex| {
+                        let crate_vertex =
+                            vertex.as_indexed_crate().expect("vertex was not a Crate");
+                        let origin = vertex.origin;
+                        Box::new(
+                            crate_vertex
+                                .pub_item_kind_index
+                                .statics
+                                .iter()
+                                .map(move |item| origin.make_item_vertex(item)),
+                        )
+                    })
+                }
+                "GlobalValue" => {
+                    // const or static
+                    return resolve_neighbors_with(contexts, move |vertex| {
+                        let crate_vertex =
+                            vertex.as_indexed_crate().expect("vertex was not a Crate");
+                        let origin = vertex.origin;
+                        Box::new(
+                            crate_vertex
+                                .pub_item_kind_index
+                                .free_consts
+                                .iter()
+                                .chain(crate_vertex.pub_item_kind_index.statics.iter())
+                                .map(move |item| origin.make_item_vertex(item)),
+                        )
+                    });
+                }
+                "Macro" => {
+                    return resolve_neighbors_with(contexts, move |vertex| {
+                        let crate_vertex =
+                            vertex.as_indexed_crate().expect("vertex was not a Crate");
+                        let origin = vertex.origin;
+                        Box::new(
+                            crate_vertex
+                                .pub_item_kind_index
+                                .decl_macros
+                                .iter()
+                                .map(move |item| origin.make_item_vertex(item)),
+                        )
+                    })
+                }
+                "ProcMacro"
+                | "FunctionLikeProcMacro"
+                | "AttributeProcMacro"
+                | "DeriveProcMacro" => {
+                    return resolve_neighbors_with(contexts, move |vertex| {
+                        let crate_vertex =
+                            vertex.as_indexed_crate().expect("vertex was not a Crate");
+                        let origin = vertex.origin;
+                        Box::new(
+                            crate_vertex
+                                .pub_item_kind_index
+                                .proc_macros
+                                .iter()
+                                .map(move |item| origin.make_item_vertex(item)),
+                        )
+                    })
+                }
+                "Module" => {
+                    return resolve_neighbors_with(contexts, move |vertex| {
+                        let crate_vertex =
+                            vertex.as_indexed_crate().expect("vertex was not a Crate");
+                        let origin = vertex.origin;
+                        Box::new(
+                            crate_vertex
+                                .pub_item_kind_index
+                                .modules
+                                .iter()
+                                .map(move |item| origin.make_item_vertex(item)),
+                        )
+                    })
+                }
+                _ => {}
+            }
+        }
+    }
+
     resolve_neighbors_with(contexts, |vertex| {
         let crate_vertex = vertex.as_indexed_crate().expect("vertex was not a Crate");
         let origin = vertex.origin;
