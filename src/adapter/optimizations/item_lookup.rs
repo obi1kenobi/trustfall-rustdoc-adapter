@@ -18,9 +18,9 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     let destination = resolve_info.destination();
 
-    // Is the `importable_path` edge being resolved in a subsequent step?
+    // Is the `importable_path` edge being resolved in a mandatory fashion in a subsequent step?
     if let Some(neighbor_info) = destination
-        .first_edge("importable_path")
+        .first_mandatory_edge("importable_path")
         .as_ref()
         .map(|x| x.destination())
     {
