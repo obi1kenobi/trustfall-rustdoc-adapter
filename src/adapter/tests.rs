@@ -3941,3 +3941,63 @@ fn extern_fn() {
     expected_results.sort_unstable();
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn item_lookup_by_path_optimization() {
+    // Any test crate with non-public top-level items would work for this test.
+    get_test_data!(data, associated_consts);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+
+                # Since this edge is optional, this query matches:
+                # - functions with an importable path matching the filter, and
+                # - functions that *do not have* importable paths at all.
+                #
+                # Failure to return both of these means we have a bug in
+                # the "item lookup by importable path" optimization code path.
+                importable_path @optional {
+                    public_api @output
+                    path @output @filter(op: "=", value: ["$path"])
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    let variables = btreemap! {
+        "path" => vec!["associated_consts", "will_not_match", "anything"],
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        public_api: Option<bool>,
+        path: Option<Vec<String>>,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![Output {
+        name: "min_batch_size".into(),
+        public_api: None,
+        path: None,
+    }];
+    expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+}
