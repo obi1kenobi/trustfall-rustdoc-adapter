@@ -4001,3 +4001,62 @@ fn item_lookup_by_path_optimization() {
     expected_results.sort_unstable();
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn impl_lookup_by_method_name_optimization() {
+    // Any test crate that has `impl` blocks without methods would work for this test.
+    get_test_data!(data, associated_consts);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                name @output
+
+                # Since this edge is optional, this query matches:
+                # - types with inherent impls containing the named method
+                # - types that *do not have* any methods in their inherent impls.
+                #
+                # Failure to account for either of these cases means we have a bug in
+                # the "item lookup by importable path" optimization code path.
+                inherent_impl {
+                    method @optional {
+                        method: name @output @filter(op: "=", value: ["$name"])
+                    }
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    let variables = btreemap! {
+        "name" => "non_existent",
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        method: Option<String>,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![Output {
+        name: "Counter".into(),
+        method: None,
+    }];
+    expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+}
