@@ -28,10 +28,10 @@ pub(crate) fn resolve_owner_impl<'a, V: AsVertex<Vertex<'a>> + 'a>(
         _ => unreachable!("unexpected edge name: {edge_name}"),
     };
 
-    // Check if the `method` edge is used next at the destination.
+    // Check if the `method` edge is used in a mandatory fashion at the destination.
     if let Some(method_vertex_info) = resolve_info
         .destination()
-        .first_edge("method")
+        .first_mandatory_edge("method")
         .as_ref()
         .map(|e| e.destination())
     {
