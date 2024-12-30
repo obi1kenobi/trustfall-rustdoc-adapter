@@ -1,5 +1,7 @@
-use rustdoc_types::{GenericBound::TraitBound, Id, ItemEnum, VariantKind, WherePredicate};
-use std::rc::Rc;
+use rustdoc_types::{
+    GenericBound::TraitBound, GenericParamDefKind, Id, ItemEnum, VariantKind, WherePredicate,
+};
+use std::{num::NonZeroUsize, rc::Rc};
 use trustfall::provider::{
     resolve_neighbors_with, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
     VertexIterator,
@@ -262,17 +264,52 @@ pub(super) fn resolve_generic_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
+    struct GenericParamCounter {
+        lifetimes: NonZeroUsize,
+        types: NonZeroUsize,
+        consts: NonZeroUsize,
+    }
+
     match edge_name {
         "generic_parameter" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
+            let mut counter = GenericParamCounter {
+                lifetimes: NonZeroUsize::new(1).unwrap(),
+                types: NonZeroUsize::new(1).unwrap(),
+                consts: NonZeroUsize::new(1).unwrap(),
+            };
             Box::new(
                 vertex
                     .as_generics()
                     .map(move |generics| {
-                        generics
-                            .params
-                            .iter()
-                            .map(move |param| origin.make_generic_parameter_vertex(generics, param))
+                        generics.params.iter().map(move |param| {
+                            let position = match param.kind {
+                                GenericParamDefKind::Lifetime { .. } => {
+                                    let position = counter.lifetimes;
+                                    counter.lifetimes =
+                                        position.checked_add(1).expect("param position overflow");
+                                    Some(position)
+                                }
+                                GenericParamDefKind::Type { is_synthetic, .. } => {
+                                    if is_synthetic {
+                                        None
+                                    } else {
+                                        let position = counter.types;
+                                        counter.types = position
+                                            .checked_add(1)
+                                            .expect("param position overflow");
+                                        Some(position)
+                                    }
+                                }
+                                GenericParamDefKind::Const { .. } => {
+                                    let position = counter.consts;
+                                    counter.consts =
+                                        position.checked_add(1).expect("param position overflow");
+                                    Some(position)
+                                }
+                            };
+                            origin.make_generic_parameter_vertex(generics, param, position)
+                        })
                     })
                     .into_iter()
                     .flatten(),
