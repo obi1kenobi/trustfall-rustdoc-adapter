@@ -1,4 +1,4 @@
-use std::{borrow::Cow, rc::Rc};
+use std::{borrow::Cow, num::NonZeroUsize, rc::Rc};
 
 use rustdoc_types::{
     Abi, Constant, Crate, Enum, Function, GenericBound, GenericParamDef, Impl, Item, Module, Path,
@@ -38,7 +38,11 @@ pub enum VertexKind<'a> {
     Discriminant(Cow<'a, str>),
     Variant(EnumVariant<'a>),
     DeriveHelperAttr(&'a str),
-    GenericParameter(&'a rustdoc_types::Generics, &'a GenericParamDef),
+    GenericParameter(
+        &'a rustdoc_types::Generics,
+        &'a GenericParamDef,
+        Option<NonZeroUsize>,
+    ),
     Feature(Feature<'a>),
 }
 
@@ -94,7 +98,7 @@ impl Typename for Vertex<'_> {
                 VariantKind::Struct { .. } => "StructVariant",
             },
             VertexKind::DeriveHelperAttr(..) => "DeriveMacroHelperAttribute",
-            VertexKind::GenericParameter(_, param) => match &param.kind {
+            VertexKind::GenericParameter(_, param, _) => match &param.kind {
                 rustdoc_types::GenericParamDefKind::Lifetime { .. } => "GenericLifetimeParameter",
                 rustdoc_types::GenericParamDefKind::Type { .. } => "GenericTypeParameter",
                 rustdoc_types::GenericParamDefKind::Const { .. } => "GenericConstParameter",
@@ -319,7 +323,14 @@ impl<'a> Vertex<'a> {
         &self,
     ) -> Option<(&'a rustdoc_types::Generics, &'a GenericParamDef)> {
         match &self.kind {
-            VertexKind::GenericParameter(generics, param) => Some((generics, param)),
+            VertexKind::GenericParameter(generics, param, _) => Some((generics, param)),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_generic_parameter_position(&self) -> Option<Option<NonZeroUsize>> {
+        match &self.kind {
+            VertexKind::GenericParameter(_, _, position) => Some(*position),
             _ => None,
         }
     }
