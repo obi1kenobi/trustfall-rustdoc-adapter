@@ -1,4 +1,4 @@
-use std::{borrow::Cow, rc::Rc};
+use std::{borrow::Cow, num::NonZeroUsize, rc::Rc};
 
 use rustdoc_types::{Abi, Item, Span};
 
@@ -145,10 +145,11 @@ impl Origin {
         &self,
         generics: &'a rustdoc_types::Generics,
         param: &'a rustdoc_types::GenericParamDef,
+        position: Option<NonZeroUsize>,
     ) -> Vertex<'a> {
         Vertex {
             origin: *self,
-            kind: VertexKind::GenericParameter(generics, param),
+            kind: VertexKind::GenericParameter(generics, param, position),
         }
     }
 }

@@ -672,6 +672,16 @@ pub(crate) fn resolve_generic_parameter_property<'a, V: AsVertex<Vertex<'a>> + '
 
             generic.name.clone().into()
         }),
+        "position" => resolve_property_with(contexts, |vertex| {
+            let position = vertex
+                .as_generic_parameter_position()
+                .expect("vertex was not a GenericParameter");
+
+            match position {
+                None => FieldValue::NULL,
+                Some(x) => FieldValue::Uint64(x.get() as u64),
+            }
+        }),
         _ => unreachable!("GenericParameter property {property_name}"),
     }
 }
