@@ -23,26 +23,59 @@ pub struct Vertex<'a> {
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum VertexKind<'a> {
+    #[non_exhaustive]
     CrateDiff((&'a PackageIndex<'a>, &'a PackageIndex<'a>)),
+
+    #[non_exhaustive]
     Crate(&'a PackageIndex<'a>),
+
+    #[non_exhaustive]
     Item(&'a Item),
+
+    #[non_exhaustive]
     Span(&'a Span),
+
+    #[non_exhaustive]
     Path(&'a [String]),
+
+    #[non_exhaustive]
     ImportablePath(Rc<ImportablePath<'a>>),
+
+    #[non_exhaustive]
     RawType(&'a Type),
+
+    #[non_exhaustive]
     Attribute(Attribute<'a>),
+
+    #[non_exhaustive]
     AttributeMetaItem(Rc<AttributeMetaItem<'a>>),
+
+    #[non_exhaustive]
     ImplementedTrait(ImplementedTrait<'a>),
+
+    #[non_exhaustive]
     FunctionParameter(&'a str),
+
+    #[non_exhaustive]
     FunctionAbi(&'a Abi),
+
+    #[non_exhaustive]
     Discriminant(Cow<'a, str>),
+
+    #[non_exhaustive]
     Variant(EnumVariant<'a>),
+
+    #[non_exhaustive]
     DeriveHelperAttr(&'a str),
+
+    #[non_exhaustive]
     GenericParameter(
         &'a rustdoc_types::Generics,
         &'a GenericParamDef,
         Option<NonZeroUsize>,
     ),
+
+    #[non_exhaustive]
     Feature(Feature<'a>),
 }
 
