@@ -4060,3 +4060,347 @@ fn impl_lookup_by_method_name_optimization() {
     expected_results.sort_unstable();
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn generic_param_positions() {
+    get_test_data!(data, generic_param_positions);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on GenericItem {
+                item: name @output
+                item_kind: __typename @output
+
+                generic_parameter {
+                    name @output
+                    kind: __typename @output
+                    position @output
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::new();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        item_kind: String,
+        item: String,
+        name: String,
+        kind: String,
+        position: Option<i64>,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            item_kind: "Function".into(),
+            item: "function".into(),
+            name: "'a".into(),
+            kind: "GenericLifetimeParameter".into(),
+            position: Some(1),
+        },
+        Output {
+            item_kind: "Function".into(),
+            item: "function".into(),
+            name: "'b".into(),
+            kind: "GenericLifetimeParameter".into(),
+            position: Some(2),
+        },
+        Output {
+            item_kind: "Function".into(),
+            item: "function".into(),
+            name: "T".into(),
+            kind: "GenericTypeParameter".into(),
+            position: Some(1),
+        },
+        Output {
+            item_kind: "Function".into(),
+            item: "function".into(),
+            name: "U".into(),
+            kind: "GenericTypeParameter".into(),
+            position: Some(2),
+        },
+        Output {
+            item_kind: "Function".into(),
+            item: "function".into(),
+            name: "N".into(),
+            kind: "GenericConstParameter".into(),
+            position: Some(1),
+        },
+        Output {
+            item_kind: "Function".into(),
+            item: "function".into(),
+            name: "M".into(),
+            kind: "GenericConstParameter".into(),
+            position: Some(2),
+        },
+        Output {
+            item_kind: "Trait".into(),
+            item: "Trait".into(),
+            name: "'a".into(),
+            kind: "GenericLifetimeParameter".into(),
+            position: Some(1),
+        },
+        Output {
+            item_kind: "Trait".into(),
+            item: "Trait".into(),
+            name: "T".into(),
+            kind: "GenericTypeParameter".into(),
+            position: Some(1),
+        },
+        Output {
+            item_kind: "Trait".into(),
+            item: "Trait".into(),
+            name: "N".into(),
+            kind: "GenericConstParameter".into(),
+            position: Some(1),
+        },
+        Output {
+            item_kind: "Function".into(),
+            item: "impl_trait".into(),
+            name: "T".into(),
+            kind: "GenericTypeParameter".into(),
+            position: Some(1),
+        },
+        Output {
+            item_kind: "Function".into(),
+            item: "impl_trait".into(),
+            name: "U".into(),
+            kind: "GenericTypeParameter".into(),
+            position: Some(2),
+        },
+        Output {
+            item_kind: "Function".into(),
+            item: "impl_trait".into(),
+            name: "impl Into<U>".into(),
+            kind: "GenericTypeParameter".into(),
+            position: None,
+        },
+        Output {
+            item_kind: "Struct".into(),
+            item: "Example".into(),
+            name: "'a".into(),
+            kind: "GenericLifetimeParameter".into(),
+            position: Some(1),
+        },
+        Output {
+            item_kind: "Struct".into(),
+            item: "Example".into(),
+            name: "'b".into(),
+            kind: "GenericLifetimeParameter".into(),
+            position: Some(2),
+        },
+        Output {
+            item_kind: "Struct".into(),
+            item: "SingleLifetimeElided".into(),
+            name: "'a".into(),
+            kind: "GenericLifetimeParameter".into(),
+            position: Some(1),
+        },
+    ];
+    expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                item: name @output
+                item_kind: __typename @output
+
+                inherent_impl {
+                    generic_parameter {
+                        name @output
+                        kind: __typename @output
+                        position @output
+                    }
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            item_kind: "Struct".into(),
+            item: "Example".into(),
+            name: "'a".into(),
+            kind: "GenericLifetimeParameter".into(),
+            position: Some(1),
+        },
+        Output {
+            item_kind: "Struct".into(),
+            item: "Example".into(),
+            name: "'b".into(),
+            kind: "GenericLifetimeParameter".into(),
+            position: Some(2),
+        },
+        // `impl SingleLifetimeElided<'_>` doesn't have a generic parameter,
+        // since neither implicit nor elided parameters get an entry.
+    ];
+    expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                item: name @output
+                item_kind: __typename @output
+
+                inherent_impl {
+                    method {
+                        method: name @output
+
+                        generic_parameter {
+                            name @output
+                            kind: __typename @output
+                            position @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output2 {
+        item_kind: String,
+        item: String,
+        method: String,
+        name: String,
+        kind: String,
+        position: Option<i64>,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output2 {
+            item_kind: "Struct".into(),
+            item: "Example".into(),
+            method: "elided_lifetimes".into(),
+            name: "'c".into(),
+            kind: "GenericLifetimeParameter".into(),
+            position: Some(1),
+        },
+        Output2 {
+            item_kind: "Struct".into(),
+            item: "SingleLifetimeElided".into(),
+            method: "explicit_self_lifetime".into(),
+            name: "'a".into(),
+            kind: "GenericLifetimeParameter".into(),
+            position: Some(1),
+        },
+        Output2 {
+            item_kind: "Struct".into(),
+            item: "SingleLifetimeElided".into(),
+            method: "explicit_self_lifetime".into(),
+            name: "impl Into<&'a i64>".into(),
+            kind: "GenericTypeParameter".into(),
+            position: None,
+        },
+    ];
+    expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                item: name @output
+                item_kind: __typename @output
+
+                method {
+                    method: name @output
+
+                    generic_parameter {
+                        name @output
+                        kind: __typename @output
+                        position @output
+                    }
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output2 {
+            item_kind: "Trait".into(),
+            item: "Trait".into(),
+            method: "method".into(),
+            name: "'b".into(),
+            kind: "GenericLifetimeParameter".into(),
+            position: Some(1),
+        },
+        Output2 {
+            item_kind: "Trait".into(),
+            item: "Trait".into(),
+            method: "method".into(),
+            name: "U".into(),
+            kind: "GenericTypeParameter".into(),
+            position: Some(1),
+        },
+        Output2 {
+            item_kind: "Trait".into(),
+            item: "Trait".into(),
+            method: "method".into(),
+            name: "V".into(),
+            kind: "GenericTypeParameter".into(),
+            position: Some(2),
+        },
+        Output2 {
+            item_kind: "Trait".into(),
+            item: "Trait".into(),
+            method: "method".into(),
+            name: "M".into(),
+            kind: "GenericConstParameter".into(),
+            position: Some(1),
+        },
+    ];
+    expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+}
