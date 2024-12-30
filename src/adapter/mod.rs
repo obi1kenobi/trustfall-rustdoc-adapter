@@ -203,7 +203,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 | "GenericTypeParameter"
                 | "GenericLifetimeParameter"
                 | "GenericConstParameter"
-                    if matches!(property_name.as_ref(), "name") =>
+                    if matches!(property_name.as_ref(), "name" | "position") =>
                 {
                     properties::resolve_generic_parameter_property(contexts, property_name)
                 }
