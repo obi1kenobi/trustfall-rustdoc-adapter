@@ -172,6 +172,15 @@ interface GenericItem implements Item {
 
   """
   Generic type, lifetime, or const parameters by which this item is parameterized.
+
+  Lifetime parameters that are elided or unnamed (such as in `&self` or `Example<'_>`)
+  do not have a `generic_parameter` entry.
+
+  `impl Trait` in parameter position is considered a synthetic generic type parameter,
+  since that functionality is merely syntax sugar for such a generic type.
+
+  `impl Trait` in return position is not considered a generic type parameter,
+  since its desugaring is different: it's more like an associated type than a generic.
   """
   generic_parameter: [GenericParameter]
 }
@@ -1033,6 +1042,9 @@ type Impl implements Item & GenericItem {
   # edges from GenericItem
   """
   Generic type, lifetime, or const parameters by which this impl is parameterized.
+
+  Lifetime parameters that are elided or unnamed (such as in `impl Example<'_>`)
+  do not have a `generic_parameter` entry.
   """
   generic_parameter: [GenericParameter]
 
@@ -1390,6 +1402,15 @@ type Function implements Item & FunctionLike & Importable & GenericItem {
   # edges from GenericItem
   """
   Generic type, lifetime, or const parameters by which this function is parameterized.
+
+  Lifetime parameters that are elided or unnamed (such as in `&i64` or `&'_ i64`)
+  do not have a `generic_parameter` entry.
+
+  `impl Trait` in parameter position is considered a synthetic generic type parameter,
+  since that functionality is merely syntax sugar for such a generic type.
+
+  `impl Trait` in return position is not considered a generic type parameter,
+  since its desugaring is different: it's more like an associated type than a generic.
   """
   generic_parameter: [GenericParameter]
 }
@@ -1467,6 +1488,15 @@ type Method implements Item & FunctionLike & GenericItem {
 
   This only includes the *method's own* generic parameters. It does not include
   any generic parameters that may be part of the definition of the type that owns the method.
+
+  Lifetime parameters that are elided or unnamed (such as in `&self` or `Example<'_>`)
+  do not have a `generic_parameter` entry.
+
+  `impl Trait` in parameter position is considered a synthetic generic type parameter,
+  since that functionality is merely syntax sugar for such a generic type.
+
+  `impl Trait` in return position is not considered a generic type parameter,
+  since its desugaring is different: it's more like an associated type than a generic.
   """
   generic_parameter: [GenericParameter]
 }
@@ -2317,6 +2347,29 @@ interface GenericParameter {
   - `"N"` as a generic constant
   """
   name: String!
+
+  """
+  The 1-based position of this generic parameter in the item's type signature.
+
+  For example, in `struct Generic<'a, 'b>`,
+  parameter `'a` has position `1` while `'b` has position `2`.
+
+  The position considers parameters of each kind (lifetime, type, and const) separately.
+  For example: in `struct Generic<'a, T, U>`, both the `'a` lifetime parameter and
+  the `T` type parameter have position `1`, while the `U` generic parameter has position `2`.
+
+  The position only considers generic parameters belonging *directly* to
+  the item in question. It ignores generic parameters originally declared by a parent item.
+  For example, in `fn method<'b>(&self, a: &'a i64, b: &'b i64);` found inside `trait Example<'a>`,
+  the `'b` lifetime parameter has position `1` as the `'a` lifetime parameter belongs to `Example`,
+  not `method`.
+
+  Synthetic (`impl Trait`) generic type parameters do not have a positional index. This property
+  has value `null` for them. For example,
+  in `fn method<T>(&self, value: T, iter: impl Into<String>) { ... }`, the `T` type parameter
+  has position `1` whereas the `impl Into<String>` synthetic generic type has position `null`.
+  """
+  position: Int
 }
 
 type GenericTypeParameter implements GenericParameter {
@@ -2351,6 +2404,28 @@ type GenericTypeParameter implements GenericParameter {
   """
   synthetic: Boolean!
 
+  """
+  The 1-based position of this generic type parameter in the item's type signature.
+
+  For example, in `struct Generic<A, B>`, parameter `A` has position `1` while `B` has position `2`.
+
+  The position only considers type parameters. For example: in `struct Generic<'a, 'b, T>`,
+  the `T` type parameter has position `1`. The other generic parameters are ignored
+  when computing `T`'s position.
+
+  The position only considers generic type parameters belonging *directly* to
+  the item in question. It ignores generic parameters originally declared by a parent item.
+  For example, in `fn method<B>(&self, a: A, b: B);` found inside `trait Example<A>`,
+  the `B` type parameter has position `1` as the `A` type parameter belongs to `Example`,
+  not `method`.
+
+  Synthetic (`impl Trait`) generic type parameters do not have a positional index. This property
+  has value `null` for them. For example,
+  in `fn method<T>(&self, value: T, iter: impl Into<String>) { ... }`, the `T` type parameter
+  has position `1` whereas the `impl Into<String>` synthetic generic type has position `null`.
+  """
+  position: Int
+
   # own edges
   """
   Type bounds applied specifically to this generic type parameter.
@@ -2381,6 +2456,24 @@ type GenericLifetimeParameter implements GenericParameter {
   """
   name: String!
 
+  """
+  The 1-based position of this generic lifetime parameter in the item's type signature.
+
+  For example, in `struct Generic<'a, 'b>`,
+  parameter `'a` has position `1` while `'b` has position `2`.
+
+  The position only considers lifetime parameters. For example: in `struct Generic<'a, T, U>`,
+  the `'a` lifetime parameter has position `1`. The other generic parameters are ignored
+  when computing `'a`'s position.
+
+  The position only considers generic lifetime parameters belonging *directly* to
+  the item in question. It ignores generic parameters originally declared by a parent item.
+  For example, in `fn method<'b>(&self, a: &'a i64, b: &'b i64);` found inside `trait Example<'a>`,
+  the `'b` lifetime parameter has position `1` as the `'a` lifetime parameter belongs to `Example`,
+  not `method`.
+  """
+  position: Int!
+
   # own edges
   # TODO: needs lifetime bounds
   # lifetime_bound: ?
@@ -2402,6 +2495,25 @@ type GenericConstParameter implements GenericParameter {
   Whether the generic const parameter has a default value.
   """
   has_default: Boolean!
+
+  """
+  The 1-based position of this generic const parameter in the item's type signature.
+
+  For example, in `struct Generic<const N: usize, const M: usize>`,
+  parameter `N` has position `1` while `M` has position `2`.
+
+  The position only considers const parameters.
+  For example: in `struct Generic<'a, T, const N: usize>`,
+  the `N` const parameter has position `1`. The other generic parameters are ignored
+  when computing `N`'s position.
+
+  The position only considers const generics belonging *directly* to
+  the item in question. It ignores generic parameters originally declared by a parent item.
+  For example, in `fn method<const M: usize>(&self, a: &'a [i64; N], b: &'b [i64; M]);`
+  found inside `trait Example<const N: usize>`, the `M` lifetime parameter has position `1` as
+  the `N` lifetime parameter belongs to `Example`, not `method`.
+  """
+  position: Int!
 
   # own edges
   # TODO: needs type and value
