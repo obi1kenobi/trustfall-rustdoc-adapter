@@ -678,7 +678,6 @@ mod tests {
         results.sort_unstable();
 
         similar_asserts::assert_eq!(
-            results,
             vec![
                 Output {
                     name: "a".into(),
@@ -712,7 +711,8 @@ mod tests {
                     name: "h".into(),
                     typename: "Box<dyn Fn(&'a i64) -> &'a i64>".into(),
                 },
-            ]
+            ],
+            results,
         );
     }
 
@@ -760,10 +760,6 @@ mod tests {
                 .collect();
 
             similar_asserts::assert_eq!(
-                inputs
-                    .iter()
-                    .map(|(k, v)| (k.as_str(), v.as_str()))
-                    .collect::<Vec<_>>(),
                 vec![
                     ("a", "&'a &'static mut *const T"),
                     ("b", "&(dyn Iterator<Item = T> + Unpin + Send)"),
@@ -777,14 +773,18 @@ mod tests {
                         ) -> &'x (dyn std::fmt::Display) + Send + 'static"
                     ),
                     ("e", "<U as GAT<T>>::Type<'a, &'static *const ()>"),
-                ]
+                ],
+                inputs
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect::<Vec<_>>(),
             );
 
             let output = func.decl.output.as_ref().expect("expected a return type");
             similar_asserts::assert_eq!(
-                rust_type_name(output),
                 "impl std::future::Future<Output: Iterator<Item: 'a + Send> + \
-                for<'z> FnMut(&'z ()) -> &'z &'a ()>"
+                for<'z> FnMut(&'z ()) -> &'z &'a ()>",
+                rust_type_name(output),
             );
         });
     }
@@ -827,10 +827,6 @@ mod tests {
                 .collect();
 
             similar_asserts::assert_eq!(
-                names
-                    .iter()
-                    .map(|(k, v)| (k.as_str(), v.as_str()))
-                    .collect::<Vec<_>>(),
                 vec![
                     ("resolved_path", "Option<()>"),
                     ("dyn_trait", "Box<dyn std::io::Read>"),
@@ -848,7 +844,11 @@ mod tests {
                         "qualified_path",
                         "<std::str::SplitAsciiWhitespace<'static> as Iterator>::Item"
                     ),
-                ]
+                ],
+                names
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect::<Vec<_>>(),
             )
         });
     }
@@ -873,8 +873,8 @@ mod tests {
                 .expect("couldn't find `is_synthetic`");
 
             similar_asserts::assert_eq!(
+                "fn is_synthetic(x: impl std::any::Any) -> impl std::any::Any",
                 super::function_signature(func, name),
-                "fn is_synthetic(x: impl std::any::Any) -> impl std::any::Any"
             );
         });
     }
@@ -905,16 +905,16 @@ mod tests {
                 .collect();
 
             similar_asserts::assert_eq!(
-                inputs
-                    .iter()
-                    .map(|(k, v)| (k.as_str(), v.as_str()))
-                    .collect::<Vec<_>>(),
                 vec![("a", "&'a (impl Fn() -> *const fn() -> &'a (dyn Iterator<Item = ()> + Unpin) + Send)"),
                     ("b", "Box<dyn Fn() -> *const (dyn Unpin + Fn() -> &'static mut (dyn std::any::Any + Sync)) + Sync>"),
                     ("c", "fn() -> &'a (dyn Send + Fn() -> *const dyn std::any::Any)"),
                     ("no_parens", "impl for<'x> Fn(&'x ()) -> &'x dyn std::fmt::Debug"),
                     ("sanity", "&dyn std::fmt::Display"),
-                ]
+                ],
+                inputs
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect::<Vec<_>>(),
             );
         });
     }
@@ -938,7 +938,8 @@ mod tests {
                 })
                 .expect("couldn't find `my_generic_function`");
 
-            similar_asserts::assert_eq!(super::function_signature(func, name), "fn my_generic_function<'a, T, U: GAT<T>>(\
+            similar_asserts::assert_eq!(
+                "fn my_generic_function<'a, T, U: GAT<T>>(\
                 a: &'a &'static mut *const T, \
                 b: &(dyn Iterator<Item = T> + Unpin + Send), \
                 c: Constant<25>, \
@@ -952,7 +953,9 @@ mod tests {
                 + Send \
                 + 'static, \
                 e: <U as GAT<T>>::Type<'a, &'static *const ()>\
-                ) -> impl std::future::Future<Output: Iterator<Item: 'a + Send> + for<'z> FnMut(&'z ()) -> &'z &'a ()>");
+                ) -> impl std::future::Future<Output: Iterator<Item: 'a + Send> + for<'z> FnMut(&'z ()) -> &'z &'a ()>",
+                super::function_signature(func, name),
+            );
         });
     }
 }
