@@ -94,6 +94,12 @@ jobs:
       - name: test with rayon
         run: cargo test --features rayon
 
+      - name: compile with rayon and rustc-hash
+        run: cargo test --no-run --features rayon,rustc-hash
+
+      - name: test with rayon and rustc-hash
+        run: cargo test --features rayon,rustc-hash
+
   publish:
     name: Publish to crates.io
     runs-on: ubuntu-latest
