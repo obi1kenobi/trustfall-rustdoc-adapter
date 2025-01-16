@@ -1,7 +1,8 @@
+use std::{num::NonZeroUsize, rc::Rc};
+
 use rustdoc_types::{
     GenericBound::TraitBound, GenericParamDefKind, Id, ItemEnum, VariantKind, WherePredicate,
 };
-use std::{num::NonZeroUsize, rc::Rc};
 use trustfall::provider::{
     resolve_neighbors_with, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
     VertexIterator,
