@@ -1,10 +1,11 @@
-use rustdoc_types::{Item, ItemEnum, Variant};
 use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::fmt::{self, Debug};
 use std::num::ParseIntError;
 use std::rc::Rc;
 use std::str::FromStr;
+
+use rustdoc_types::{Item, ItemEnum, Variant};
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
