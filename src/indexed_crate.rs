@@ -1,8 +1,14 @@
 use std::{
     borrow::Borrow,
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap},
     sync::Arc,
 };
+
+#[cfg(not(feature = "rustc-hash"))]
+use std::collections::{HashMap as OurHashMap, HashSet as OurHashSet};
+
+#[cfg(feature = "rustc-hash")]
+use rustc_hash::{FxHashMap as OurHashMap, FxHashSet as OurHashSet};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -29,7 +35,7 @@ impl Borrow<Arc<str>> for DependencyKey {
 pub(crate) struct PackageData {
     pub(crate) package: cargo_metadata::Package,
 
-    features: HashMap<String, Vec<String>>,
+    features: OurHashMap<String, Vec<String>>,
 
     // (dependency, target selector), parallel to `package.dependencies`
     dependency_info: Vec<(cargo_toml::Dependency, Option<String>)>,
@@ -77,7 +83,7 @@ impl From<cargo_metadata::Package> for PackageData {
 pub struct PackageStorage {
     pub(crate) own_crate: Crate,
     pub(crate) package_data: Option<PackageData>,
-    pub(crate) dependencies: HashMap<DependencyKey, Crate>,
+    pub(crate) dependencies: OurHashMap<DependencyKey, Crate>,
 }
 
 impl PackageStorage {
@@ -108,7 +114,7 @@ pub struct PackageIndex<'a> {
     pub(crate) own_crate: IndexedCrate<'a>,
     pub(crate) features: Option<cargo_toml::features::Features<'a, 'a>>,
     #[allow(dead_code)]
-    pub(crate) dependencies: HashMap<DependencyKey, IndexedCrate<'a>>,
+    pub(crate) dependencies: OurHashMap<DependencyKey, IndexedCrate<'a>>,
 }
 
 impl<'a> PackageIndex<'a> {
@@ -185,18 +191,18 @@ pub struct IndexedCrate<'a> {
     pub(crate) visibility_tracker: VisibilityTracker<'a>,
 
     /// index: importable name (in any namespace) -> list of items under that name
-    pub(crate) imports_index: Option<HashMap<Path<'a>, Vec<(&'a Item, Modifiers)>>>,
+    pub(crate) imports_index: Option<OurHashMap<Path<'a>, Vec<(&'a Item, Modifiers)>>>,
 
     /// index: impl owner + impl'd item name -> list of (impl itself, the named item))
-    pub(crate) impl_index: Option<HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>>,
+    pub(crate) impl_index: Option<OurHashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>>,
 
     /// index: method ("owned function") `Id` -> the struct/enum/union/trait that defines it;
     /// functions at top level will not have an index entry here
-    pub(crate) fn_owner_index: Option<HashMap<&'a Id, &'a Item>>,
+    pub(crate) fn_owner_index: Option<OurHashMap<&'a Id, &'a Item>>,
 
     /// index: function export name (`#[no_mangle]` or `#[export_name = "..."]` attribute)
     /// -> function item with that export name; exported symbol names must be unique.
-    pub(crate) export_name_index: Option<HashMap<&'a str, &'a Item>>,
+    pub(crate) export_name_index: Option<OurHashMap<&'a str, &'a Item>>,
 
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
     /// even if they are implemented by a type in that crate. This also includes
@@ -211,14 +217,14 @@ pub struct IndexedCrate<'a> {
     ///
     /// A more complete future solution may generate multiple crates' rustdoc JSON
     /// and link to the external crate's trait items as necessary.
-    pub(crate) manually_inlined_builtin_traits: HashMap<Id, Item>,
+    pub(crate) manually_inlined_builtin_traits: OurHashMap<Id, Item>,
 }
 
 /// Map a Key to a List (Vec) of values
 ///
 /// It also has some nice operations for pushing a value to the list, or extending the list with
 /// many values.
-struct MapList<K, V>(HashMap<K, Vec<V>>);
+struct MapList<K, V>(OurHashMap<K, Vec<V>>);
 
 #[cfg(feature = "rayon")]
 impl<K: std::cmp::Eq + std::hash::Hash + Send, V: Send> FromParallelIterator<(K, V)>
@@ -270,11 +276,11 @@ impl<K: std::cmp::Eq + std::hash::Hash, V> Extend<(K, V)> for MapList<K, V> {
 impl<K: std::cmp::Eq + std::hash::Hash, V> MapList<K, V> {
     #[inline]
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Self(OurHashMap::default())
     }
 
     #[inline]
-    pub fn into_inner(self) -> HashMap<K, Vec<V>> {
+    pub fn into_inner(self) -> OurHashMap<K, Vec<V>> {
         self.0
     }
 
@@ -339,7 +345,7 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
                 rustdoc_types::ItemEnum::Impl(impl_inner) => impl_inner,
                 _ => unreachable!("expected impl but got another item type: {impl_item:?}"),
             };
-            let trait_provided_methods: HashSet<_> = impl_inner
+            let trait_provided_methods: OurHashSet<_> = impl_inner
                 .provided_trait_methods
                 .iter()
                 .map(|x| x.as_str())
@@ -403,7 +409,7 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
 
 impl<'a> IndexedCrate<'a> {
     pub fn new(crate_: &'a Crate) -> Self {
-        let mut value = Self {
+        let mut value: IndexedCrate<'a> = Self {
             inner: crate_,
             visibility_tracker: VisibilityTracker::from_crate(crate_),
             manually_inlined_builtin_traits: create_manually_inlined_builtin_traits(crate_),
@@ -505,7 +511,7 @@ impl<'a> IndexedCrate<'a> {
     }
 }
 
-fn build_fn_owner_index(index: &HashMap<Id, Item>) -> HashMap<&Id, &Item> {
+fn build_fn_owner_index(index: &HashMap<Id, Item>) -> OurHashMap<&Id, &Item> {
     #[cfg(feature = "rayon")]
     let iter = index.par_iter().map(|(_, value)| value);
     #[cfg(not(feature = "rayon"))]
@@ -579,7 +585,7 @@ fn build_fn_owner_index(index: &HashMap<Id, Item>) -> HashMap<&Id, &Item> {
     .collect()
 }
 
-fn build_export_name_index(index: &HashMap<Id, Item>) -> HashMap<&str, &Item> {
+fn build_export_name_index(index: &HashMap<Id, Item>) -> OurHashMap<&str, &Item> {
     #[cfg(feature = "rayon")]
     let iter = index.par_iter().map(|(_, value)| value);
     #[cfg(not(feature = "rayon"))]
@@ -786,7 +792,7 @@ fn new_trait(manual_trait_item: &ManualTraitItem, id: Id, crate_id: u32) -> Item
         span: None,
         visibility: rustdoc_types::Visibility::Public,
         docs: None,
-        links: HashMap::new(),
+        links: HashMap::default(),
         attrs: Vec::new(),
         deprecation: None,
         inner: rustdoc_types::ItemEnum::Trait(rustdoc_types::Trait {
@@ -818,7 +824,7 @@ fn new_trait(manual_trait_item: &ManualTraitItem, id: Id, crate_id: u32) -> Item
     }
 }
 
-fn create_manually_inlined_builtin_traits(crate_: &Crate) -> HashMap<Id, Item> {
+fn create_manually_inlined_builtin_traits(crate_: &Crate) -> OurHashMap<Id, Item> {
     let paths = &crate_.paths;
 
     // `paths` may have thousands of items.
