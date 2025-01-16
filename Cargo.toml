@@ -1,6 +1,6 @@
 [package]
 name = "trustfall-rustdoc-adapter"
-version = "36.4.0"
+version = "37.2.0"
 edition = "2021"
 authors = ["Predrag Gruevski <obi1kenobi82@gmail.com>"]
 license = "Apache-2.0 OR MIT"
@@ -25,7 +25,7 @@ cargo_metadata = "0.19.1"
 # Keep this dependency last, its own block, since we change it often via automated means
 # and we'd like to avoid merge conflicts.
 #
-rustdoc-types = "0.32.0"
+rustdoc-types = "0.32.1"
 #
 # No dependencies after this point. Put all dependencies above this section.
 #
@@ -37,7 +37,7 @@ default = []
 # definitely increases the memory usage
 rayon = ["dep:rayon"]
 # Use rustc-hash::{FxHashMap, FxHashSet} internally for improved performance
-rustc-hash = ["dep:rustc-hash"]
+rustc-hash = ["dep:rustc-hash", "rustdoc-types/rustc-hash"]
 
 [[bench]]
 name = "indexed_crate"

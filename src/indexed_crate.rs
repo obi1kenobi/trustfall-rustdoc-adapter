@@ -1,8 +1,10 @@
-use std::{
-    borrow::Borrow,
-    collections::{hash_map::Entry, HashMap, HashSet},
-    sync::Arc,
-};
+use std::{borrow::Borrow, collections::hash_map::Entry, sync::Arc};
+
+#[cfg(not(feature = "rustc-hash"))]
+use std::collections::{HashMap, HashSet};
+
+#[cfg(feature = "rustc-hash")]
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -270,7 +272,7 @@ impl<K: std::cmp::Eq + std::hash::Hash, V> Extend<(K, V)> for MapList<K, V> {
 impl<K: std::cmp::Eq + std::hash::Hash, V> MapList<K, V> {
     #[inline]
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Self(HashMap::default())
     }
 
     #[inline]
@@ -786,7 +788,7 @@ fn new_trait(manual_trait_item: &ManualTraitItem, id: Id, crate_id: u32) -> Item
         span: None,
         visibility: rustdoc_types::Visibility::Public,
         docs: None,
-        links: HashMap::new(),
+        links: HashMap::default(),
         attrs: Vec::new(),
         deprecation: None,
         inner: rustdoc_types::ItemEnum::Trait(rustdoc_types::Trait {
