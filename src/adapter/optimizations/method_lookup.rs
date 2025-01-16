@@ -1,5 +1,11 @@
 use std::collections::{BTreeSet, HashMap};
 
+#[cfg(not(feature = "rustc-hash"))]
+use std::collections::HashMap as OurHashMap;
+
+#[cfg(feature = "rustc-hash")]
+use rustc_hash::FxHashMap as OurHashMap;
+
 use rustdoc_types::{Id, Impl, Item, ItemEnum, Type};
 use trustfall::{
     provider::{
@@ -149,7 +155,7 @@ fn resolve_method_from_candidate_value<'a>(
 
 fn resolve_impl_method_by_name<'a>(
     origin: Origin,
-    impl_index: &'a HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>,
+    impl_index: &'a OurHashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>,
     impl_owner_id: &'a Id,
     impl_id: &'a Id,
     method_name: &str,

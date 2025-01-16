@@ -1,4 +1,8 @@
+#[cfg(not(feature = "rustc-hash"))]
 use std::collections::HashMap;
+
+#[cfg(feature = "rustc-hash")]
+use rustc_hash::FxHashMap as HashMap;
 
 use rustdoc_types::{Id, Item};
 use trustfall::{
