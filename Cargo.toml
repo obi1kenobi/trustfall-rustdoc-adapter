@@ -37,7 +37,7 @@ default = []
 # definitely increases the memory usage
 rayon = ["dep:rayon"]
 # Use rustc-hash::{FxHashMap, FxHashSet} internally for improved performance
-rustc-hash = ["dep:rustc-hash"]
+rustc-hash = ["dep:rustc-hash", "rustdoc-types/rustc-hash"]
 
 [[bench]]
 name = "indexed_crate"
