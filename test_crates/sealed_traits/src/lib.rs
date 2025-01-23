@@ -340,3 +340,24 @@ pub trait BlanketOverArraySealed: blanket_impls::BlanketOverArray {}
 /// impl sealed_traits::BlanketOverPointerSealed for *const Example {}
 /// ```
 pub trait BlanketOverPointerSealed: blanket_impls::BlanketOverPointer {}
+
+/// Tests for <https://github.com/obi1kenobi/cargo-semver-checks/issues/1076>
+pub mod cyclic_bounds {
+    /// Both `RecursiveSealed` and `SealedPlusRecursiveBlanket` are sealed.
+    ///
+    /// `RecursiveSealed` is sealed because it's pub-in-priv.
+    ///
+    /// `SealedPlusRecursiveBlanket` is sealed because:
+    /// - it has a pub-in-priv supertrait
+    /// - the supertrait's blanket impl on `&T` requires the trait to already be implemented on `T`.
+    /// - no user-defined `T` can implement the trait due to a cyclic requirement.
+    mod recursive {
+        pub trait RecursiveSealed {}
+
+        impl<T: super::SealedPlusRecursiveBlanket> RecursiveSealed for &T {}
+    }
+
+    pub trait SealedPlusRecursiveBlanket: recursive::RecursiveSealed {}
+
+    impl<T: SealedPlusRecursiveBlanket> SealedPlusRecursiveBlanket for &T {}
+}

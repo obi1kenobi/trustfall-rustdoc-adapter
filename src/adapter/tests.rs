@@ -438,6 +438,18 @@ fn rustdoc_sealed_traits() {
             name: "BlanketOverPointerSealed".into(),
             sealed: true,
         },
+        Output {
+            name: "SealedPlusSelfBlanket".into(),
+            sealed: true,
+        },
+        Output {
+            name: "RecursiveSealed".into(),
+            sealed: true,
+        },
+        Output {
+            name: "SealedPlusRecursiveBlanket".into(),
+            sealed: true,
+        },
     ];
     expected_results.sort_unstable();
 

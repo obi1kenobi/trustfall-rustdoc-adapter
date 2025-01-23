@@ -85,7 +85,7 @@ fn has_sealed_supertrait<'a>(indexed_crate: &IndexedCrate<'a>, inner: &'a Trait)
                         // any implementer of `Example` would still have to implement it too.
                         // This makes it equivalent to a supertrait bound for purposes
                         // of trait sealing. Apply the equivalent logic here.
-                        if is_sealed_supertrait_bound(indexed_crate, bound) {
+                        if does_supertrait_bound_cause_sealing(indexed_crate, bound) {
                             return true;
                         }
                     }
@@ -96,7 +96,7 @@ fn has_sealed_supertrait<'a>(indexed_crate: &IndexedCrate<'a>, inner: &'a Trait)
     }
 
     for bound in &inner.bounds {
-        if is_sealed_supertrait_bound(indexed_crate, bound) {
+        if does_supertrait_bound_cause_sealing(indexed_crate, bound) {
             return true;
         }
     }
@@ -104,7 +104,7 @@ fn has_sealed_supertrait<'a>(indexed_crate: &IndexedCrate<'a>, inner: &'a Trait)
     false
 }
 
-fn is_sealed_supertrait_bound<'a>(
+fn does_supertrait_bound_cause_sealing<'a>(
     indexed_crate: &IndexedCrate<'a>,
     bound: &'a GenericBound,
 ) -> bool {
