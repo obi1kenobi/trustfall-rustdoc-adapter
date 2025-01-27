@@ -187,7 +187,7 @@ pub struct IndexedCrate<'a> {
     pub(crate) visibility_tracker: VisibilityTracker<'a>,
 
     /// index: importable name (in any namespace) -> list of items under that name
-    pub(crate) imports_index: Option<HashMap<Path<'a>, Vec<(&'a Item, Modifiers)>>>,
+    pub(crate) imports_index: Option<dashmap::ReadOnlyView<Path<'a>, Vec<(&'a Item, Modifiers)>>>,
 
     /// index: impl owner + impl'd item name -> list of (impl itself, the named item))
     pub(crate) impl_index: Option<HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>>,
@@ -429,7 +429,7 @@ impl<'a> IndexedCrate<'a> {
         #[cfg(not(feature = "rayon"))]
         let iter = crate_.index.iter();
 
-        value.imports_index = Some(
+        let imports_index =
             iter.filter_map(|(_id, item)| {
                 if !supported_item_kind(item) {
                     return None;
@@ -447,8 +447,10 @@ impl<'a> IndexedCrate<'a> {
             })
             .flatten()
             .collect::<MapList<_, _>>()
-            .into_inner(),
-        );
+            .into_inner();
+
+        // This is obviously suboptimal. Ignore it -- it's just to make the types work out quickly.
+        value.imports_index = Some(imports_index.into_iter().collect::<dashmap::DashMap<_, _>>().into_read_only());
 
         value.impl_index = Some(build_impl_index(&crate_.index).into_inner());
         value.fn_owner_index = Some(build_fn_owner_index(&crate_.index));
