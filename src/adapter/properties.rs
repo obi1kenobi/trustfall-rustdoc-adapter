@@ -535,6 +535,7 @@ pub(crate) fn resolve_static_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "mutable" => resolve_property_with(contexts, field_property!(as_static, is_mutable)),
+        "unsafe" => resolve_property_with(contexts, field_property!(as_static, is_unsafe)),
         _ => unreachable!("Static property {property_name}"),
     }
 }
