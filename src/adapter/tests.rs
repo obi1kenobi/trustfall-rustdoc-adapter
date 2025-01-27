@@ -620,6 +620,7 @@ fn rustdoc_finds_statics() {
             ... on Static {
                 name @output
                 mutable @output
+                is_unsafe: unsafe @output
 
                 importable_path {
                     path @output
@@ -640,6 +641,7 @@ fn rustdoc_finds_statics() {
         name: String,
         path: Vec<String>,
         mutable: bool,
+        is_unsafe: bool,
     }
 
     let mut results: Vec<_> =
@@ -655,16 +657,31 @@ fn rustdoc_finds_statics() {
                 name: "FIRST".into(),
                 path: vec!["statics".into(), "FIRST".into()],
                 mutable: false,
+                is_unsafe: false,
             },
             Output {
                 name: "MUT".into(),
                 path: vec!["statics".into(), "MUT".into()],
                 mutable: true,
+                is_unsafe: false,
+            },
+            Output {
+                name: "SAFE".into(),
+                path: vec!["statics".into(), "SAFE".into()],
+                mutable: false,
+                is_unsafe: false,
             },
             Output {
                 name: "SECOND".into(),
                 path: vec!["statics".into(), "inner".into(), "SECOND".into()],
                 mutable: false,
+                is_unsafe: false,
+            },
+            Output {
+                name: "UNSAFE".into(),
+                path: vec!["statics".into(), "UNSAFE".into()],
+                mutable: false,
+                is_unsafe: true,
             },
         ],
         results
