@@ -1127,7 +1127,12 @@ type Trait implements Item & Importable & GenericItem {
   """
   Whether this trait can be used as `dyn Trait`.
   """
-  object_safe: Boolean!
+  object_safe: Boolean! @deprecated(reason: "use `dyn_compatible` instead")
+
+  """
+  Whether this trait can be used as `dyn Trait`.
+  """
+  dyn_compatible: Boolean!
 
   """
   Whether downstream crates are prevented from implementing this trait themselves.
