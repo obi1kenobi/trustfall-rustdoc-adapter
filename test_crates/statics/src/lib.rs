@@ -1,3 +1,5 @@
+#![feature(unsafe_extern_blocks)]
+
 pub static FIRST: u32 = 1;
 
 pub static mut MUT: i64 = 0;
