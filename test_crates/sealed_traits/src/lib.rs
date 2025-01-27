@@ -1,3 +1,5 @@
+pub mod doc_hidden;
+
 mod private {
     pub trait Sealed {}
 
@@ -31,6 +33,12 @@ pub trait Unsealed {}
 /// so external implementers cannot name it.
 pub trait MethodSealed {
     fn method(&self, token: private::Token) -> i64;
+}
+
+/// This trait is sealed because its return type is pub-in-priv,
+/// so external implementers cannot name it.
+pub trait MethodReturnSealed {
+    fn method(&self) -> private::Token;
 }
 
 /// This trait is sealed since nobody can implement its supertrait.
@@ -215,7 +223,6 @@ pub trait ExternalSupertraitsBlanketUnsealed: blanket_impls::ExternalSupertraits
 /// impl sealed_traits::BlanketWithWhereClauseUnsealed for Example {}
 /// ```
 pub trait BlanketWithWhereClauseUnsealed: blanket_impls::BlanketWithWhereClause {}
-
 
 /// Not sealed due to blanket impl.
 ///

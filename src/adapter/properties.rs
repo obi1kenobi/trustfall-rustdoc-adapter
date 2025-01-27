@@ -460,6 +460,20 @@ pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 
             handler.own_crate.is_trait_sealed(&trait_item.id).into()
         }),
+        "public_api_sealed" => resolve_property_with(contexts, move |vertex| {
+            let trait_item = vertex.as_item().expect("not an Item");
+            let origin = vertex.origin;
+
+            let handler = match origin {
+                Origin::CurrentCrate => current_crate,
+                Origin::PreviousCrate => previous_crate.expect("no previous crate provided"),
+            };
+
+            handler
+                .own_crate
+                .is_trait_public_api_sealed(&trait_item.id)
+                .into()
+        }),
         _ => unreachable!("Trait property {property_name}"),
     }
 }
