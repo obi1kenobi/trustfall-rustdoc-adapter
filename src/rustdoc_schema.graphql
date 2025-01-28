@@ -1722,6 +1722,28 @@ type Static implements Item & Importable & GlobalValue {
   # own properties
   mutable: Boolean!
   unsafe: Boolean!
+  """
+  The unmangled or explicitly-specified export name of this item, if any.
+
+  Export names are defined using the `#[export_name]` or `#[no_mangle]` attributes.
+
+  For example:
+  - The following static has `export_name = "VAR1"`:
+    ```rust
+    #[no_mangle]
+    static VAR1: i32 = 42;
+    ```
+  - The following static has `export_name = "EXTERNALLY_VISIBLE"`:
+    ```rust
+    #[export_name = "EXTERNALLY_VISIBLE"]
+    static VAR2: i32 = 42;
+    ```
+
+  More info:
+  https://doc.rust-lang.org/reference/abi.html#the-no_mangle-attribute
+  https://doc.rust-lang.org/reference/abi.html#the-export_name-attribute
+  """
+  export_name: String
 
   # edges from Item
   span: Span
