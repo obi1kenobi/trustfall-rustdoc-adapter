@@ -1,10 +1,12 @@
 use crate::attributes::Attribute;
 
-/// Get the externally-visible name of the specified function item, if any.
+/// Get the externally-visible name of the specified item, if any.
 ///
-/// Most Rust functions do not have an externally-visible name. Only functions intended
-/// to be called from "outside" the program via FFI have external names, which are set
-/// in one of the following ways:
+/// Most Rust items do not have an externally-visible name. Only items intended
+/// to be called or accessed from "outside" the program via FFI have external names,
+/// which are set in one of the following ways:
+///
+/// For functions:
 /// ```rust
 /// #[no_mangle]  // visible as `externally_visible`
 /// fn externally_visible() {}
@@ -13,9 +15,19 @@ use crate::attributes::Attribute;
 /// fn internal_name() {}
 /// ```
 ///
-/// For all other functions, this function returns `None`.
-/// If this function is called with a non-function item, the result is unspecified.
-pub(crate) fn function_export_name(item: &rustdoc_types::Item) -> Option<&str> {
+/// For statics:
+/// ```rust
+/// #[no_mangle]  // visible as `VAR1`
+/// static VAR1: i32 = 42;
+///
+/// #[export_name = "EXTERNALLY_VISIBLE"] // visible as `EXTERNALLY_VISIBLE`
+/// static VAR2: i32 = 42;
+/// ```
+///
+/// For all other functions/statics, this function returns `None`.
+/// If this function is called with an item that doesn't support external names,
+/// the result is unspecified.
+pub(crate) fn item_export_name(item: &rustdoc_types::Item) -> Option<&str> {
     if item.attrs.iter().any(|attr| attr == "#[no_mangle]") {
         // Items with `#[no_mangle]` attributes are exported under their item name.
         // Ref: https://doc.rust-lang.org/reference/abi.html#the-no_mangle-attribute
