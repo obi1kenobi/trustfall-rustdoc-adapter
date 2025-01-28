@@ -28,7 +28,6 @@ use crate::attributes::Attribute;
 /// If this function is called with an item that doesn't support external names,
 /// the result is unspecified.
 pub(crate) fn item_export_name(item: &rustdoc_types::Item) -> Option<&str> {
-    println!("item: {:?}", item);
     if item.attrs.iter().any(|attr| attr == "#[no_mangle]") {
         // Items with `#[no_mangle]` attributes are exported under their item name.
         // Ref: https://doc.rust-lang.org/reference/abi.html#the-no_mangle-attribute
