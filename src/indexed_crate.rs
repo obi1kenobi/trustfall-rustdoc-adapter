@@ -588,11 +588,14 @@ fn build_export_name_index(index: &HashMap<Id, Item>) -> HashMap<&str, &Item> {
     let iter = index.values();
 
     iter.filter_map(|item| {
-        if !matches!(item.inner, rustdoc_types::ItemEnum::Function(..)) {
+        if !matches!(
+            item.inner,
+            rustdoc_types::ItemEnum::Function(..) | rustdoc_types::ItemEnum::Static(..)
+        ) {
             return None;
         }
 
-        crate::exported_name::function_export_name(item).map(move |name| (name, item))
+        crate::exported_name::item_export_name(item).map(move |name| (name, item))
     })
     .collect()
 }

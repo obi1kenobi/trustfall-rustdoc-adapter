@@ -274,7 +274,7 @@ pub(super) fn resolve_function_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     match property_name {
         "export_name" => resolve_property_with(contexts, move |vertex| {
             let item = vertex.as_item().expect("not an Item vertex");
-            crate::exported_name::function_export_name(item).into()
+            crate::exported_name::item_export_name(item).into()
         }),
         _ => unreachable!("Function property {property_name}"),
     }
@@ -538,6 +538,10 @@ pub(crate) fn resolve_static_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
         "unsafe" => resolve_property_with(contexts, |_| {
             // This data is not available in this version of rustdoc JSON.
             FieldValue::Null
+        }),
+        "export_name" => resolve_property_with(contexts, |vertex| {
+            let item = vertex.as_item().expect("not an Item");
+            crate::exported_name::item_export_name(item).into()
         }),
         _ => unreachable!("Static property {property_name}"),
     }
