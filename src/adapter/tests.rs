@@ -723,6 +723,58 @@ fn rustdoc_finds_statics() {
 }
 
 #[test]
+fn static_export_name() {
+    get_test_data!(data, static_export_name);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Static {
+                name @output
+                export_name @output
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        export_name: Option<String>,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![
+            Output {
+                name: "VAR1".into(),
+                export_name: Some("VAR1".into())
+            },
+            Output {
+                name: "VAR2".into(),
+                export_name: Some("EXTERNALLY_VISIBLE".into())
+            },
+        ],
+        results
+    );
+}
+
+#[test]
 fn rustdoc_modules() {
     get_test_data!(data, modules);
     let adapter = RustdocAdapter::new(&data, None);
