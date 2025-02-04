@@ -399,10 +399,10 @@ fn is_externally_satisfiable_blanket_impl(
     true
 }
 
-fn is_method_or_item_sealed<'a>(
-    index: &'a HashMap<Id, Item>,
+fn is_method_or_item_sealed(
+    index: &HashMap<Id, Item>,
     trait_id: &Id,
-    trait_inner: &'a Trait,
+    trait_inner: &Trait,
     flags: &mut HashMap<Id, ItemFlag>,
 ) -> bool {
     for inner_item_id in &trait_inner.items {
