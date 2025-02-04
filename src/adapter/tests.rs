@@ -1355,6 +1355,7 @@ fn rustdoc_finds_statics() {
             ... on Static {
                 name @output
                 mutable @output
+                is_unsafe: unsafe @output
 
                 importable_path {
                     path @output
@@ -1375,6 +1376,7 @@ fn rustdoc_finds_statics() {
         name: String,
         path: Vec<String>,
         mutable: bool,
+        is_unsafe: bool,
     }
 
     let mut results: Vec<_> =
@@ -1390,16 +1392,31 @@ fn rustdoc_finds_statics() {
                 name: "FIRST".into(),
                 path: vec!["statics".into(), "FIRST".into()],
                 mutable: false,
+                is_unsafe: false,
             },
             Output {
                 name: "MUT".into(),
                 path: vec!["statics".into(), "MUT".into()],
                 mutable: true,
+                is_unsafe: false,
+            },
+            Output {
+                name: "SAFE".into(),
+                path: vec!["statics".into(), "SAFE".into()],
+                mutable: false,
+                is_unsafe: false,
             },
             Output {
                 name: "SECOND".into(),
                 path: vec!["statics".into(), "inner".into(), "SECOND".into()],
                 mutable: false,
+                is_unsafe: false,
+            },
+            Output {
+                name: "UNSAFE".into(),
+                path: vec!["statics".into(), "UNSAFE".into()],
+                mutable: false,
+                is_unsafe: true,
             },
         ],
         results
@@ -1438,6 +1455,58 @@ fn rustdoc_finds_statics() {
         assert_eq!(expected.name, actual.name);
         assert_eq!(expected.path, actual.path);
     }
+}
+
+#[test]
+fn static_export_name() {
+    get_test_data!(data, static_export_name);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Static {
+                name @output
+                export_name @output
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        export_name: Option<String>,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![
+            Output {
+                name: "VAR1".into(),
+                export_name: Some("VAR1".into())
+            },
+            Output {
+                name: "VAR2".into(),
+                export_name: Some("EXTERNALLY_VISIBLE".into())
+            },
+        ],
+        results
+    );
 }
 
 #[test]

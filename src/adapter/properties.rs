@@ -274,7 +274,7 @@ pub(super) fn resolve_function_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     match property_name {
         "export_name" => resolve_property_with(contexts, move |vertex| {
             let item = vertex.as_item().expect("not an Item vertex");
-            crate::exported_name::function_export_name(item).into()
+            crate::exported_name::item_export_name(item).into()
         }),
         _ => unreachable!("Function property {property_name}"),
     }
@@ -446,7 +446,7 @@ pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "unsafe" => resolve_property_with(contexts, field_property!(as_trait, is_unsafe)),
-        "object_safe" => {
+        "object_safe" | "dyn_compatible" => {
             resolve_property_with(contexts, field_property!(as_trait, is_dyn_compatible))
         }
         "unconditionally_sealed" | "sealed" => resolve_property_with(contexts, move |vertex| {
@@ -549,6 +549,11 @@ pub(crate) fn resolve_static_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "mutable" => resolve_property_with(contexts, field_property!(as_static, is_mutable)),
+        "unsafe" => resolve_property_with(contexts, field_property!(as_static, is_unsafe)),
+        "export_name" => resolve_property_with(contexts, |vertex| {
+            let item = vertex.as_item().expect("not an Item");
+            crate::exported_name::item_export_name(item).into()
+        }),
         _ => unreachable!("Static property {property_name}"),
     }
 }
