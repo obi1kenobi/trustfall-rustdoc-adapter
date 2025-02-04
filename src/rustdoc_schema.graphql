@@ -1138,7 +1138,18 @@ type Trait implements Item & Importable & GenericItem {
   This is a stronger property than `public_api_sealed`, which shows whether the trait
   is prevented from being implemented with *only public API items*.
   """
-  sealed: Boolean!
+  unconditionally_sealed: Boolean!
+
+  """
+  Whether downstream crates are unconditionally prevented from implementing this trait themselves.
+
+  Required implementation items can be added to sealed traits without causing a breaking change,
+  since no implementations of that trait may exist in other crates.
+
+  This is a stronger property than `public_api_sealed`, which shows whether the trait
+  is prevented from being implemented with *only public API items*.
+  """
+  sealed: Boolean! @deprecated(reason: "Renamed to `unconditionally_sealed`, please use that instead.")
 
   """
   Whether downstream crates cannot add implementations of this trait by using only public API.
