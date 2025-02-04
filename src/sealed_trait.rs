@@ -1,158 +1,238 @@
-use rustdoc_types::{GenericBound, Item, Trait};
+#[cfg(not(feature = "rustc-hash"))]
+use std::collections::{HashMap, HashSet};
 
-use crate::IndexedCrate;
+#[cfg(feature = "rustc-hash")]
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
-pub(crate) fn is_trait_sealed<'a>(indexed_crate: &IndexedCrate<'a>, item: &'a Item) -> bool {
-    let trait_item = unwrap_trait(item);
+use rustdoc_types::{GenericBound, Id, Item, Trait};
 
-    // If the trait is pub-in-priv, trivially sealed.
-    if is_pub_in_priv_item(indexed_crate, &item.id) {
-        return true;
-    }
+use crate::item_flags::ItemFlag;
 
-    // Does the trait have a method that:
-    // - does not have a default impl, and
-    // - takes at least one non-`self` argument that is pub-in-priv
-    //
-    // If so, the trait is method-sealed, per:
-    // https://predr.ag/blog/definitive-guide-to-sealed-traits-in-rust/#sealing-traits-via-method-signatures
-    if is_method_sealed(indexed_crate, trait_item) {
-        return true;
-    }
-
-    // Does the trait have a supertrait that is all of the below:
-    // - defined in this crate
-    // - pub-in-priv, or otherwise sealed
-    // - lacking a blanket impl whose bounds can be satisfied outside this crate
-    if has_sealed_supertrait(indexed_crate, trait_item) {
-        return true;
-    }
-
-    false
-}
-
-fn is_pub_in_priv_item<'a>(indexed_crate: &IndexedCrate<'a>, id: &'a rustdoc_types::Id) -> bool {
-    // TODO: We don't need all names here, one is plenty. See if this is worth optimizing.
-    indexed_crate.publicly_importable_names(id).is_empty()
-}
-
-fn unwrap_trait(item: &Item) -> &'_ Trait {
-    match &item.inner {
-        rustdoc_types::ItemEnum::Trait(t) => t,
-        _ => unreachable!(),
-    }
-}
-
-fn is_method_sealed<'a>(indexed_crate: &IndexedCrate<'a>, trait_inner: &'a Trait) -> bool {
-    for inner_item_id in &trait_inner.items {
-        let inner_item = &indexed_crate.inner.index[inner_item_id];
-        if let rustdoc_types::ItemEnum::Function(func) = &inner_item.inner {
-            if func.has_body {
-                // This trait function has a default implementation.
-                // An implementation is not required in order to implement this trait on a type.
-                // Therefore, it cannot on its own cause the trait to be sealed.
-                continue;
-            }
-
-            // Check for pub-in-priv function parameters.
-            for (_, param) in &func.sig.inputs {
-                if let rustdoc_types::Type::ResolvedPath(path) = param {
-                    if is_local_pub_in_priv_path(indexed_crate, path) {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-
-    false
-}
-
-fn has_sealed_supertrait<'a>(indexed_crate: &IndexedCrate<'a>, inner: &'a Trait) -> bool {
-    for predicate in &inner.generics.where_predicates {
-        match predicate {
-            // Only `where Self: SomeTrait` predicates are relevant for sealed trait analysis.
-            // Ignore all other predicate types.
-            rustdoc_types::WherePredicate::BoundPredicate { type_, bounds, .. } => {
-                // If the predicate isn't over `Self`, it isn't relevant.
-                if matches!(type_, rustdoc_types::Type::Generic(generic) if generic.as_str() == "Self")
-                {
-                    for bound in bounds {
-                        // We found a trait similar to:
-                        // `pub trait Example where Self: SealedTrait { ... }`
-                        //
-                        // Even though `SealedTrait` isn't *explicitly* a supertrait,
-                        // any implementer of `Example` would still have to implement it too.
-                        // This makes it equivalent to a supertrait bound for purposes
-                        // of trait sealing. Apply the equivalent logic here.
-                        if is_sealed_supertrait_bound(indexed_crate, bound) {
-                            return true;
-                        }
-                    }
-                }
-            }
+/// Update the `flags` with trait sealing and blanket impls information.
+///
+/// # Preconditions
+/// - `flags` must contain complete reachability information,
+///   including info on `doc(hidden)` importable paths.
+pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap<Id, ItemFlag>) {
+    let mut possibly_sealed = Vec::with_capacity(128);
+    let mut definitely_not_fully_sealed: HashSet<Id> = HashSet::default();
+    for (id, item) in index.iter() {
+        let trait_inner = match &item.inner {
+            rustdoc_types::ItemEnum::Trait(t) => t,
             _ => continue,
+        };
+        let item_flags = flags.get_mut(id).expect("item flags weren't initialized");
+
+        // First, check for blanket impls.
+        for impl_id in &trait_inner.implementations {
+            let Some(impl_item) = index.get(impl_id) else {
+                // Probably a rustdoc bug -- the impl isn't part of the crate's index.
+                continue;
+            };
+            let impl_inner = match &impl_item.inner {
+                rustdoc_types::ItemEnum::Impl(impl_inner) => impl_inner,
+                _ => {
+                    unreachable!(
+                        "referenced trait impl is actually not an impl item: {impl_item:?}"
+                    );
+                }
+            };
+
+            // N.B.: Confusingly, the `blanket_impl` field in rustdoc JSON uses
+            // a different definition of "blanket" that only covers synthetic impls.
+            //
+            // More info:
+            // https://github.com/rust-lang/rust/issues/136557#issuecomment-2634994515
+            //
+            // As a result, we have our own logic to determine if the impl is a blanket impl.
+            if can_blanket_impl_target_include_downstream_types(impl_inner) {
+                item_flags.set_trait_has_blanket_impls();
+            }
+        }
+
+        if !item_flags.is_reachable() {
+            // The trait isn't importable at all.
+            // Either it's pub-in-priv or just not pub at all.
+            // So it's trivially sealed. Nothing further to check here.
+            item_flags.set_unconditionally_sealed();
+            continue;
+        } else if item_flags.is_non_pub_api_reachable() {
+            // The trait is reachable only via `doc(hidden)` paths.
+            // Downstream crates can only `impl` it by naming such a non-public-API path,
+            // so the trait is public-API-sealed.
+            item_flags.set_pub_api_sealed();
+
+            // The trait might be completely sealed though, so we'll keep looking.
+        }
+
+        // Does the trait have a method that:
+        // - does not have a default impl, and
+        // - takes at least one non-`self` argument that is not importable
+        //   (is non-pub, or is pub-in-priv)
+        //
+        // If so, the trait is method-sealed, per:
+        // https://predr.ag/blog/definitive-guide-to-sealed-traits-in-rust/#sealing-traits-via-method-signatures
+        //
+        // Instead, if the argument is only `doc(hidden)`-reachable,
+        // then the trait is public-API-sealed. Similarly, if a non-defaulted associated item
+        // is `doc(hidden)` and not deprecated, the trait is public-API-sealed.
+        //
+        // This method applies the flags internally, and returns `true` only if
+        // the trait is unconditionally sealed, meaning that we can skip further analysis for it.
+        if is_method_or_item_sealed(index, id, trait_inner, flags) {
+            continue;
+        }
+
+        // The only remaining way a trait here could be sealed is if it has supertraits.
+        if effective_supertraits_iter(trait_inner).next().is_some() {
+            possibly_sealed.push(item);
+        } else {
+            definitely_not_fully_sealed.insert(*id);
         }
     }
 
-    for bound in &inner.bounds {
-        if is_sealed_supertrait_bound(indexed_crate, bound) {
-            return true;
-        }
-    }
+    // At this point, we've figured out all traits that are sealed because of
+    // method-sealing or because they aren't publicly importable.
+    // We still need to look at supertraits.
+    //
+    // Supertrait sealing can lead to cycles when blanket impls are present.
+    // However, the vast majority of supertrait-sealed traits don't involve a blanket impl
+    // on the supertrait, so we don't want to pay the perf cost of cycle-busting in those cases.
+    // We use a two-step strategy:
+    // - First, evaluate traits that can be proven to be sealed by virtue of a sealed supertrait
+    //   with no blanket impls. No cycles are possible here -- this is a one-step analysis.
+    // - Then, evaluate traits with blanket impls on supertraits. Apply cycle-busting here.
+    let mut possible_cycles = Vec::with_capacity(possibly_sealed.len());
+    for trait_item in possibly_sealed {
+        let trait_inner = unwrap_trait(trait_item);
 
-    false
-}
+        let mut proven_sealed = false;
+        let mut blankets_found = false;
+        let mut bound_on_undecided_trait = false;
+        for bound in effective_supertraits_iter(trait_inner) {
+            let supertrait_item = match bound {
+                GenericBound::TraitBound { trait_, .. } => {
+                    if let Some(item) = index.get(&trait_.id) {
+                        item
+                    } else {
+                        // Not an item from this crate, so it can't cause sealing.
+                        //
+                        // TODO: Update this when we have cross-crate analysis,
+                        //       since this can cause public-API-sealing.
+                        continue;
+                    }
+                }
+                _ => unreachable!("non-trait bound found: {bound:?}"),
+            };
 
-fn is_sealed_supertrait_bound<'a>(
-    indexed_crate: &IndexedCrate<'a>,
-    bound: &'a GenericBound,
-) -> bool {
-    let supertrait = match bound {
-        rustdoc_types::GenericBound::TraitBound {
-            trait_: trait_path, ..
-        } => {
-            match indexed_crate.inner.index.get(&trait_path.id) {
-                Some(item) => item,
-                None => {
-                    // Item from another crate, so clearly not pub-in-priv.
-                    //
-                    // TODO: Once we have the ability to do cross-crate analysis, consider
-                    //       whether this external trait is sealed. That can have
-                    //       some interesting SemVer implications as well.
-                    return false;
+            let supertrait_flags = flags[&supertrait_item.id];
+            if supertrait_flags.trait_has_blanket_impls() {
+                blankets_found = true;
+            } else if supertrait_flags.is_unconditionally_sealed() {
+                // Sealed supertrait with no blanket impls! This seals our trait, and is final.
+                flags
+                    .get_mut(&trait_item.id)
+                    .expect("no flag for trait item")
+                    .set_unconditionally_sealed();
+                proven_sealed = true;
+                break;
+            } else {
+                if !definitely_not_fully_sealed.contains(&supertrait_item.id) {
+                    bound_on_undecided_trait = true;
+                }
+
+                if supertrait_flags.is_only_pub_api_sealed() {
+                    // Public-API-sealed supertrait with no blanket impls.
+                    // This means our trait is *at least* public-API-sealed.
+                    // But it might still be unconditionally sealed!
+                    flags
+                        .get_mut(&trait_item.id)
+                        .expect("no flag for trait item")
+                        .set_pub_api_sealed();
                 }
             }
         }
-        rustdoc_types::GenericBound::Outlives(_) | rustdoc_types::GenericBound::Use(_) => {
-            // Not a trait bound of any kind, nothing to check.
-            return false;
+        if !proven_sealed && (blankets_found || bound_on_undecided_trait) {
+            possible_cycles.push(trait_item);
         }
-    };
+    }
 
-    // Otherwise, check if the supertrait is itself sealed.
-    // This catches cases like:
-    // ```rust
-    // mod priv {
-    //     pub trait Sealed {}
-    // }
+    // We've resolved all the easy cases. Time to deal with traits with possible cyclic bounds.
     //
-    // pub trait First: Sealed {}
-    //
-    // pub trait Second: First {}
-    // ```
-    //
-    // Here, both `First` and `Second` are sealed.
-    //
-    // N.B.: This cannot infinite-loop, since rustc denies cyclic trait bounds.
-    if is_trait_sealed(indexed_crate, supertrait) {
-        // The supertrait is sealed, so a downstream crate cannot add a direct impl for it
-        // on any of its own types.
-        //
-        // However, this isn't the same thing as "downstream types cannot impl this trait"!
-        // We must check the supertrait for blanket impls that might result in
-        // a downstream type gaining an impl for that trait.
-        if has_no_externally_satisfiable_blanket_impls(indexed_crate, supertrait) {
+    // First, check for unconditional sealing.
+    let mut visited_trait_ids: HashSet<Id> = HashSet::default();
+    for trait_item in &possible_cycles {
+        visited_trait_ids.insert(trait_item.id);
+        is_trait_supertrait_sealed_avoiding_cycles(
+            index,
+            trait_item,
+            flags,
+            &mut visited_trait_ids,
+            false,
+        );
+        visited_trait_ids.clear();
+    }
+
+    // Then, check for public-API-sealed traits.
+    for trait_item in &possible_cycles {
+        visited_trait_ids.insert(trait_item.id);
+        is_trait_supertrait_sealed_avoiding_cycles(
+            index,
+            trait_item,
+            flags,
+            &mut visited_trait_ids,
+            true,
+        );
+        visited_trait_ids.clear();
+    }
+}
+
+fn determine_if_trait_is_sealed_with_no_external_blankets(
+    index: &HashMap<Id, Item>,
+    trait_item: &Item,
+    flags: &mut HashMap<Id, ItemFlag>,
+    visited_trait_ids: &mut HashSet<Id>,
+    consider_public_api_sealed: bool,
+) -> bool {
+    if !visited_trait_ids.insert(trait_item.id) {
+        // Already visited this supertrait, we're in a cycle. Unwind the cycle,
+        // marking all traits in it as sealed.
+        if consider_public_api_sealed {
+            visited_trait_ids.iter().for_each(|id| {
+                flags
+                    .get_mut(id)
+                    .expect("no flags for trait ID")
+                    .set_pub_api_sealed();
+            });
+        } else {
+            visited_trait_ids.iter().for_each(|id| {
+                flags
+                    .get_mut(id)
+                    .expect("no flags for trait ID")
+                    .set_unconditionally_sealed();
+            });
+        }
+        return true;
+    }
+
+    if is_trait_supertrait_sealed_avoiding_cycles(
+        index,
+        trait_item,
+        flags,
+        visited_trait_ids,
+        consider_public_api_sealed,
+    ) {
+        let trait_flags = flags[&trait_item.id];
+        let trait_inner = unwrap_trait(trait_item);
+        if !trait_flags.trait_has_blanket_impls()
+            || has_no_externally_satifiable_blanket_impls(
+                index,
+                trait_inner,
+                flags,
+                visited_trait_ids,
+                consider_public_api_sealed,
+            )
+        {
             return true;
         }
     }
@@ -160,13 +240,69 @@ fn is_sealed_supertrait_bound<'a>(
     false
 }
 
-fn has_no_externally_satisfiable_blanket_impls(
-    indexed_crate: &IndexedCrate<'_>,
-    trait_: &Item,
+fn is_trait_supertrait_sealed_avoiding_cycles(
+    index: &HashMap<Id, Item>,
+    trait_item: &Item,
+    flags: &mut HashMap<Id, ItemFlag>,
+    visited_trait_ids: &mut HashSet<Id>,
+    consider_public_api_sealed: bool,
 ) -> bool {
-    let trait_item = unwrap_trait(trait_);
-    for impl_id in &trait_item.implementations {
-        let impl_item = match indexed_crate.inner.index.get(impl_id).map(|item| {
+    let trait_flag = flags[&trait_item.id];
+    if trait_flag.is_unconditionally_sealed()
+        || (consider_public_api_sealed && trait_flag.is_only_pub_api_sealed())
+    {
+        return true;
+    }
+
+    let trait_inner = unwrap_trait(trait_item);
+    for bound in effective_supertraits_iter(trait_inner) {
+        let supertrait_item = match bound {
+            GenericBound::TraitBound { trait_, .. } => {
+                if let Some(item) = index.get(&trait_.id) {
+                    item
+                } else {
+                    // Not an item from this crate, so it can't cause sealing.
+                    //
+                    // TODO: Update this when we have cross-crate analysis,
+                    //       since this can cause public-API-sealing.
+                    continue;
+                }
+            }
+            _ => unreachable!("non-trait bound found: {bound:?}"),
+        };
+        if determine_if_trait_is_sealed_with_no_external_blankets(
+            index,
+            supertrait_item,
+            flags,
+            visited_trait_ids,
+            consider_public_api_sealed,
+        ) {
+            let trait_flags = flags
+                .get_mut(&trait_item.id)
+                .expect("no flags for trait ID");
+            if consider_public_api_sealed {
+                trait_flags.set_pub_api_sealed();
+            } else {
+                trait_flags.set_unconditionally_sealed();
+                break;
+            }
+        }
+    }
+
+    let trait_flag = flags[&trait_item.id];
+    trait_flag.is_unconditionally_sealed()
+        || (consider_public_api_sealed && trait_flag.is_only_pub_api_sealed())
+}
+
+fn has_no_externally_satifiable_blanket_impls(
+    index: &HashMap<Id, Item>,
+    trait_inner: &Trait,
+    flags: &mut HashMap<Id, ItemFlag>,
+    visited_trait_ids: &mut HashSet<Id>,
+    consider_public_api_sealed: bool,
+) -> bool {
+    for impl_id in &trait_inner.implementations {
+        let impl_item = match index.get(impl_id).map(|item| {
             let rustdoc_types::ItemEnum::Impl(impl_item) = &item.inner else {
                 panic!("impl Id {impl_id:?} did not refer to an impl item: {item:?}");
             };
@@ -179,7 +315,13 @@ fn has_no_externally_satisfiable_blanket_impls(
             }
         };
 
-        if is_externally_satisfiable_blanket_impl(indexed_crate, impl_item) {
+        if is_externally_satisfiable_blanket_impl(
+            index,
+            impl_item,
+            flags,
+            visited_trait_ids,
+            consider_public_api_sealed,
+        ) {
             return false;
         }
     }
@@ -188,21 +330,16 @@ fn has_no_externally_satisfiable_blanket_impls(
 }
 
 fn is_externally_satisfiable_blanket_impl(
-    indexed_crate: &IndexedCrate<'_>,
+    index: &HashMap<Id, Item>,
     impl_item: &rustdoc_types::Impl,
+    flags: &mut HashMap<Id, ItemFlag>,
+    visited_trait_ids: &mut HashSet<Id>,
+    consider_public_api_sealed: bool,
 ) -> bool {
-    let blanket_type = match get_impl_target_if_blanket_impl(impl_item) {
-        None => {
-            // Not a blanket impl, so not relevant here.
-            return false;
-        }
-        Some(blanket) => blanket,
-    };
-
-    // Can the blanket cover a type that a downstream crate might define?
+    // Is this a blanket impl, and can the blanket cover a type defined in a downstream crate?
     // For example, `T` and `&T` count, whereas `Vec<T>`, `[T]`, and `*const T` do not.
-    if !blanket_type_might_cover_types_in_downstream_crate(blanket_type) {
-        // This blanket impl doesn't cover types of a downstream crate. It isn't relevant here.
+    if !can_blanket_impl_target_include_downstream_types(impl_item) {
+        // This impl doesn't cover types of a downstream crate. It isn't relevant here.
         return false;
     }
 
@@ -222,11 +359,31 @@ fn is_externally_satisfiable_blanket_impl(
                 // The blanket impl is only not externally satisfiable if at least one trait bound
                 // references a trait where all of the following apply:
                 // - The trait is local to the crate we're analyzing.
-                // - The trait is sealed.
+                // - The trait is sealed / public-API-sealed (depending on our bool input flag).
                 // - The trait has no blanket impls that are externally satisfiable.
                 //   (The same criterion we're in the middle of evaluating for another trait here.)
                 for bound in bounds {
-                    if is_bounded_on_local_sealed_trait_without_blankets(indexed_crate, bound) {
+                    let rustdoc_types::GenericBound::TraitBound { trait_, .. } = bound else {
+                        // Other kinds of generic bounds aren't relevant here.
+                        continue;
+                    };
+
+                    let bound_trait_id = &trait_.id;
+                    let Some(bound_item) = index.get(bound_trait_id) else {
+                        // Not a trait from this crate.
+                        //
+                        // TODO: Update this when we have cross-crate analysis,
+                        //       since this can cause public-API-sealing.
+                        continue;
+                    };
+
+                    if determine_if_trait_is_sealed_with_no_external_blankets(
+                        index,
+                        bound_item,
+                        flags,
+                        visited_trait_ids,
+                        consider_public_api_sealed,
+                    ) {
                         return false;
                     }
                 }
@@ -242,112 +399,207 @@ fn is_externally_satisfiable_blanket_impl(
     true
 }
 
-fn get_impl_target_if_blanket_impl(
-    impl_item: &rustdoc_types::Impl,
-) -> Option<&rustdoc_types::Type> {
+fn is_method_or_item_sealed<'a>(
+    index: &'a HashMap<Id, Item>,
+    trait_id: &Id,
+    trait_inner: &'a Trait,
+    flags: &mut HashMap<Id, ItemFlag>,
+) -> bool {
+    for inner_item_id in &trait_inner.items {
+        let inner_item = &index.get(inner_item_id);
+        let Some(inner_item) = inner_item else {
+            // This is almost certainly a bug in rustdoc JSON,
+            // since the trait's item isn't part of the trait's crate index.
+            continue;
+        };
+
+        let assoc_item_flag = flags
+            .get(inner_item_id)
+            .expect("no flags entry for trait associated item");
+
+        match &inner_item.inner {
+            rustdoc_types::ItemEnum::Function(func) => {
+                if func.has_body {
+                    // This trait function has a default implementation.
+                    // An implementation is not required in order to implement this trait on a type.
+                    // Therefore, it cannot on its own cause the trait to be sealed.
+                    continue;
+                }
+
+                if !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_non_pub_api_reachable()
+                {
+                    // This associated item is `doc(hidden)` and required to implement the trait.
+                    // That makes the trait public-API-sealed.
+                    flags
+                        .get_mut(trait_id)
+                        .expect("no flags entry for trait item ID")
+                        .set_pub_api_sealed();
+                }
+
+                // Check for pub-in-priv function parameters.
+                for (_, param) in &func.sig.inputs {
+                    if let rustdoc_types::Type::ResolvedPath(path) = param {
+                        if let Some(item_flag) = flags.get(&path.id) {
+                            if !item_flag.is_reachable() {
+                                // Non-importable item, so this trait is method-sealed.
+                                flags
+                                    .get_mut(trait_id)
+                                    .expect("no flags entry for trait item ID")
+                                    .set_unconditionally_sealed();
+                                return true;
+                            } else if item_flag.is_non_pub_api_reachable() {
+                                flags
+                                    .get_mut(trait_id)
+                                    .expect("no flags entry for trait item ID")
+                                    .set_pub_api_sealed();
+                            }
+                        };
+                    }
+                }
+
+                // Check for pub-in-priv function return values.
+                if let Some(rustdoc_types::Type::ResolvedPath(path)) = &func.sig.output {
+                    if let Some(item_flag) = flags.get(&path.id) {
+                        if !item_flag.is_reachable() {
+                            // Non-importable item, so this trait is method-sealed.
+                            flags
+                                .get_mut(trait_id)
+                                .expect("no flags entry for trait item ID")
+                                .set_unconditionally_sealed();
+                            return true;
+                        } else if item_flag.is_non_pub_api_reachable() {
+                            flags
+                                .get_mut(trait_id)
+                                .expect("no flags entry for trait item ID")
+                                .set_pub_api_sealed();
+                        }
+                    };
+                }
+            }
+            rustdoc_types::ItemEnum::AssocType { type_, .. } if type_.is_none() => {
+                // Associated types without a default can cause a trait to be public-API-sealed.
+
+                if !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_non_pub_api_reachable()
+                {
+                    // This associated item is `doc(hidden)` and required to implement the trait.
+                    // That makes the trait public-API-sealed.
+                    flags
+                        .get_mut(trait_id)
+                        .expect("no flags entry for trait item ID")
+                        .set_pub_api_sealed();
+                }
+            }
+            rustdoc_types::ItemEnum::AssocConst { type_, value } if value.is_none() => {
+                // Associated constants without a default can cause a trait to be sealed,
+                // either unconditionally or just public-API-sealed.
+
+                if !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_non_pub_api_reachable()
+                {
+                    // This associated item is `doc(hidden)` and required to implement the trait.
+                    // That makes the trait public-API-sealed.
+                    flags
+                        .get_mut(trait_id)
+                        .expect("no flags entry for trait item ID")
+                        .set_pub_api_sealed();
+                }
+
+                if let rustdoc_types::Type::ResolvedPath(path) = type_ {
+                    if let Some(type_flag) = flags.get(&path.id) {
+                        if !type_flag.is_reachable() {
+                            // Non-importable item, so this trait is unconditionally item-sealed.
+                            flags
+                                .get_mut(trait_id)
+                                .expect("no flags entry for trait item ID")
+                                .set_unconditionally_sealed();
+                            return true;
+                        } else if type_flag.is_non_pub_api_reachable() {
+                            flags
+                                .get_mut(trait_id)
+                                .expect("no flags entry for trait item ID")
+                                .set_pub_api_sealed();
+                        }
+                    };
+                }
+            }
+            _ => {}
+        }
+    }
+
+    false
+}
+
+fn effective_supertraits_iter(trait_inner: &Trait) -> impl Iterator<Item = &GenericBound> + '_ {
+    let direct_bounds = trait_inner.bounds.iter();
+
+    let where_predicate_bounds = trait_inner.generics.where_predicates.iter().filter_map(|predicate| {
+        match predicate {
+            // Only `where Self: SomeTrait` predicates are relevant for sealed trait analysis.
+            // Ignore all other predicate types.
+            rustdoc_types::WherePredicate::BoundPredicate { type_, bounds, .. } => {
+                // If the predicate isn't over `Self`, it isn't relevant.
+                if matches!(type_, rustdoc_types::Type::Generic(generic) if generic.as_str() == "Self") {
+                    // We found a trait similar to:
+                    // `pub trait Example where Self: SealedTrait { ... }`
+                    //
+                    // Even though `SealedTrait` isn't *explicitly* a supertrait,
+                    // any implementer of `Example` would still have to implement it too.
+                    // This makes it equivalent to a supertrait bound for purposes
+                    // of trait sealing.
+                    Some(bounds)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }).flatten();
+
+    direct_bounds
+        .chain(where_predicate_bounds)
+        .filter(|bound| matches!(bound, GenericBound::TraitBound { .. }))
+}
+
+fn can_blanket_impl_target_include_downstream_types(impl_item: &rustdoc_types::Impl) -> bool {
     let mut current_type = &impl_item.for_;
 
     loop {
         match current_type {
+            rustdoc_types::Type::BorrowedRef { type_, .. } => {
+                current_type = type_;
+            }
             rustdoc_types::Type::ResolvedPath { .. } |  // e.g. `Arc<T>`
-            rustdoc_types::Type::DynTrait { .. } |      // e.g. `dyn Iterator`
             rustdoc_types::Type::Tuple { .. } |         // e.g. `(T,)`
             rustdoc_types::Type::Slice { .. } |         // e.g. `[T]`
             rustdoc_types::Type::Array { .. } |         // e.g. `[T; 1]`
+            rustdoc_types::Type::RawPointer { .. } |    // e.g. `*const T`
             rustdoc_types::Type::Pat { .. } => {        // unstable feature, syntax isn't finalized
                 // These are all specific types that simply have a generic parameter.
                 // They are not blanket implementations.
-                return None;
+                //
+                // All these types are considered "foreign" by trait coherence,
+                // so Rust does not allow implementing another crate's trait on them.
+                return false;
             }
             rustdoc_types::Type::Generic(..) => {
-                // Blanket impl!
-                break;
+                // Blanket impl that covers downstream types!
+                return true;
             }
-            rustdoc_types::Type::Primitive { .. } |
+            rustdoc_types::Type::DynTrait { .. } |        // e.g. `dyn Iterator`
+            rustdoc_types::Type::Primitive { .. } |       // e.g. `i64`
             rustdoc_types::Type::FunctionPointer { .. } |
             rustdoc_types::Type::Infer |
             rustdoc_types::Type::ImplTrait { .. } |
             rustdoc_types::Type::QualifiedPath { .. } => {
-                // Not a blanket impl.
-                return None;
-            }
-            rustdoc_types::Type::RawPointer { type_, .. } |
-            rustdoc_types::Type::BorrowedRef { type_, .. } => {
-                current_type = type_;
-            }
-        }
-    }
-
-    Some(&impl_item.for_)
-}
-
-fn is_bounded_on_local_sealed_trait_without_blankets(
-    indexed_crate: &IndexedCrate<'_>,
-    bound: &rustdoc_types::GenericBound,
-) -> bool {
-    match bound {
-        rustdoc_types::GenericBound::TraitBound { trait_, .. } => {
-            let bound_trait_id = &trait_.id;
-            let Some(item) = indexed_crate.inner.index.get(bound_trait_id) else {
-                // Not a trait from this crate.
-                return false;
-            };
-
-            // We cannot have an infinite loop here, since Rust won't allow cyclic bounds.
-            if !is_trait_sealed(indexed_crate, item) {
+                // Not a blanket impl. None of these can cover a type in a downstream crate.
                 return false;
             }
-
-            has_no_externally_satisfiable_blanket_impls(indexed_crate, item)
-        }
-        rustdoc_types::GenericBound::Outlives(_) | rustdoc_types::GenericBound::Use(_) => {
-            // Other kinds of generic bounds aren't relevant here.
-            false
         }
     }
 }
 
-fn blanket_type_might_cover_types_in_downstream_crate(blanket_type: &rustdoc_types::Type) -> bool {
-    match blanket_type {
-        rustdoc_types::Type::Generic(..) => {
-            // Blanket implementation over a bare generic type, like `T`.
-            // This matches!
-            true
-        }
-        rustdoc_types::Type::BorrowedRef { type_, .. } => {
-            // Blanket implementation over a reference, like `&T`.
-            // It matches if the underlying type beheath the reference matches.
-            blanket_type_might_cover_types_in_downstream_crate(type_)
-        }
-        rustdoc_types::Type::ResolvedPath { .. } |  // e.g. `Arc<T>`
-        rustdoc_types::Type::Tuple { .. } |         // e.g. `(T,)`
-        rustdoc_types::Type::Slice { .. } |         // e.g. `[T]`
-        rustdoc_types::Type::Array { .. } |         // e.g. `[T; 1]`
-        rustdoc_types::Type::RawPointer { .. } => { // e.g. `*const T`
-            // All these types are considered "foreign" by trait coherence,
-            // so Rust does not allow implementing another crate's trait on them.
-            false
-        }
-        rustdoc_types::Type::DynTrait { .. } |
-        rustdoc_types::Type::Primitive { .. } |
-        rustdoc_types::Type::FunctionPointer { .. } |
-        rustdoc_types::Type::Pat { .. } |
-        rustdoc_types::Type::ImplTrait { .. } |
-        rustdoc_types::Type::Infer { .. } |
-        rustdoc_types::Type::QualifiedPath { .. } => {
-            // None of these can cover a type in a downstream crate.
-            false
-        }
+fn unwrap_trait(item: &Item) -> &'_ Trait {
+    match &item.inner {
+        rustdoc_types::ItemEnum::Trait(t) => t,
+        _ => unreachable!("item {item:?} is not a trait"),
     }
-}
-
-fn is_local_pub_in_priv_path<'a>(
-    indexed_crate: &IndexedCrate<'a>,
-    path: &'a rustdoc_types::Path,
-) -> bool {
-    let Some(item) = indexed_crate.inner.index.get(&path.id) else {
-        // Not an item in this crate.
-        return false;
-    };
-    is_pub_in_priv_item(indexed_crate, &item.id)
 }
