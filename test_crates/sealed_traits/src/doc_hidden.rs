@@ -77,6 +77,13 @@ pub trait HiddenSealedAssocConst {
     const N: usize;
 }
 
+/// This trait is public-API-sealed because impls require
+/// setting the non-public-API associated const, which requires naming its type.
+/// The const's type name is not public API, hence the trait is public-API-sealed.
+pub trait HiddenSealedAssocConstType {
+    const N: hidden_module::Token;
+}
+
 /// This trait is not sealed, since naming the doc-hidden const isn't necessary
 /// as we can use its default value.
 pub trait UnsealedDefaultAssocConst {

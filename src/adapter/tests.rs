@@ -342,6 +342,24 @@ fn rustdoc_sealed_traits() {
             public_api_sealed: false,
         },
         Output {
+            name: "ConstItemPubInPrivTypeSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "ConstItemPubInPrivTypeSealed".into(),
+            ]],
+            sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "NotSealedDueToConstDefaultValue".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "NotSealedDueToConstDefaultValue".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
             name: "NotTransitivelySealed".into(),
             path: vec![vec!["sealed_traits".into(), "NotTransitivelySealed".into()]],
             sealed: false,
@@ -767,6 +785,16 @@ fn rustdoc_sealed_traits() {
                 "sealed_traits".into(),
                 "doc_hidden".into(),
                 "HiddenSealedAssocConst".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "HiddenSealedAssocConstType".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "HiddenSealedAssocConstType".into(),
             ]],
             sealed: false,
             public_api_sealed: true,

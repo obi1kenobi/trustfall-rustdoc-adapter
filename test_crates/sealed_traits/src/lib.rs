@@ -52,6 +52,18 @@ pub trait NotMethodSealedBecauseOfDefaultImpl {
     }
 }
 
+/// This trait is sealed since its associated const is of pub-in-priv type,
+/// and implementing the trait requires naming its type.
+pub trait ConstItemPubInPrivTypeSealed {
+    const TOKEN: private::Token;
+}
+
+/// This trait is *not* sealed, since its associated const has a default value
+/// so it doesn't matter that its type is pub-in-priv.
+pub trait NotSealedDueToConstDefaultValue {
+    const TOKEN: private::Token = private::Token;
+}
+
 /// This trait is *not* sealed. Its supertrait is also not sealed.
 pub trait NotTransitivelySealed: NotMethodSealedBecauseOfDefaultImpl {}
 

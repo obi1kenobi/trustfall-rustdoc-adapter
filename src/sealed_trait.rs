@@ -490,7 +490,8 @@ fn is_method_or_item_sealed<'a>(
                 }
             }
             rustdoc_types::ItemEnum::AssocConst { type_, value } if value.is_none() => {
-                // Associated constants without a default can cause a trait to be public-API-sealed.
+                // Associated constants without a default can cause a trait to be sealed,
+                // either unconditionally or just public-API-sealed.
 
                 if !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_non_pub_api_reachable()
                 {
@@ -505,7 +506,7 @@ fn is_method_or_item_sealed<'a>(
                 if let rustdoc_types::Type::ResolvedPath(path) = type_ {
                     if let Some(type_flag) = flags.get(&path.id) {
                         if !type_flag.is_reachable() {
-                            // Non-importable item, so this trait is method-sealed.
+                            // Non-importable item, so this trait is unconditionally item-sealed.
                             flags
                                 .get_mut(trait_id)
                                 .expect("no flags entry for trait item ID")
