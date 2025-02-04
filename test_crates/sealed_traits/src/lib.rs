@@ -1,3 +1,5 @@
+pub mod doc_hidden;
+
 mod private {
     pub trait Sealed {}
 
@@ -33,6 +35,12 @@ pub trait MethodSealed {
     fn method(&self, token: private::Token) -> i64;
 }
 
+/// This trait is sealed because its return type is pub-in-priv,
+/// so external implementers cannot name it.
+pub trait MethodReturnSealed {
+    fn method(&self) -> private::Token;
+}
+
 /// This trait is sealed since nobody can implement its supertrait.
 pub trait TransitivelyMethodSealed: MethodSealed {}
 
@@ -42,6 +50,18 @@ pub trait NotMethodSealedBecauseOfDefaultImpl {
     fn method(&self, _token: private::Token) -> i64 {
         0
     }
+}
+
+/// This trait is sealed since its associated const is of pub-in-priv type,
+/// and implementing the trait requires naming its type.
+pub trait ConstItemPubInPrivTypeSealed {
+    const TOKEN: private::Token;
+}
+
+/// This trait is *not* sealed, since its associated const has a default value
+/// so it doesn't matter that its type is pub-in-priv.
+pub trait NotSealedDueToConstDefaultValue {
+    const TOKEN: private::Token = private::Token;
 }
 
 /// This trait is *not* sealed. Its supertrait is also not sealed.
@@ -216,7 +236,6 @@ pub trait ExternalSupertraitsBlanketUnsealed: blanket_impls::ExternalSupertraits
 /// ```
 pub trait BlanketWithWhereClauseUnsealed: blanket_impls::BlanketWithWhereClause {}
 
-
 /// Not sealed due to blanket impl.
 ///
 /// Proof:
@@ -340,3 +359,24 @@ pub trait BlanketOverArraySealed: blanket_impls::BlanketOverArray {}
 /// impl sealed_traits::BlanketOverPointerSealed for *const Example {}
 /// ```
 pub trait BlanketOverPointerSealed: blanket_impls::BlanketOverPointer {}
+
+/// Tests for <https://github.com/obi1kenobi/cargo-semver-checks/issues/1076>
+pub mod cyclic_bounds {
+    /// Both `RecursiveSealed` and `SealedPlusRecursiveBlanket` are sealed.
+    ///
+    /// `RecursiveSealed` is sealed because it's pub-in-priv.
+    ///
+    /// `SealedPlusRecursiveBlanket` is sealed because:
+    /// - it has a pub-in-priv supertrait
+    /// - the supertrait's blanket impl on `&T` requires the trait to already be implemented on `T`.
+    /// - no user-defined `T` can implement the trait due to a cyclic requirement.
+    mod recursive {
+        pub trait RecursiveSealed {}
+
+        impl<T: super::SealedPlusRecursiveBlanket> RecursiveSealed for &T {}
+    }
+
+    pub trait SealedPlusRecursiveBlanket: recursive::RecursiveSealed {}
+
+    impl<T: SealedPlusRecursiveBlanket> SealedPlusRecursiveBlanket for &T {}
+}
