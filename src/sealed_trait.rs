@@ -65,7 +65,7 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap
             // So it's trivially sealed. Nothing further to check here.
             item_flags.set_sealed();
             continue;
-        } else if item_flags.is_doc_hidden_reachable() {
+        } else if item_flags.is_non_pub_api_reachable() {
             // The trait is reachable only via `doc(hidden)` paths.
             // Downstream crates can only `impl` it by naming such a non-public-API path,
             // so the trait is doc-hidden-sealed.
@@ -150,7 +150,7 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap
                     bound_on_undecided_trait = true;
                 }
 
-                if supertrait_flags.is_doc_hidden_sealed() {
+                if supertrait_flags.is_only_pub_api_sealed() {
                     // Doc-hidden-sealed supertrait with no blanket impls. This means our trait
                     // is *at least* doc-hidden-sealed. But it might still be sealed!
                     flags
@@ -252,7 +252,8 @@ fn determine_if_trait_is_supertrait_sealed_avoiding_cycles(
     consider_doc_hidden_sealed: bool,
 ) -> bool {
     let trait_flag = flags[&trait_item.id];
-    if trait_flag.is_sealed() || (consider_doc_hidden_sealed && trait_flag.is_doc_hidden_sealed()) {
+    if trait_flag.is_sealed() || (consider_doc_hidden_sealed && trait_flag.is_only_pub_api_sealed())
+    {
         return true;
     }
 
@@ -292,7 +293,7 @@ fn determine_if_trait_is_supertrait_sealed_avoiding_cycles(
     }
 
     let trait_flag = flags[&trait_item.id];
-    trait_flag.is_sealed() || (consider_doc_hidden_sealed && trait_flag.is_doc_hidden_sealed())
+    trait_flag.is_sealed() || (consider_doc_hidden_sealed && trait_flag.is_only_pub_api_sealed())
 }
 
 fn has_no_externally_satifiable_blanket_impls(
@@ -427,7 +428,7 @@ fn is_method_or_item_sealed<'a>(
                     continue;
                 }
 
-                if !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_doc_hidden_reachable()
+                if !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_non_pub_api_reachable()
                 {
                     // This associated item is `doc(hidden)` and required to implement the trait.
                     // That makes the trait doc-hidden-sealed.
@@ -448,7 +449,7 @@ fn is_method_or_item_sealed<'a>(
                                     .expect("no flags entry for trait item ID")
                                     .set_sealed();
                                 return true;
-                            } else if item_flag.is_doc_hidden_reachable() {
+                            } else if item_flag.is_non_pub_api_reachable() {
                                 flags
                                     .get_mut(trait_id)
                                     .expect("no flags entry for trait item ID")
@@ -468,7 +469,7 @@ fn is_method_or_item_sealed<'a>(
                                 .expect("no flags entry for trait item ID")
                                 .set_sealed();
                             return true;
-                        } else if item_flag.is_doc_hidden_reachable() {
+                        } else if item_flag.is_non_pub_api_reachable() {
                             flags
                                 .get_mut(trait_id)
                                 .expect("no flags entry for trait item ID")
@@ -480,7 +481,7 @@ fn is_method_or_item_sealed<'a>(
             rustdoc_types::ItemEnum::AssocType { type_, .. } if type_.is_none() => {
                 // Associated types without a default can cause a trait to be doc-hidden-sealed.
 
-                if !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_doc_hidden_reachable()
+                if !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_non_pub_api_reachable()
                 {
                     // This associated item is `doc(hidden)` and required to implement the trait.
                     // That makes the trait doc-hidden-sealed.
@@ -493,7 +494,7 @@ fn is_method_or_item_sealed<'a>(
             rustdoc_types::ItemEnum::AssocConst { type_, value } if value.is_none() => {
                 // Associated constants without a default can cause a trait to be doc-hidden-sealed.
 
-                if !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_doc_hidden_reachable()
+                if !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_non_pub_api_reachable()
                 {
                     // This associated item is `doc(hidden)` and required to implement the trait.
                     // That makes the trait doc-hidden-sealed.
@@ -512,7 +513,7 @@ fn is_method_or_item_sealed<'a>(
                                 .expect("no flags entry for trait item ID")
                                 .set_sealed();
                             return true;
-                        } else if type_flag.is_doc_hidden_reachable() {
+                        } else if type_flag.is_non_pub_api_reachable() {
                             flags
                                 .get_mut(trait_id)
                                 .expect("no flags entry for trait item ID")

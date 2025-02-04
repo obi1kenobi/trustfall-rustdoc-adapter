@@ -505,7 +505,7 @@ impl<'a> IndexedCrate<'a> {
     }
 
     /// Report whether our analysis indicates the trait can be implemented within public API.
-    ///(
+    ///
     /// A trait can be implemented within public API if the trait is not sealed, and implementing it
     /// does not require using any non-public-API items in the `impl`. A non-public-API item is
     /// one that is `#[doc(hidden)]` but not `#[deprecated]`.

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 #[cfg(feature = "rustc-hash")]
 use rustc_hash::FxHashMap as HashMap;
+
 use rustdoc_types::{Id, Item};
 
 use crate::{
@@ -50,19 +51,47 @@ impl ItemFlag {
         Self(0)
     }
 
+    /// Whether the item is reachable from another crate, ignoring public API considerations.
+    ///
+    /// Items that aren't reachable simply cannot be used in a downstream crate.
+    /// Their visibility does not allow them to be accessed, and doing so is a hard compiler error.
     #[inline]
     pub(crate) fn is_reachable(&self) -> bool {
         (self.0 & (Self::PUB_REACHABLE.0 | Self::DOC_HIDDEN_REACHABLE.0)) != 0
     }
 
+    /// Whether the item is reachable from another crate via the public API of this crate.
+    ///
+    /// This means the item is importable, or is a public API component of an importable item.
+    /// For example: a `pub trait` at the root `lib.rs` file, and a `pub fn` within the trait,
+    /// are both items where [`Self::is_pub_reachable()`] returns `true`.
+    ///
+    /// An example where [`Self::is_pub_reachable()`] returns `false` but [`Self::is_reachable()`]
+    /// would return `true` is a `#[doc(hidden)]` non-deprecated item. Such an item is not part of
+    /// the public API, even though it is possible to access from outside its crate.
     #[inline]
     pub(crate) fn is_pub_reachable(&self) -> bool {
         (self.0 & Self::PUB_REACHABLE.0) != 0
     }
 
-    // TODO: rename this, it should be "non-pub-API reachable"
+    /// Whether the item is reachable via non-public API in this crate.
+    ///
+    /// This is not mutually-exclusive with [`Self::is_pub_reachable()`]!
+    /// For example, it's possible for an item to be both public API and non-public API
+    /// simultaneously at different paths, and have both [`Self::is_non_pub_api_reachable()`] and
+    /// [`Self::is_pub_reachable()`] return `true`:
+    /// ```no_run
+    /// #[doc(hidden)]
+    /// pub mod hidden {
+    ///     // The item path `this_crate::hidden::Example` is accessible, but not public API.
+    ///     struct Example;
+    /// }
+    ///
+    /// // The item path `this_crate::Example` is public API, and not hidden.
+    /// pub use hidden::Example;
+    /// ```
     #[inline]
-    pub(crate) fn is_doc_hidden_reachable(&self) -> bool {
+    pub(crate) fn is_non_pub_api_reachable(&self) -> bool {
         (self.0 & Self::DOC_HIDDEN_REACHABLE.0) != 0
     }
 
@@ -76,21 +105,35 @@ impl ItemFlag {
         self.0 |= Self::DOC_HIDDEN_REACHABLE.0;
     }
 
+    /// Whether the trait has impls like `impl<T> TheTrait for T`, with optional bounds on `T`.
     #[inline]
     pub(crate) fn trait_has_blanket_impls(&self) -> bool {
         (self.0 & Self::TRAIT_BLANKET_IMPLS.0) != 0
     }
 
+    /// Whether the trait is unconditionally sealed: a downstream crate cannot provide its own impl.
+    ///
+    /// Attempting to implement the trait in a downstream crate is guaranteed to be a compile error.
     #[inline]
     pub(crate) fn is_sealed(&self) -> bool {
         (self.0 & Self::TRAIT_SEALED.0) != 0
     }
 
+    /// Whether the trait is sealed only in public API: impls of the trait rely on non-public API.
+    ///
+    /// Implementations of the trait in a downstream crate are forced to rely on non-public API,
+    /// meaning they are not covered by SemVer stability guarantees and may suffer breakage.
+    ///
+    /// If the trait is unconditionally sealed, this method returns `false`. In other words,
+    /// at most one of [`Self::is_only_pub_api_sealed()`] and [`Self::is_sealed()`] returns `true`.
     #[inline]
-    pub(crate) fn is_doc_hidden_sealed(&self) -> bool {
+    pub(crate) fn is_only_pub_api_sealed(&self) -> bool {
         (self.0 & Self::TRAIT_DOC_HIDDEN_SEALED.0) != 0
     }
 
+    /// Whether downstream crates can provide impls for this trait within public API.
+    ///
+    /// Such impls are then covered by SemVer stability guarantees.
     #[inline]
     pub(crate) fn is_pub_api_implementable(&self) -> bool {
         (self.0 & (Self::TRAIT_DOC_HIDDEN_SEALED.0 | Self::TRAIT_SEALED.0)) == 0
@@ -214,44 +257,34 @@ pub(crate) fn build_flags_index(
                     parent_reachability,
                 );
             }
-            rustdoc_types::ItemEnum::Struct(inner) => match &inner.kind {
-                rustdoc_types::StructKind::Unit => {
-                    set_impl_flags_index(
-                        index,
-                        inner.impls.iter().filter_map(|id| index.get(id)),
-                        &mut flags,
-                        parent_reachability,
-                    );
+            rustdoc_types::ItemEnum::Struct(inner) => {
+                match &inner.kind {
+                    rustdoc_types::StructKind::Unit => {}
+                    rustdoc_types::StructKind::Tuple(ids) => {
+                        set_field_flags_index(
+                            ids.iter()
+                                .filter_map(|x| x.as_ref())
+                                .filter_map(|id| index.get(id)),
+                            &mut flags,
+                            parent_reachability,
+                        );
+                    }
+                    rustdoc_types::StructKind::Plain { fields, .. } => {
+                        set_field_flags_index(
+                            fields.iter().filter_map(|id| index.get(id)),
+                            &mut flags,
+                            parent_reachability,
+                        );
+                    }
                 }
-                rustdoc_types::StructKind::Tuple(ids) => {
-                    set_field_flags_index(
-                        ids.iter()
-                            .filter_map(|x| x.as_ref())
-                            .filter_map(|id| index.get(id)),
-                        &mut flags,
-                        parent_reachability,
-                    );
-                    set_impl_flags_index(
-                        index,
-                        inner.impls.iter().filter_map(|id| index.get(id)),
-                        &mut flags,
-                        parent_reachability,
-                    );
-                }
-                rustdoc_types::StructKind::Plain { fields, .. } => {
-                    set_field_flags_index(
-                        fields.iter().filter_map(|id| index.get(id)),
-                        &mut flags,
-                        parent_reachability,
-                    );
-                    set_impl_flags_index(
-                        index,
-                        inner.impls.iter().filter_map(|id| index.get(id)),
-                        &mut flags,
-                        parent_reachability,
-                    );
-                }
-            },
+
+                set_impl_flags_index(
+                    index,
+                    inner.impls.iter().filter_map(|id| index.get(id)),
+                    &mut flags,
+                    parent_reachability,
+                );
+            }
             rustdoc_types::ItemEnum::Enum(inner) => {
                 set_variant_flags_index(
                     index,
