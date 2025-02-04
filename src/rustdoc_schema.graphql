@@ -1135,12 +1135,38 @@ type Trait implements Item & Importable & GenericItem {
   dyn_compatible: Boolean!
 
   """
-  Whether downstream crates are prevented from implementing this trait themselves.
+  Whether downstream crates are unconditionally prevented from implementing this trait themselves.
 
   Required implementation items can be added to sealed traits without causing a breaking change,
   since no implementations of that trait may exist in other crates.
+
+  This is a stronger property than `public_api_sealed`, which shows whether the trait
+  is prevented from being implemented with *only public API items*.
   """
-  sealed: Boolean!
+  unconditionally_sealed: Boolean!
+
+  """
+  Whether downstream crates are unconditionally prevented from implementing this trait themselves.
+
+  Required implementation items can be added to sealed traits without causing a breaking change,
+  since no implementations of that trait may exist in other crates.
+
+  This is a stronger property than `public_api_sealed`, which shows whether the trait
+  is prevented from being implemented with *only public API items*.
+  """
+  sealed: Boolean! @deprecated(reason: "Renamed to `unconditionally_sealed`, please use that instead.")
+
+  """
+  Whether downstream crates cannot add implementations of this trait by using only public API.
+
+  Required implementation items can be added to public-API-sealed traits without causing
+  a major change in the public API of those traits. Any breaking changes thus caused are
+  explicitly in non-public-API, and shouldn't affect users that adhere to using only public API.
+
+  This is a weaker property than `sealed`, which shows whether the trait is unconditionally
+  prevented from being implemented — any implementation attempt will result in compile errors.
+  """
+  public_api_sealed: Boolean!
 
   # edges from Item
   span: Span

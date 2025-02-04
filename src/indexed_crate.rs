@@ -10,7 +10,11 @@ use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use rayon::prelude::*;
 use rustdoc_types::{Crate, Id, Item};
 
-use crate::{adapter::supported_item_kind, sealed_trait, visibility_tracker::VisibilityTracker};
+use crate::{
+    adapter::supported_item_kind,
+    item_flags::{build_flags_index, ItemFlag},
+    visibility_tracker::VisibilityTracker,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct DependencyKey(Arc<str>);
@@ -188,6 +192,9 @@ pub struct IndexedCrate<'a> {
 
     /// index: importable name (in any namespace) -> list of items under that name
     pub(crate) imports_index: Option<HashMap<Path<'a>, Vec<(&'a Item, Modifiers)>>>,
+
+    /// index: item ID -> bit flags recording yes-no indicators for various item states
+    pub(crate) flags: Option<HashMap<Id, ItemFlag>>,
 
     /// index: impl owner + impl'd item name -> list of (impl itself, the named item))
     pub(crate) impl_index: Option<HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>>,
@@ -409,6 +416,7 @@ impl<'a> IndexedCrate<'a> {
             inner: crate_,
             visibility_tracker: VisibilityTracker::from_crate(crate_),
             manually_inlined_builtin_traits: create_manually_inlined_builtin_traits(crate_),
+            flags: None,
             imports_index: None,
             impl_index: None,
             fn_owner_index: None,
@@ -429,8 +437,8 @@ impl<'a> IndexedCrate<'a> {
         #[cfg(not(feature = "rayon"))]
         let iter = crate_.index.iter();
 
-        value.imports_index = Some(
-            iter.filter_map(|(_id, item)| {
+        let imports_index = iter
+            .filter_map(|(_id, item)| {
                 if !supported_item_kind(item) {
                     return None;
                 }
@@ -447,8 +455,9 @@ impl<'a> IndexedCrate<'a> {
             })
             .flatten()
             .collect::<MapList<_, _>>()
-            .into_inner(),
-        );
+            .into_inner();
+        value.flags = Some(build_flags_index(&crate_.index, &imports_index));
+        value.imports_index = Some(imports_index);
 
         value.impl_index = Some(build_impl_index(&crate_.index).into_inner());
         value.fn_owner_index = Some(build_fn_owner_index(&crate_.index));
@@ -484,26 +493,43 @@ impl<'a> IndexedCrate<'a> {
     ///
     /// ## Panics
     ///
-    /// This method will panic if the provided `id` is not an item in this crate,
-    /// or does not correspond to a trait in this crate.
+    /// This method will panic if the provided `Id` is not an item in this crate.
     ///
-    /// ## Re-entrancy
-    ///
-    /// This method is re-entrant: calling it may cause additional calls to itself, inquiring about
-    /// the sealed-ness of a trait's supertraits.
-    ///
-    /// We rely on rustc to reject supertrait cycles in order to prevent infinite loops.
-    /// Here's a supertrait cycle that must be rejected by rustc:
-    /// ```compile_fail
-    /// pub trait First: Third {}
-    ///
-    /// pub trait Second: First {}
-    ///
-    /// pub trait Third: Second {}
-    /// ```
+    /// If the provided `Id` is not a trait, the result is sound but not specified.
+    /// It could be any return value or a panic, but not undefined behavior.
     pub fn is_trait_sealed(&self, id: &'a Id) -> bool {
-        let trait_item = &self.inner.index[id];
-        sealed_trait::is_trait_sealed(self, trait_item)
+        self.flags
+            .as_ref()
+            .expect("flags index was never constructed")[id]
+            .is_unconditionally_sealed()
+    }
+
+    /// Report whether our analysis indicates the trait can be implemented within public API.
+    ///
+    /// A trait can be implemented within public API if the trait is not sealed, and implementing it
+    /// does not require using any non-public-API items in the `impl`. A non-public-API item is
+    /// one that is `#[doc(hidden)]` but not `#[deprecated]`.
+    ///
+    /// Our analysis is conservative: it has false-negatives but no false-positives.
+    /// If this method returns `true`, the trait is *definitely* not implementable within public API
+    /// or else you've found a bug. It may be possible to construct traits that *technically*
+    /// are not implementable within public API for which our analysis returns `false`.
+    ///
+    /// Our analysis does not inspect function bodies or do interprocedural analysis.
+    /// The same caveats apply as for the [`Self::is_trait_sealed`] function above.
+    ///
+    /// ## Panics
+    ///
+    /// This method will panic if the provided `Id` is not an item in this crate.
+    ///
+    /// If the provided `Id` is not a trait, the result is sound but not specified.
+    /// It could be any return value or a panic, but not undefined behavior.
+    pub fn is_trait_public_api_sealed(&self, id: &'a Id) -> bool {
+        !self
+            .flags
+            .as_ref()
+            .expect("flags index was never constructed")[id]
+            .is_pub_api_implementable()
     }
 }
 

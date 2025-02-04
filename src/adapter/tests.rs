@@ -213,6 +213,11 @@ fn rustdoc_sealed_traits() {
             ... on Trait {
                 name @output
                 sealed @output
+                public_api_sealed @output
+
+                importable_path @fold {
+                    path @output
+                }
             }
         }
     }
@@ -227,7 +232,9 @@ fn rustdoc_sealed_traits() {
     #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
     struct Output {
         name: String,
+        path: Vec<Vec<String>>,
         sealed: bool,
+        public_api_sealed: bool,
     }
 
     let mut results: Vec<_> =
@@ -240,203 +247,931 @@ fn rustdoc_sealed_traits() {
     let mut expected_results = vec![
         Output {
             name: "Sealed".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "InternalMarker".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "DirectlyTraitSealed".into(),
+            path: vec![vec!["sealed_traits".into(), "DirectlyTraitSealed".into()]],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "TransitivelyTraitSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "TransitivelyTraitSealed".into(),
+            ]],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "SealedTraitWithStdSupertrait".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "SealedTraitWithStdSupertrait".into(),
+            ]],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "SealedWithWhereSelfBound".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "SealedWithWhereSelfBound".into(),
+            ]],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "PrivateSealed".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "SealedWithPrivateSupertrait".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "SealedWithPrivateSupertrait".into(),
+            ]],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "Unsealed".into(),
+            path: vec![vec!["sealed_traits".into(), "Unsealed".into()]],
             sealed: false,
+            public_api_sealed: false,
         },
         Output {
             name: "MethodSealed".into(),
+            path: vec![vec!["sealed_traits".into(), "MethodSealed".into()]],
             sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "MethodReturnSealed".into(),
+            path: vec![vec!["sealed_traits".into(), "MethodReturnSealed".into()]],
+            sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "TransitivelyMethodSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "TransitivelyMethodSealed".into(),
+            ]],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "NotMethodSealedBecauseOfDefaultImpl".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "NotMethodSealedBecauseOfDefaultImpl".into(),
+            ]],
             sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "ConstItemPubInPrivTypeSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "ConstItemPubInPrivTypeSealed".into(),
+            ]],
+            sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "NotSealedDueToConstDefaultValue".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "NotSealedDueToConstDefaultValue".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
         },
         Output {
             name: "NotTransitivelySealed".into(),
+            path: vec![vec!["sealed_traits".into(), "NotTransitivelySealed".into()]],
             sealed: false,
+            public_api_sealed: false,
         },
         Output {
             name: "TraitUnsealedButMethodGenericSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "TraitUnsealedButMethodGenericSealed".into(),
+            ]],
             sealed: false,
+            public_api_sealed: false,
         },
         Output {
             name: "NotGenericSealedBecauseOfDefaultImpl".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "NotGenericSealedBecauseOfDefaultImpl".into(),
+            ]],
             sealed: false,
+            public_api_sealed: false,
         },
         Output {
             name: "IteratorExt".into(),
+            path: vec![vec!["sealed_traits".into(), "IteratorExt".into()]],
             sealed: false,
+            public_api_sealed: false,
         },
         Output {
             name: "Iterator".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "shadow_builtins".into(),
+                "Iterator".into(),
+            ]],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "ShadowedSubIterator".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "shadow_builtins".into(),
+                "ShadowedSubIterator".into(),
+            ]],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "Super".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "generic_seal".into(),
+                "Super".into(),
+            ]],
             sealed: false,
+            public_api_sealed: false,
         },
         Output {
             name: "Marker".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "NotGenericSealedBecauseOfPubSupertrait".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "generic_seal".into(),
+                "NotGenericSealedBecauseOfPubSupertrait".into(),
+            ]],
             sealed: false,
+            public_api_sealed: false,
         },
         Output {
             name: "FullBlanket".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "PrivateBlanket".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "RefBlanket".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "ExternalSupertraitsBlanket".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "BlanketWithWhereClause".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "IteratorBlanket".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "BlanketOverLocalUnsealedTrait".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "BlanketOverSealedTrait".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "BlanketOverSealedAndUnsealedTrait".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "TransitiveBlanket".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "BlanketOverArc".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "BlanketOverTuple".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "BlanketOverSlice".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "BlanketOverArray".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "BlanketOverPointer".into(),
+            path: vec![],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "BlanketUnsealed".into(),
+            path: vec![vec!["sealed_traits".into(), "BlanketUnsealed".into()]],
             sealed: false,
+            public_api_sealed: false,
         },
         Output {
             name: "RefBlanketUnsealed".into(),
+            path: vec![vec!["sealed_traits".into(), "RefBlanketUnsealed".into()]],
             sealed: false,
+            public_api_sealed: false,
         },
         Output {
             name: "ExternalSupertraitsBlanketUnsealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "ExternalSupertraitsBlanketUnsealed".into(),
+            ]],
             sealed: false,
+            public_api_sealed: false,
         },
         Output {
             name: "BlanketWithWhereClauseUnsealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "BlanketWithWhereClauseUnsealed".into(),
+            ]],
             sealed: false,
+            public_api_sealed: false,
         },
         Output {
             name: "IteratorBlanketUnsealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "IteratorBlanketUnsealed".into(),
+            ]],
             sealed: false,
+            public_api_sealed: false,
         },
         Output {
             name: "BlanketOverLocalUnsealedTraitUnsealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "BlanketOverLocalUnsealedTraitUnsealed".into(),
+            ]],
             sealed: false,
+            public_api_sealed: false,
         },
         Output {
             name: "BlanketOverSealedTraitSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "BlanketOverSealedTraitSealed".into(),
+            ]],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "BlanketSealedOverMultiple".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "BlanketSealedOverMultiple".into(),
+            ]],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "TransitiveBlanketUnsealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "TransitiveBlanketUnsealed".into(),
+            ]],
             sealed: false,
+            public_api_sealed: false,
         },
         Output {
             name: "BlanketOverArcSealed".into(),
+            path: vec![vec!["sealed_traits".into(), "BlanketOverArcSealed".into()]],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "BlanketOverTupleSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "BlanketOverTupleSealed".into(),
+            ]],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "BlanketOverSliceSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "BlanketOverSliceSealed".into(),
+            ]],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "BlanketOverArraySealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "BlanketOverArraySealed".into(),
+            ]],
             sealed: true,
+            public_api_sealed: true,
         },
         Output {
             name: "BlanketOverPointerSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "BlanketOverPointerSealed".into(),
+            ]],
             sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "RecursiveSealed".into(),
+            path: vec![],
+            sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "SealedPlusRecursiveBlanket".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "cyclic_bounds".into(),
+                "SealedPlusRecursiveBlanket".into(),
+            ]],
+            sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "HiddenSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "hidden_module".into(),
+                "HiddenSealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "Unsealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "Unsealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "DirectlyHiddenSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "DirectlyHiddenSealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "HiddenSealedInherited".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "HiddenSealedInherited".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "TransitivelyHiddenSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "TransitivelyHiddenSealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "HiddenSealedWithWhereSelfBound".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "HiddenSealedWithWhereSelfBound".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "MethodHiddenSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "MethodHiddenSealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "MethodReturnHiddenSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "MethodReturnHiddenSealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "HiddenMethodHiddenSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "HiddenMethodHiddenSealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "TransitivelyMethodHiddenSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "TransitivelyMethodHiddenSealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "NotMethodHiddenSealedBecauseOfDefaultImpl".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "NotMethodHiddenSealedBecauseOfDefaultImpl".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "HiddenSealedAssocType".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "HiddenSealedAssocType".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "HiddenSealedAssocConst".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "HiddenSealedAssocConst".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "HiddenSealedAssocConstType".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "HiddenSealedAssocConstType".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "UnsealedDefaultAssocConst".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "UnsealedDefaultAssocConst".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "MethodWithHiddenBound".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "MethodWithHiddenBound".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "FullBlanket".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "blanket_impls".into(),
+                "FullBlanket".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "RefBlanket".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "blanket_impls".into(),
+                "RefBlanket".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "ExternalSupertraitsBlanket".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "blanket_impls".into(),
+                "ExternalSupertraitsBlanket".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "BlanketWithWhereClause".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "blanket_impls".into(),
+                "BlanketWithWhereClause".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "IteratorBlanket".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "blanket_impls".into(),
+                "IteratorBlanket".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "BlanketOverLocalUnsealedTrait".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "blanket_impls".into(),
+                "BlanketOverLocalUnsealedTrait".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "BlanketOverSealedTrait".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "blanket_impls".into(),
+                "BlanketOverSealedTrait".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "BlanketOverSealedAndUnsealedTrait".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "blanket_impls".into(),
+                "BlanketOverSealedAndUnsealedTrait".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "TransitiveBlanket".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "blanket_impls".into(),
+                "TransitiveBlanket".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "BlanketOverArc".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "blanket_impls".into(),
+                "BlanketOverArc".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "BlanketOverTuple".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "blanket_impls".into(),
+                "BlanketOverTuple".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "BlanketOverSlice".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "blanket_impls".into(),
+                "BlanketOverSlice".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "BlanketOverArray".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "blanket_impls".into(),
+                "BlanketOverArray".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "BlanketOverPointer".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "blanket_impls".into(),
+                "BlanketOverPointer".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "BlanketUnsealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "BlanketUnsealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "RefBlanketUnsealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "RefBlanketUnsealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "ExternalSupertraitsBlanketUnsealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "ExternalSupertraitsBlanketUnsealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "BlanketWithWhereClauseUnsealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "BlanketWithWhereClauseUnsealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "IteratorBlanketUnsealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "IteratorBlanketUnsealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "BlanketOverLocalUnsealedTraitUnsealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "BlanketOverLocalUnsealedTraitUnsealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "BlanketOverSealedTraitSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "BlanketOverSealedTraitSealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "BlanketSealedOverMultiple".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "BlanketSealedOverMultiple".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "TransitiveBlanketUnsealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "TransitiveBlanketUnsealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "BlanketOverArcSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "BlanketOverArcSealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "BlanketOverTupleSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "BlanketOverTupleSealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "BlanketOverSliceSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "BlanketOverSliceSealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "BlanketOverArraySealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "BlanketOverArraySealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "BlanketOverPointerSealed".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "BlanketOverPointerSealed".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "DeprecatedHidden".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "DeprecatedHidden".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "UnsealedDueToDeprecatedSuper".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "UnsealedDueToDeprecatedSuper".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "DeprecatedAssocType".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "DeprecatedAssocType".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "DeprecatedAssocConst".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "DeprecatedAssocConst".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "DeprecatedMethod".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "DeprecatedMethod".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "MethodDeprecatedArgType".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "MethodDeprecatedArgType".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
         },
     ];
     expected_results.sort_unstable();
