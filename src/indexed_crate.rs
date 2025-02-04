@@ -501,7 +501,7 @@ impl<'a> IndexedCrate<'a> {
         self.flags
             .as_ref()
             .expect("flags index was never constructed")[id]
-            .is_sealed()
+            .is_unconditionally_sealed()
     }
 
     /// Report whether our analysis indicates the trait can be implemented within public API.

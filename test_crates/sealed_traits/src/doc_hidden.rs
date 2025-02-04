@@ -1,6 +1,6 @@
 #[doc(hidden)]
 pub mod hidden_module {
-    /// This trait is doc-hidden-sealed because implementing it
+    /// This trait is public-API-sealed because implementing it
     /// requires going outside the public API.
     pub trait HiddenSealed {}
 
@@ -12,46 +12,46 @@ pub mod hidden_module {
 
 pub trait Unsealed {}
 
-/// This trait is doc-hidden-sealed since it isn't public API in the first place.
+/// This trait is public-API-sealed since it isn't public API in the first place.
 #[doc(hidden)]
 pub trait DirectlyHiddenSealed {}
 
-/// This trait is doc-hidden-sealed since implementing it requires naming
+/// This trait is public-API-sealed since implementing it requires naming
 /// its non-public-API supertrait.
 pub trait HiddenSealedInherited: hidden_module::HiddenSealed {}
 
-/// This trait is doc-hidden-sealed transitively because of its supertrait.
+/// This trait is public-API-sealed transitively because of its supertrait.
 pub trait TransitivelyHiddenSealed: HiddenSealedInherited {}
 
-/// This trait is doc-hidden-sealed, since `Self: hidden_module::HiddenSealed`
-/// still requires that `Self` implement a doc-hidden-sealed trait,
-/// even though the doc-hidden-sealed trait isn't *exactly* a supertrait.
+/// This trait is public-API-sealed, since `Self: hidden_module::HiddenSealed`
+/// still requires that `Self` implement a public-API-sealed trait,
+/// even though the public-API-sealed trait isn't *exactly* a supertrait.
 pub trait HiddenSealedWithWhereSelfBound where Self: hidden_module::HiddenSealed {}
 
-/// This trait is doc-hidden-sealed because its method's argument type is doc-hidden,
+/// This trait is public-API-sealed because its method's argument type is doc-hidden,
 /// so external implementers would have to name a non-public-API type to write the impl.
 pub trait MethodHiddenSealed {
     fn method(&self, token: hidden_module::Token);
 }
 
-/// This trait is doc-hidden-sealed because its method's return type is doc-hidden,
+/// This trait is public-API-sealed because its method's return type is doc-hidden,
 /// so external implementers would have to name a non-public-API type to write the impl.
 pub trait MethodReturnHiddenSealed {
     fn method(&self) -> hidden_module::Token;
 }
 
-/// This trait is doc-hidden-sealed because its required method is doc-hidden,
+/// This trait is public-API-sealed because its required method is doc-hidden,
 /// so external implementers would have to name a non-public-API method to write the impl.
 pub trait HiddenMethodHiddenSealed {
     #[doc(hidden)]
     fn method(&self);
 }
 
-/// This trait is doc-hidden-sealed since implementing its supertrait requires
+/// This trait is public-API-sealed since implementing its supertrait requires
 /// naming a non-public-API type.
 pub trait TransitivelyMethodHiddenSealed: MethodHiddenSealed {}
 
-/// This trait is *not* doc-hidden-sealed. Its method cannot be overridden within public API,
+/// This trait is *not* public-API-sealed. Its method cannot be overridden within public API,
 /// but implementing it is not required since the trait offers a default impl.
 pub trait NotMethodHiddenSealedBecauseOfDefaultImpl {
     #[doc(hidden)]
@@ -60,7 +60,7 @@ pub trait NotMethodHiddenSealedBecauseOfDefaultImpl {
     }
 }
 
-/// This trait is doc-hidden-sealed because impls require
+/// This trait is public-API-sealed because impls require
 /// setting the non-public-API associated type.
 //
 // TODO: Add a test case with a default value on the associated type, when those become stable.
@@ -70,7 +70,7 @@ pub trait HiddenSealedAssocType {
     type T;
 }
 
-/// This trait is doc-hidden-sealed because impls require
+/// This trait is public-API-sealed because impls require
 /// setting the non-public-API associated const.
 pub trait HiddenSealedAssocConst {
     #[doc(hidden)]
@@ -85,7 +85,7 @@ pub trait UnsealedDefaultAssocConst {
 }
 
 /// This trait's method has a bound on a doc-hidden trait,
-/// but the trait itself is *not* doc-hidden-sealed!
+/// but the trait itself is *not* public-API-sealed!
 /// Downstream implementations are possible without using non-public-API:
 ///
 /// ```rust
@@ -220,13 +220,13 @@ pub trait IteratorBlanketUnsealed: blanket_impls::IteratorBlanket {}
 /// ```
 pub trait BlanketOverLocalUnsealedTraitUnsealed: blanket_impls::BlanketOverLocalUnsealedTrait {}
 
-/// This one is doc-hidden-sealed, since the blanket is over a doc-hidden-sealed trait
+/// This one is public-API-sealed, since the blanket is over a public-API-sealed trait
 /// which we cannot impl without touching non-public-API items:
-/// - either we directly implement the doc-hidden-sealed supertrait ourselves,
-/// - or we implement the doc-hidden-sealed trait for the supertrait's blanket impl.
+/// - either we directly implement the public-API-sealed supertrait ourselves,
+/// - or we implement the public-API-sealed trait for the supertrait's blanket impl.
 pub trait BlanketOverSealedTraitSealed: blanket_impls::BlanketOverSealedTrait {}
 
-/// This trait is doc-hidden-sealed because the bound on the blanket impl
+/// This trait is public-API-sealed because the bound on the blanket impl
 /// includes a trait we cannot impl without doc-hidden-API items. The proof is the same as above.
 pub trait BlanketSealedOverMultiple: blanket_impls::BlanketOverSealedAndUnsealedTrait {}
 
@@ -241,23 +241,23 @@ pub trait BlanketSealedOverMultiple: blanket_impls::BlanketOverSealedAndUnsealed
 /// ```
 pub trait TransitiveBlanketUnsealed: blanket_impls::TransitiveBlanket {}
 
-/// This trait is doc-hidden-sealed.
+/// This trait is public-API-sealed.
 /// - Its supertrait has a blanket impl over `Arc<T>`, but it isn't usable:
 ///   in order for a crate to implement a trait for a type, the crate needs to define
 ///   either the trait or the type. A downstream crate doesn't define either.
 /// - That means the supertrait must be implemented directly, but it's `doc(hidden)`.
 pub trait BlanketOverArcSealed: blanket_impls::BlanketOverArc {}
 
-/// Doc-hidden-sealed since tuples/slices/arrays/pointers are always considered foreign types.
+/// Public-API-sealed since tuples/slices/arrays/pointers are always considered foreign types.
 pub trait BlanketOverTupleSealed: blanket_impls::BlanketOverTuple {}
 
-/// Doc-hidden-sealed since tuples/slices/arrays/pointers are always considered foreign types.
+/// Public-API-sealed since tuples/slices/arrays/pointers are always considered foreign types.
 pub trait BlanketOverSliceSealed: blanket_impls::BlanketOverSlice {}
 
-/// Doc-hidden-sealed since tuples/slices/arrays/pointers are always considered foreign types.
+/// Public-API-sealed since tuples/slices/arrays/pointers are always considered foreign types.
 pub trait BlanketOverArraySealed: blanket_impls::BlanketOverArray {}
 
-/// Doc-hidden-sealed since tuples/slices/arrays/pointers are always considered foreign types.
+/// Public-API-sealed since tuples/slices/arrays/pointers are always considered foreign types.
 pub trait BlanketOverPointerSealed: blanket_impls::BlanketOverPointer {}
 
 /// Not sealed due to being deprecated and therefore public API, regardless of `doc(hidden)`.

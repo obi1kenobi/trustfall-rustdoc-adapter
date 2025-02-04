@@ -8,10 +8,6 @@ use rustdoc_types::{GenericBound, Id, Item, Trait};
 
 use crate::item_flags::ItemFlag;
 
-// TODO: update terminology: `doc-hidden-sealed` is inappropriate because
-//       deprecated doc-hidden items are considered public API.
-//       we want something like "sealed in public API"
-
 /// Update the `flags` with trait sealing and blanket impls information.
 ///
 /// # Preconditions
@@ -36,24 +32,19 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap
             let impl_inner = match &impl_item.inner {
                 rustdoc_types::ItemEnum::Impl(impl_inner) => impl_inner,
                 _ => {
-                    // Probably a rustdoc bug -- we referenced an item as an impl but it isn't one.
-                    continue;
+                    unreachable!(
+                        "referenced trait impl is actually not an impl item: {impl_item:?}"
+                    );
                 }
             };
 
-            // Ensure our opinion on whether downstream types can gain impls via a blanket
-            // matches rustdoc's opinion on what counts as a blanket impl.
+            // N.B.: Confusingly, the `blanket_impl` field in rustdoc JSON uses
+            // a different definition of "blanket" that only covers synthetic impls.
             //
-            // N.B.: The `blanket_impl` field in rustdoc JSON is *not* trustworthy!
+            // More info:
+            // https://github.com/rust-lang/rust/issues/136557#issuecomment-2634994515
             //
-            // The following `impl` has `blanket_impl = None`,
-            // seven though it seems to clearly be a blanket impl.
-            // ```rust
-            // mod private {
-            //     pub trait FullBlanket {}
-            //     impl<T> FullBlanket for T {}
-            // }
-            // ```
+            // As a result, we have our own logic to determine if the impl is a blanket impl.
             if can_blanket_impl_target_include_downstream_types(impl_inner) {
                 item_flags.set_trait_has_blanket_impls();
             }
@@ -63,13 +54,13 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap
             // The trait isn't importable at all.
             // Either it's pub-in-priv or just not pub at all.
             // So it's trivially sealed. Nothing further to check here.
-            item_flags.set_sealed();
+            item_flags.set_unconditionally_sealed();
             continue;
         } else if item_flags.is_non_pub_api_reachable() {
             // The trait is reachable only via `doc(hidden)` paths.
             // Downstream crates can only `impl` it by naming such a non-public-API path,
-            // so the trait is doc-hidden-sealed.
-            item_flags.set_doc_hidden_sealed();
+            // so the trait is public-API-sealed.
+            item_flags.set_pub_api_sealed();
 
             // The trait might be completely sealed though, so we'll keep looking.
         }
@@ -83,11 +74,11 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap
         // https://predr.ag/blog/definitive-guide-to-sealed-traits-in-rust/#sealing-traits-via-method-signatures
         //
         // Instead, if the argument is only `doc(hidden)`-reachable,
-        // then the trait is doc-hidden-sealed. Similarly, if a non-defaulted associated item
-        // is `doc(hidden)` and not deprecated, the trait is doc-hidden-sealed.
+        // then the trait is public-API-sealed. Similarly, if a non-defaulted associated item
+        // is `doc(hidden)` and not deprecated, the trait is public-API-sealed.
         //
         // This method applies the flags internally, and returns `true` only if
-        // the trait is sealed, meaning that we can skip further analysis for it.
+        // the trait is unconditionally sealed, meaning that we can skip further analysis for it.
         if is_method_or_item_sealed(index, id, trait_inner, flags) {
             continue;
         }
@@ -127,7 +118,7 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap
                         // Not an item from this crate, so it can't cause sealing.
                         //
                         // TODO: Update this when we have cross-crate analysis,
-                        //       since this can cause doc-hidden-sealing.
+                        //       since this can cause public-API-sealing.
                         continue;
                     }
                 }
@@ -137,12 +128,12 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap
             let supertrait_flags = flags[&supertrait_item.id];
             if supertrait_flags.trait_has_blanket_impls() {
                 blankets_found = true;
-            } else if supertrait_flags.is_sealed() {
+            } else if supertrait_flags.is_unconditionally_sealed() {
                 // Sealed supertrait with no blanket impls! This seals our trait, and is final.
                 flags
                     .get_mut(&trait_item.id)
                     .expect("no flag for trait item")
-                    .set_sealed();
+                    .set_unconditionally_sealed();
                 proven_sealed = true;
                 break;
             } else {
@@ -151,12 +142,13 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap
                 }
 
                 if supertrait_flags.is_only_pub_api_sealed() {
-                    // Doc-hidden-sealed supertrait with no blanket impls. This means our trait
-                    // is *at least* doc-hidden-sealed. But it might still be sealed!
+                    // Public-API-sealed supertrait with no blanket impls.
+                    // This means our trait is *at least* public-API-sealed.
+                    // But it might still be unconditionally sealed!
                     flags
                         .get_mut(&trait_item.id)
                         .expect("no flag for trait item")
-                        .set_doc_hidden_sealed();
+                        .set_pub_api_sealed();
                 }
             }
         }
@@ -166,10 +158,12 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap
     }
 
     // We've resolved all the easy cases. Time to deal with traits with possible cyclic bounds.
+    //
+    // First, check for unconditional sealing.
     let mut visited_trait_ids: HashSet<Id> = HashSet::default();
     for trait_item in &possible_cycles {
         visited_trait_ids.insert(trait_item.id);
-        determine_if_trait_is_supertrait_sealed_avoiding_cycles(
+        is_trait_supertrait_sealed_avoiding_cycles(
             index,
             trait_item,
             flags,
@@ -178,9 +172,11 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap
         );
         visited_trait_ids.clear();
     }
+
+    // Then, check for public-API-sealed traits.
     for trait_item in &possible_cycles {
         visited_trait_ids.insert(trait_item.id);
-        determine_if_trait_is_supertrait_sealed_avoiding_cycles(
+        is_trait_supertrait_sealed_avoiding_cycles(
             index,
             trait_item,
             flags,
@@ -196,35 +192,35 @@ fn determine_if_trait_is_sealed_with_no_external_blankets(
     trait_item: &Item,
     flags: &mut HashMap<Id, ItemFlag>,
     visited_trait_ids: &mut HashSet<Id>,
-    consider_doc_hidden_sealed: bool,
+    consider_public_api_sealed: bool,
 ) -> bool {
     if !visited_trait_ids.insert(trait_item.id) {
         // Already visited this supertrait, we're in a cycle. Unwind the cycle,
         // marking all traits in it as sealed.
-        if consider_doc_hidden_sealed {
+        if consider_public_api_sealed {
             visited_trait_ids.iter().for_each(|id| {
                 flags
                     .get_mut(id)
                     .expect("no flags for trait ID")
-                    .set_doc_hidden_sealed();
+                    .set_pub_api_sealed();
             });
         } else {
             visited_trait_ids.iter().for_each(|id| {
                 flags
                     .get_mut(id)
                     .expect("no flags for trait ID")
-                    .set_sealed();
+                    .set_unconditionally_sealed();
             });
         }
         return true;
     }
 
-    if determine_if_trait_is_supertrait_sealed_avoiding_cycles(
+    if is_trait_supertrait_sealed_avoiding_cycles(
         index,
         trait_item,
         flags,
         visited_trait_ids,
-        consider_doc_hidden_sealed,
+        consider_public_api_sealed,
     ) {
         let trait_flags = flags[&trait_item.id];
         let trait_inner = unwrap_trait(trait_item);
@@ -234,7 +230,7 @@ fn determine_if_trait_is_sealed_with_no_external_blankets(
                 trait_inner,
                 flags,
                 visited_trait_ids,
-                consider_doc_hidden_sealed,
+                consider_public_api_sealed,
             )
         {
             return true;
@@ -244,15 +240,16 @@ fn determine_if_trait_is_sealed_with_no_external_blankets(
     false
 }
 
-fn determine_if_trait_is_supertrait_sealed_avoiding_cycles(
+fn is_trait_supertrait_sealed_avoiding_cycles(
     index: &HashMap<Id, Item>,
     trait_item: &Item,
     flags: &mut HashMap<Id, ItemFlag>,
     visited_trait_ids: &mut HashSet<Id>,
-    consider_doc_hidden_sealed: bool,
+    consider_public_api_sealed: bool,
 ) -> bool {
     let trait_flag = flags[&trait_item.id];
-    if trait_flag.is_sealed() || (consider_doc_hidden_sealed && trait_flag.is_only_pub_api_sealed())
+    if trait_flag.is_unconditionally_sealed()
+        || (consider_public_api_sealed && trait_flag.is_only_pub_api_sealed())
     {
         return true;
     }
@@ -267,7 +264,7 @@ fn determine_if_trait_is_supertrait_sealed_avoiding_cycles(
                     // Not an item from this crate, so it can't cause sealing.
                     //
                     // TODO: Update this when we have cross-crate analysis,
-                    //       since this can cause doc-hidden-sealing.
+                    //       since this can cause public-API-sealing.
                     continue;
                 }
             }
@@ -278,22 +275,23 @@ fn determine_if_trait_is_supertrait_sealed_avoiding_cycles(
             supertrait_item,
             flags,
             visited_trait_ids,
-            consider_doc_hidden_sealed,
+            consider_public_api_sealed,
         ) {
             let trait_flags = flags
                 .get_mut(&trait_item.id)
                 .expect("no flags for trait ID");
-            if consider_doc_hidden_sealed {
-                trait_flags.set_doc_hidden_sealed();
+            if consider_public_api_sealed {
+                trait_flags.set_pub_api_sealed();
             } else {
-                trait_flags.set_sealed();
+                trait_flags.set_unconditionally_sealed();
                 break;
             }
         }
     }
 
     let trait_flag = flags[&trait_item.id];
-    trait_flag.is_sealed() || (consider_doc_hidden_sealed && trait_flag.is_only_pub_api_sealed())
+    trait_flag.is_unconditionally_sealed()
+        || (consider_public_api_sealed && trait_flag.is_only_pub_api_sealed())
 }
 
 fn has_no_externally_satifiable_blanket_impls(
@@ -301,7 +299,7 @@ fn has_no_externally_satifiable_blanket_impls(
     trait_inner: &Trait,
     flags: &mut HashMap<Id, ItemFlag>,
     visited_trait_ids: &mut HashSet<Id>,
-    consider_doc_hidden_sealed: bool,
+    consider_public_api_sealed: bool,
 ) -> bool {
     for impl_id in &trait_inner.implementations {
         let impl_item = match index.get(impl_id).map(|item| {
@@ -322,7 +320,7 @@ fn has_no_externally_satifiable_blanket_impls(
             impl_item,
             flags,
             visited_trait_ids,
-            consider_doc_hidden_sealed,
+            consider_public_api_sealed,
         ) {
             return false;
         }
@@ -336,7 +334,7 @@ fn is_externally_satisfiable_blanket_impl(
     impl_item: &rustdoc_types::Impl,
     flags: &mut HashMap<Id, ItemFlag>,
     visited_trait_ids: &mut HashSet<Id>,
-    consider_doc_hidden_sealed: bool,
+    consider_public_api_sealed: bool,
 ) -> bool {
     // Is this a blanket impl, and can the blanket cover a type defined in a downstream crate?
     // For example, `T` and `&T` count, whereas `Vec<T>`, `[T]`, and `*const T` do not.
@@ -361,7 +359,7 @@ fn is_externally_satisfiable_blanket_impl(
                 // The blanket impl is only not externally satisfiable if at least one trait bound
                 // references a trait where all of the following apply:
                 // - The trait is local to the crate we're analyzing.
-                // - The trait is sealed / doc-hidden-sealed (depending on our bool input flag).
+                // - The trait is sealed / public-API-sealed (depending on our bool input flag).
                 // - The trait has no blanket impls that are externally satisfiable.
                 //   (The same criterion we're in the middle of evaluating for another trait here.)
                 for bound in bounds {
@@ -375,7 +373,7 @@ fn is_externally_satisfiable_blanket_impl(
                         // Not a trait from this crate.
                         //
                         // TODO: Update this when we have cross-crate analysis,
-                        //       since this can cause doc-hidden-sealing.
+                        //       since this can cause public-API-sealing.
                         continue;
                     };
 
@@ -384,7 +382,7 @@ fn is_externally_satisfiable_blanket_impl(
                         bound_item,
                         flags,
                         visited_trait_ids,
-                        consider_doc_hidden_sealed,
+                        consider_public_api_sealed,
                     ) {
                         return false;
                     }
@@ -431,11 +429,11 @@ fn is_method_or_item_sealed<'a>(
                 if !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_non_pub_api_reachable()
                 {
                     // This associated item is `doc(hidden)` and required to implement the trait.
-                    // That makes the trait doc-hidden-sealed.
+                    // That makes the trait public-API-sealed.
                     flags
                         .get_mut(trait_id)
                         .expect("no flags entry for trait item ID")
-                        .set_doc_hidden_sealed();
+                        .set_pub_api_sealed();
                 }
 
                 // Check for pub-in-priv function parameters.
@@ -447,13 +445,13 @@ fn is_method_or_item_sealed<'a>(
                                 flags
                                     .get_mut(trait_id)
                                     .expect("no flags entry for trait item ID")
-                                    .set_sealed();
+                                    .set_unconditionally_sealed();
                                 return true;
                             } else if item_flag.is_non_pub_api_reachable() {
                                 flags
                                     .get_mut(trait_id)
                                     .expect("no flags entry for trait item ID")
-                                    .set_doc_hidden_sealed();
+                                    .set_pub_api_sealed();
                             }
                         };
                     }
@@ -467,41 +465,41 @@ fn is_method_or_item_sealed<'a>(
                             flags
                                 .get_mut(trait_id)
                                 .expect("no flags entry for trait item ID")
-                                .set_sealed();
+                                .set_unconditionally_sealed();
                             return true;
                         } else if item_flag.is_non_pub_api_reachable() {
                             flags
                                 .get_mut(trait_id)
                                 .expect("no flags entry for trait item ID")
-                                .set_doc_hidden_sealed();
+                                .set_pub_api_sealed();
                         }
                     };
                 }
             }
             rustdoc_types::ItemEnum::AssocType { type_, .. } if type_.is_none() => {
-                // Associated types without a default can cause a trait to be doc-hidden-sealed.
+                // Associated types without a default can cause a trait to be public-API-sealed.
 
                 if !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_non_pub_api_reachable()
                 {
                     // This associated item is `doc(hidden)` and required to implement the trait.
-                    // That makes the trait doc-hidden-sealed.
+                    // That makes the trait public-API-sealed.
                     flags
                         .get_mut(trait_id)
                         .expect("no flags entry for trait item ID")
-                        .set_doc_hidden_sealed();
+                        .set_pub_api_sealed();
                 }
             }
             rustdoc_types::ItemEnum::AssocConst { type_, value } if value.is_none() => {
-                // Associated constants without a default can cause a trait to be doc-hidden-sealed.
+                // Associated constants without a default can cause a trait to be public-API-sealed.
 
                 if !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_non_pub_api_reachable()
                 {
                     // This associated item is `doc(hidden)` and required to implement the trait.
-                    // That makes the trait doc-hidden-sealed.
+                    // That makes the trait public-API-sealed.
                     flags
                         .get_mut(trait_id)
                         .expect("no flags entry for trait item ID")
-                        .set_doc_hidden_sealed();
+                        .set_pub_api_sealed();
                 }
 
                 if let rustdoc_types::Type::ResolvedPath(path) = type_ {
@@ -511,13 +509,13 @@ fn is_method_or_item_sealed<'a>(
                             flags
                                 .get_mut(trait_id)
                                 .expect("no flags entry for trait item ID")
-                                .set_sealed();
+                                .set_unconditionally_sealed();
                             return true;
                         } else if type_flag.is_non_pub_api_reachable() {
                             flags
                                 .get_mut(trait_id)
                                 .expect("no flags entry for trait item ID")
-                                .set_doc_hidden_sealed();
+                                .set_pub_api_sealed();
                         }
                     };
                 }

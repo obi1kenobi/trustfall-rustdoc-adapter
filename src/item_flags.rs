@@ -84,7 +84,7 @@ impl ItemFlag {
     /// #[doc(hidden)]
     /// pub mod hidden {
     ///     // The item path `this_crate::hidden::Example` is accessible, but not public API.
-    ///     struct Example;
+    ///     pub struct Example;
     /// }
     ///
     /// // The item path `this_crate::Example` is public API, and not hidden.
@@ -115,7 +115,7 @@ impl ItemFlag {
     ///
     /// Attempting to implement the trait in a downstream crate is guaranteed to be a compile error.
     #[inline]
-    pub(crate) fn is_sealed(&self) -> bool {
+    pub(crate) fn is_unconditionally_sealed(&self) -> bool {
         (self.0 & Self::TRAIT_SEALED.0) != 0
     }
 
@@ -125,7 +125,8 @@ impl ItemFlag {
     /// meaning they are not covered by SemVer stability guarantees and may suffer breakage.
     ///
     /// If the trait is unconditionally sealed, this method returns `false`. In other words,
-    /// at most one of [`Self::is_only_pub_api_sealed()`] and [`Self::is_sealed()`] returns `true`.
+    /// at most one of [`Self::is_only_pub_api_sealed()`] and
+    /// [`Self::is_unconditionally_sealed()`] returns `true`.
     #[inline]
     pub(crate) fn is_only_pub_api_sealed(&self) -> bool {
         (self.0 & Self::TRAIT_DOC_HIDDEN_SEALED.0) != 0
@@ -145,15 +146,15 @@ impl ItemFlag {
     }
 
     #[inline]
-    pub(crate) fn set_sealed(&mut self) {
-        // Turn off the "doc-hidden-sealed" bit, since sealed dominates.
+    pub(crate) fn set_unconditionally_sealed(&mut self) {
+        // Turn off the "public-API-sealed" bit, since sealed dominates.
         self.0 &= !Self::TRAIT_DOC_HIDDEN_SEALED.0;
         self.0 |= Self::TRAIT_SEALED.0;
     }
 
     #[inline]
-    pub(crate) fn set_doc_hidden_sealed(&mut self) {
-        if !self.is_sealed() {
+    pub(crate) fn set_pub_api_sealed(&mut self) {
+        if !self.is_unconditionally_sealed() {
             self.0 |= Self::TRAIT_DOC_HIDDEN_SEALED.0;
         }
     }
