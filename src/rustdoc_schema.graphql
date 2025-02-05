@@ -1163,8 +1163,9 @@ type Trait implements Item & Importable & GenericItem {
   a major change in the public API of those traits. Any breaking changes thus caused are
   explicitly in non-public-API, and shouldn't affect users that adhere to using only public API.
 
-  This is a weaker property than `sealed`, which shows whether the trait is unconditionally
-  prevented from being implemented — any implementation attempt will result in compile errors.
+  This is a weaker property than `unconditionally_sealed`, which shows whether the trait is
+  unconditionally prevented from being implemented meaning that any implementation attempt
+  will result in compile errors. All `unconditionally_sealed` traits are also `public_api_sealed`.
   """
   public_api_sealed: Boolean!
 
