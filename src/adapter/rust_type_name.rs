@@ -529,7 +529,19 @@ fn fmt_function_signature(this: &FunctionSignature, f: &mut Formatter<'_>) -> Re
         this.0
             .inputs
             .iter()
-            .map(|(name, ty)| Arg::Named(name, Type(ty, false)))
+            .map(|(name, ty)| {
+                Arg::Named(
+                    if !name.is_empty() {
+                        name
+                    } else {
+                        // Sometimes Rust omits names from anonymous parameters, like in function pointers.
+                        // We still have to give them something resembling a name, or else
+                        // our generated signature will be invalid.
+                        "_"
+                    },
+                    Type(ty, false),
+                )
+            })
             .chain(this.0.is_c_variadic.then_some(Arg::Dots)),
         |arg, f| match arg {
             Arg::Named(name, ty) => write!(f, "{name}: {ty}"),
