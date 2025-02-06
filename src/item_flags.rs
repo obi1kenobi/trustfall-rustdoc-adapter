@@ -4,6 +4,9 @@ use std::collections::HashMap;
 #[cfg(feature = "rustc-hash")]
 use rustc_hash::FxHashMap as HashMap;
 
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
 use rustdoc_types::{Id, Item};
 
 use crate::{
@@ -224,16 +227,29 @@ impl Reachability {
 pub(crate) fn build_flags_index(
     index: &HashMap<Id, Item>,
     imports_index: &HashMap<Path<'_>, Vec<(&Item, Modifiers)>>,
-) -> HashMap<Id, ItemFlag> {
-    let mut flags: HashMap<Id, ItemFlag> =
-        index.keys().map(|id| (*id, Default::default())).collect();
+) -> crate::hashmaps::ReadOnlyHashMap<Id, ItemFlag> {
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "rayon")] {
+            let initial_iter = index.par_iter().map(|(k, _v)| k);
+        } else {
+            let initial_iter = index.keys();
+        }
+    };
+    let mut flags: crate::hashmaps::HashMap<Id, ItemFlag> =
+        initial_iter.map(|id| (*id, Default::default())).collect();
 
     // First, initialize the flags of all top-level importable items.
-    imports_index
-        .values()
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "rayon")] {
+            let imports_iter = imports_index.par_iter().map(|(_k, v)| v);
+        } else {
+            let imports_iter = imports_index.values();
+        }
+    };
+    imports_iter
         .flatten()
         .for_each(|(item, modifiers)| {
-            let flag = flags.entry(item.id).or_default();
+            let mut flag = flags.entry(item.id).or_default();
             if !modifiers.deprecated && modifiers.doc_hidden {
                 flag.set_doc_hidden_reachable();
             } else {
@@ -242,19 +258,26 @@ pub(crate) fn build_flags_index(
         });
 
     // Then, traverse the children of all top-level items to set the flags of those child items.
-    index.values().for_each(|item| {
-        let parent_reachability = flags[&item.id].get_reachability();
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "rayon")] {
+            let index_values = index.par_iter().map(|(_k, v)| v);
+        } else {
+            let index_values = index.values();
+        }
+    };
+    index_values.for_each(|item| {
+        let parent_reachability = flags.get(&item.id).expect("no flag for ID").get_reachability();
         match &item.inner {
             rustdoc_types::ItemEnum::Union(inner) => {
                 set_field_flags_index(
                     inner.fields.iter().filter_map(|id| index.get(id)),
-                    &mut flags,
+                    &flags,
                     parent_reachability,
                 );
                 set_impl_flags_index(
                     index,
                     inner.impls.iter().filter_map(|id| index.get(id)),
-                    &mut flags,
+                    &flags,
                     parent_reachability,
                 );
             }
@@ -266,14 +289,14 @@ pub(crate) fn build_flags_index(
                             ids.iter()
                                 .filter_map(|x| x.as_ref())
                                 .filter_map(|id| index.get(id)),
-                            &mut flags,
+                            &flags,
                             parent_reachability,
                         );
                     }
                     rustdoc_types::StructKind::Plain { fields, .. } => {
                         set_field_flags_index(
                             fields.iter().filter_map(|id| index.get(id)),
-                            &mut flags,
+                            &flags,
                             parent_reachability,
                         );
                     }
@@ -282,7 +305,7 @@ pub(crate) fn build_flags_index(
                 set_impl_flags_index(
                     index,
                     inner.impls.iter().filter_map(|id| index.get(id)),
-                    &mut flags,
+                    &flags,
                     parent_reachability,
                 );
             }
@@ -290,20 +313,20 @@ pub(crate) fn build_flags_index(
                 set_variant_flags_index(
                     index,
                     inner.variants.iter().filter_map(|id| index.get(id)),
-                    &mut flags,
+                    &flags,
                     parent_reachability,
                 );
                 set_impl_flags_index(
                     index,
                     inner.impls.iter().filter_map(|id| index.get(id)),
-                    &mut flags,
+                    &flags,
                     parent_reachability,
                 );
             }
             rustdoc_types::ItemEnum::Trait(inner) => {
                 set_assoc_item_flags_index(
                     inner.items.iter().filter_map(|id| index.get(id)),
-                    &mut flags,
+                    &flags,
                     parent_reachability,
                 );
             }
@@ -313,17 +336,17 @@ pub(crate) fn build_flags_index(
 
     sealed_trait::compute_trait_flags(index, &mut flags);
 
-    flags
+    crate::hashmaps::to_read_only(flags)
 }
 
 fn set_field_flags_index<'a>(
     fields: impl Iterator<Item = &'a Item>,
-    flags: &mut HashMap<Id, ItemFlag>,
+    flags: &crate::hashmaps::HashMap<Id, ItemFlag>,
     parent_reachability: Reachability,
 ) {
     fields.for_each(|item| {
         let reachability = Reachability::from_parent(parent_reachability, item);
-        let flag = flags.get_mut(&item.id).expect("missing flag for item");
+        let mut flag = flags.get_mut(&item.id).expect("missing flag for item");
         flag.apply_reachability(reachability);
     })
 }
@@ -331,13 +354,14 @@ fn set_field_flags_index<'a>(
 fn set_variant_flags_index<'a>(
     index: &HashMap<Id, Item>,
     variants: impl Iterator<Item = &'a Item>,
-    flags: &mut HashMap<Id, ItemFlag>,
+    flags: &crate::hashmaps::HashMap<Id, ItemFlag>,
     parent_reachability: Reachability,
 ) {
     variants.for_each(|item| {
         let reachability = Reachability::from_parent(parent_reachability, item);
-        let flag = flags.get_mut(&item.id).expect("missing flag for item");
+        let mut flag = flags.get_mut(&item.id).expect("missing flag for item");
         flag.apply_reachability(reachability);
+        drop(flag);
 
         match &item.inner {
             rustdoc_types::ItemEnum::Variant(variant) => match &variant.kind {
@@ -367,13 +391,14 @@ fn set_variant_flags_index<'a>(
 fn set_impl_flags_index<'a>(
     index: &HashMap<Id, Item>,
     impls: impl Iterator<Item = &'a Item>,
-    flags: &mut HashMap<Id, ItemFlag>,
+    flags: &crate::hashmaps::HashMap<Id, ItemFlag>,
     parent_reachability: Reachability,
 ) {
     impls.for_each(|item| {
         let reachability = Reachability::from_parent(parent_reachability, item);
-        let flag = flags.get_mut(&item.id).expect("missing flag for item");
+        let mut flag = flags.get_mut(&item.id).expect("missing flag for item");
         flag.apply_reachability(reachability);
+        drop(flag);
 
         match &item.inner {
             rustdoc_types::ItemEnum::Impl(impl_inner) => {
@@ -390,12 +415,12 @@ fn set_impl_flags_index<'a>(
 
 fn set_assoc_item_flags_index<'a>(
     assoc_items: impl Iterator<Item = &'a Item>,
-    flags: &mut HashMap<Id, ItemFlag>,
+    flags: &crate::hashmaps::HashMap<Id, ItemFlag>,
     parent_reachability: Reachability,
 ) {
     assoc_items.for_each(|item| {
         let reachability = Reachability::from_parent(parent_reachability, item);
-        let flag = flags.get_mut(&item.id).expect("missing flag for item");
+        let mut flag = flags.get_mut(&item.id).expect("missing flag for item");
         flag.apply_reachability(reachability);
     })
 }

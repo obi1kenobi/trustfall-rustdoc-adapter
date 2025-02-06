@@ -194,7 +194,7 @@ pub struct IndexedCrate<'a> {
     pub(crate) imports_index: Option<HashMap<Path<'a>, Vec<(&'a Item, Modifiers)>>>,
 
     /// index: item ID -> bit flags recording yes-no indicators for various item states
-    pub(crate) flags: Option<HashMap<Id, ItemFlag>>,
+    pub(crate) flags: Option<crate::hashmaps::ReadOnlyHashMap<Id, ItemFlag>>,
 
     /// index: impl owner + impl'd item name -> list of (impl itself, the named item))
     pub(crate) impl_index: Option<HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>>,
@@ -500,7 +500,9 @@ impl<'a> IndexedCrate<'a> {
     pub fn is_trait_sealed(&self, id: &'a Id) -> bool {
         self.flags
             .as_ref()
-            .expect("flags index was never constructed")[id]
+            .expect("flags index was never constructed")
+            .get(id)
+            .expect("no flag for ID")
             .is_unconditionally_sealed()
     }
 
@@ -528,7 +530,9 @@ impl<'a> IndexedCrate<'a> {
         !self
             .flags
             .as_ref()
-            .expect("flags index was never constructed")[id]
+            .expect("flags index was never constructed")
+            .get(id)
+            .expect("no flag for ID")
             .is_pub_api_implementable()
     }
 }

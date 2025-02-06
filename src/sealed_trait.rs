@@ -13,7 +13,7 @@ use crate::item_flags::ItemFlag;
 /// # Preconditions
 /// - `flags` must contain complete reachability information,
 ///   including info on `doc(hidden)` importable paths.
-pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap<Id, ItemFlag>) {
+pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut crate::hashmaps::HashMap<Id, ItemFlag>) {
     let mut possibly_sealed = Vec::with_capacity(128);
     let mut definitely_not_fully_sealed: HashSet<Id> = HashSet::default();
     for (id, item) in index.iter() {
@@ -21,7 +21,7 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap
             rustdoc_types::ItemEnum::Trait(t) => t,
             _ => continue,
         };
-        let item_flags = flags.get_mut(id).expect("item flags weren't initialized");
+        let mut item_flags = flags.get_mut(id).expect("item flags weren't initialized");
 
         // First, check for blanket impls.
         for impl_id in &trait_inner.implementations {
@@ -125,7 +125,7 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap
                 _ => unreachable!("non-trait bound found: {bound:?}"),
             };
 
-            let supertrait_flags = flags[&supertrait_item.id];
+            let supertrait_flags = flags.get(&supertrait_item.id).expect("no flag for ID");
             if supertrait_flags.trait_has_blanket_impls() {
                 blankets_found = true;
             } else if supertrait_flags.is_unconditionally_sealed() {
@@ -190,7 +190,7 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap
 fn determine_if_trait_is_sealed_with_no_external_blankets(
     index: &HashMap<Id, Item>,
     trait_item: &Item,
-    flags: &mut HashMap<Id, ItemFlag>,
+    flags: &crate::hashmaps::HashMap<Id, ItemFlag>,
     visited_trait_ids: &mut HashSet<Id>,
     consider_public_api_sealed: bool,
 ) -> bool {
@@ -222,7 +222,7 @@ fn determine_if_trait_is_sealed_with_no_external_blankets(
         visited_trait_ids,
         consider_public_api_sealed,
     ) {
-        let trait_flags = flags[&trait_item.id];
+        let trait_flags = flags.get(&trait_item.id).expect("no flag for ID");
         let trait_inner = unwrap_trait(trait_item);
         if !trait_flags.trait_has_blanket_impls()
             || has_no_externally_satifiable_blanket_impls(
@@ -243,11 +243,11 @@ fn determine_if_trait_is_sealed_with_no_external_blankets(
 fn is_trait_supertrait_sealed_avoiding_cycles(
     index: &HashMap<Id, Item>,
     trait_item: &Item,
-    flags: &mut HashMap<Id, ItemFlag>,
+    flags: &crate::hashmaps::HashMap<Id, ItemFlag>,
     visited_trait_ids: &mut HashSet<Id>,
     consider_public_api_sealed: bool,
 ) -> bool {
-    let trait_flag = flags[&trait_item.id];
+    let trait_flag = flags.get(&trait_item.id).expect("no flag for ID");
     if trait_flag.is_unconditionally_sealed()
         || (consider_public_api_sealed && trait_flag.is_only_pub_api_sealed())
     {
@@ -277,7 +277,7 @@ fn is_trait_supertrait_sealed_avoiding_cycles(
             visited_trait_ids,
             consider_public_api_sealed,
         ) {
-            let trait_flags = flags
+            let mut trait_flags = flags
                 .get_mut(&trait_item.id)
                 .expect("no flags for trait ID");
             if consider_public_api_sealed {
@@ -289,7 +289,7 @@ fn is_trait_supertrait_sealed_avoiding_cycles(
         }
     }
 
-    let trait_flag = flags[&trait_item.id];
+    let trait_flag = flags.get(&trait_item.id).expect("no flag for ID");
     trait_flag.is_unconditionally_sealed()
         || (consider_public_api_sealed && trait_flag.is_only_pub_api_sealed())
 }
@@ -297,7 +297,7 @@ fn is_trait_supertrait_sealed_avoiding_cycles(
 fn has_no_externally_satifiable_blanket_impls(
     index: &HashMap<Id, Item>,
     trait_inner: &Trait,
-    flags: &mut HashMap<Id, ItemFlag>,
+    flags: &crate::hashmaps::HashMap<Id, ItemFlag>,
     visited_trait_ids: &mut HashSet<Id>,
     consider_public_api_sealed: bool,
 ) -> bool {
@@ -332,7 +332,7 @@ fn has_no_externally_satifiable_blanket_impls(
 fn is_externally_satisfiable_blanket_impl(
     index: &HashMap<Id, Item>,
     impl_item: &rustdoc_types::Impl,
-    flags: &mut HashMap<Id, ItemFlag>,
+    flags: &crate::hashmaps::HashMap<Id, ItemFlag>,
     visited_trait_ids: &mut HashSet<Id>,
     consider_public_api_sealed: bool,
 ) -> bool {
@@ -403,7 +403,7 @@ fn is_method_or_item_sealed(
     index: &HashMap<Id, Item>,
     trait_id: &Id,
     trait_inner: &Trait,
-    flags: &mut HashMap<Id, ItemFlag>,
+    flags: &crate::hashmaps::HashMap<Id, ItemFlag>,
 ) -> bool {
     for inner_item_id in &trait_inner.items {
         let inner_item = &index.get(inner_item_id);
