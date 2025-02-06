@@ -4,6 +4,9 @@ use std::collections::{HashMap, HashSet};
 #[cfg(feature = "rustc-hash")]
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
 use rustdoc_types::{GenericBound, Id, Item, Trait};
 
 use crate::item_flags::ItemFlag;
@@ -14,12 +17,20 @@ use crate::item_flags::ItemFlag;
 /// - `flags` must contain complete reachability information,
 ///   including info on `doc(hidden)` importable paths.
 pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut crate::hashmaps::HashMap<Id, ItemFlag>) {
-    let mut possibly_sealed = Vec::with_capacity(128);
-    let mut definitely_not_fully_sealed: HashSet<Id> = HashSet::default();
-    for (id, item) in index.iter() {
+    let definitely_not_fully_sealed: crate::hashmaps::HashSet<Id> = Default::default();
+
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "rayon")] {
+            let iter = index.par_iter();
+        } else {
+            let iter = index.iter();
+        }
+    }
+
+    let possibly_sealed: Vec<_> = iter.filter_map(|(id, item)| {
         let trait_inner = match &item.inner {
             rustdoc_types::ItemEnum::Trait(t) => t,
-            _ => continue,
+            _ => return None,
         };
         let mut item_flags = flags.get_mut(id).expect("item flags weren't initialized");
 
@@ -55,7 +66,7 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut crate::
             // Either it's pub-in-priv or just not pub at all.
             // So it's trivially sealed. Nothing further to check here.
             item_flags.set_unconditionally_sealed();
-            continue;
+            return None;
         } else if item_flags.is_non_pub_api_reachable() {
             // The trait is reachable only via `doc(hidden)` paths.
             // Downstream crates can only `impl` it by naming such a non-public-API path,
@@ -64,6 +75,7 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut crate::
 
             // The trait might be completely sealed though, so we'll keep looking.
         }
+        drop(item_flags);
 
         // Does the trait have a method that:
         // - does not have a default impl, and
@@ -80,16 +92,17 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut crate::
         // This method applies the flags internally, and returns `true` only if
         // the trait is unconditionally sealed, meaning that we can skip further analysis for it.
         if is_method_or_item_sealed(index, id, trait_inner, flags) {
-            continue;
+            return None;
         }
 
         // The only remaining way a trait here could be sealed is if it has supertraits.
         if effective_supertraits_iter(trait_inner).next().is_some() {
-            possibly_sealed.push(item);
+            Some(item)
         } else {
             definitely_not_fully_sealed.insert(*id);
+            None
         }
-    }
+    }).collect();
 
     // At this point, we've figured out all traits that are sealed because of
     // method-sealing or because they aren't publicly importable.
@@ -130,6 +143,7 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut crate::
                 blankets_found = true;
             } else if supertrait_flags.is_unconditionally_sealed() {
                 // Sealed supertrait with no blanket impls! This seals our trait, and is final.
+                drop(supertrait_flags);
                 flags
                     .get_mut(&trait_item.id)
                     .expect("no flag for trait item")
@@ -145,6 +159,7 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut crate::
                     // Public-API-sealed supertrait with no blanket impls.
                     // This means our trait is *at least* public-API-sealed.
                     // But it might still be unconditionally sealed!
+                    drop(supertrait_flags);
                     flags
                         .get_mut(&trait_item.id)
                         .expect("no flag for trait item")
@@ -224,7 +239,9 @@ fn determine_if_trait_is_sealed_with_no_external_blankets(
     ) {
         let trait_flags = flags.get(&trait_item.id).expect("no flag for ID");
         let trait_inner = unwrap_trait(trait_item);
-        if !trait_flags.trait_has_blanket_impls()
+        let has_blanket_impls = trait_flags.trait_has_blanket_impls();
+        drop(trait_flags);
+        if !has_blanket_impls
             || has_no_externally_satifiable_blanket_impls(
                 index,
                 trait_inner,
@@ -253,6 +270,7 @@ fn is_trait_supertrait_sealed_avoiding_cycles(
     {
         return true;
     }
+    drop(trait_flag);
 
     let trait_inner = unwrap_trait(trait_item);
     for bound in effective_supertraits_iter(trait_inner) {
@@ -286,6 +304,7 @@ fn is_trait_supertrait_sealed_avoiding_cycles(
                 trait_flags.set_unconditionally_sealed();
                 break;
             }
+            drop(trait_flags);
         }
     }
 
@@ -430,6 +449,7 @@ fn is_method_or_item_sealed(
                 {
                     // This associated item is `doc(hidden)` and required to implement the trait.
                     // That makes the trait public-API-sealed.
+                    drop(assoc_item_flag);
                     flags
                         .get_mut(trait_id)
                         .expect("no flags entry for trait item ID")
@@ -483,6 +503,7 @@ fn is_method_or_item_sealed(
                 {
                     // This associated item is `doc(hidden)` and required to implement the trait.
                     // That makes the trait public-API-sealed.
+                    drop(assoc_item_flag);
                     flags
                         .get_mut(trait_id)
                         .expect("no flags entry for trait item ID")
@@ -497,6 +518,7 @@ fn is_method_or_item_sealed(
                 {
                     // This associated item is `doc(hidden)` and required to implement the trait.
                     // That makes the trait public-API-sealed.
+                    drop(assoc_item_flag);
                     flags
                         .get_mut(trait_id)
                         .expect("no flags entry for trait item ID")
@@ -507,12 +529,14 @@ fn is_method_or_item_sealed(
                     if let Some(type_flag) = flags.get(&path.id) {
                         if !type_flag.is_reachable() {
                             // Non-importable item, so this trait is unconditionally item-sealed.
+                            drop(type_flag);
                             flags
                                 .get_mut(trait_id)
                                 .expect("no flags entry for trait item ID")
                                 .set_unconditionally_sealed();
                             return true;
                         } else if type_flag.is_non_pub_api_reachable() {
+                            drop(type_flag);
                             flags
                                 .get_mut(trait_id)
                                 .expect("no flags entry for trait item ID")
