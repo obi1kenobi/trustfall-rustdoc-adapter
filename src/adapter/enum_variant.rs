@@ -78,6 +78,11 @@ impl<'a> EnumVariant<'a> {
     pub(super) fn item(&self) -> &'a Item {
         self.item
     }
+
+    #[inline]
+    pub(super) fn position(&self) -> i64 {
+        self.index as i64 + 1
+    }
 }
 
 enum DiscriminantValue {

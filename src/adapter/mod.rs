@@ -22,6 +22,7 @@ mod optimizations;
 mod origin;
 mod properties;
 mod rust_type_name;
+mod struct_field;
 mod vertex;
 
 #[cfg(test)]
@@ -140,7 +141,11 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 }
                 "Module" => properties::resolve_module_property(contexts, property_name),
                 "Struct" => properties::resolve_struct_property(contexts, property_name),
+                "StructField" => properties::resolve_struct_field_property(contexts, property_name),
                 "Enum" => properties::resolve_enum_property(contexts, property_name),
+                "Variant" | "PlainVariant" | "TupleVariant" | "StructVariant" => {
+                    properties::resolve_enum_variant_property(contexts, property_name)
+                }
                 "Union" => properties::resolve_union_property(contexts, property_name),
                 "Span" => properties::resolve_span_property(contexts, property_name),
                 "Path" => properties::resolve_path_property(contexts, property_name),

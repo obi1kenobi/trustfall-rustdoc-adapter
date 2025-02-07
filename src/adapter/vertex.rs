@@ -11,7 +11,7 @@ use crate::{
     ImportablePath, IndexedCrate, PackageIndex,
 };
 
-use super::{enum_variant::EnumVariant, origin::Origin};
+use super::{enum_variant::EnumVariant, origin::Origin, struct_field::StructField};
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
@@ -77,6 +77,9 @@ pub enum VertexKind<'a> {
 
     #[non_exhaustive]
     Feature(Feature<'a>),
+
+    #[non_exhaustive]
+    StructField(StructField<'a>),
 }
 
 impl Typename for Vertex<'_> {
@@ -137,6 +140,7 @@ impl Typename for Vertex<'_> {
                 rustdoc_types::GenericParamDefKind::Const { .. } => "GenericConstParameter",
             },
             VertexKind::Feature(..) => "Feature",
+            VertexKind::StructField(..) => "StructField",
         }
     }
 }
@@ -180,6 +184,7 @@ impl<'a> Vertex<'a> {
         match &self.kind {
             VertexKind::Item(item) => Some(item),
             VertexKind::Variant(variant) => Some(variant.item()),
+            VertexKind::StructField(struct_field) => Some(struct_field.item()),
             _ => None,
         }
     }
@@ -198,11 +203,11 @@ impl<'a> Vertex<'a> {
         })
     }
 
-    pub(super) fn as_struct_field(&self) -> Option<&'a Type> {
-        self.as_item().and_then(|item| match &item.inner {
-            rustdoc_types::ItemEnum::StructField(s) => Some(s),
+    pub(super) fn as_struct_field(&self) -> Option<&'_ StructField<'a>> {
+        match &self.kind {
+            VertexKind::StructField(struct_field) => Some(struct_field),
             _ => None,
-        })
+        }
     }
 
     pub(super) fn as_span(&self) -> Option<&'a Span> {
