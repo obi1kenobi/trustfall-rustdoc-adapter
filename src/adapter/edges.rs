@@ -577,9 +577,18 @@ pub(super) fn resolve_union_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 }
             };
 
-            Box::new(union_item.fields.iter().map(move |field_id| {
-                origin.make_item_vertex(item_index.get(field_id).expect("missing item"))
-            }))
+            Box::new(
+                union_item
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .map(move |(index, field_id)| {
+                        origin.make_struct_field_vertex(
+                            item_index.get(field_id).expect("missing item"),
+                            index,
+                        )
+                    }),
+            )
         }),
         _ => unreachable!("resolve_union_edge {edge_name}"),
     }
