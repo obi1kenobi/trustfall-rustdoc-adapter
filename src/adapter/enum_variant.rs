@@ -79,7 +79,6 @@ impl<'a> EnumVariant<'a> {
         self.item
     }
 
-    #[inline]
     pub(super) fn position(&self) -> i64 {
         self.index as i64 + 1
     }

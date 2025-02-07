@@ -24,7 +24,6 @@ impl<'a> StructField<'a> {
         }
     }
 
-    #[inline]
     pub(super) fn position(&self) -> i64 {
         self.index as i64 + 1
     }
