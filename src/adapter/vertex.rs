@@ -211,7 +211,7 @@ impl<'a> Vertex<'a> {
 
     pub(super) fn as_struct_field(&self) -> Option<&'a Type> {
         self.as_item().and_then(|item| match &item.inner {
-            rustdoc_types::ItemEnum::StructField(field) => Some(field),
+            rustdoc_types::ItemEnum::StructField(s) => Some(s),
             _ => None,
         })
     }

@@ -602,7 +602,6 @@ pub(super) fn resolve_struct_field_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
         "raw_type" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
             let field_type = vertex.as_struct_field().expect("not a StructField vertex");
-
             Box::new(std::iter::once(origin.make_raw_type_vertex(field_type)))
         }),
         _ => unreachable!("resolve_struct_field_edge {edge_name}"),
