@@ -9,7 +9,6 @@ use crate::{
 
 use super::{
     enum_variant::{EnumVariant, LazyDiscriminants},
-    struct_field::StructField,
     vertex::{ImplementedTrait, Vertex, VertexKind},
 };
 
@@ -28,10 +27,14 @@ impl Origin {
         }
     }
 
-    pub(super) fn make_struct_field_vertex<'a>(&self, field: &'a Item, index: usize) -> Vertex<'a> {
+    pub(super) fn make_positioned_item_vertex<'a>(
+        &self,
+        index: usize,
+        item: &'a Item,
+    ) -> Vertex<'a> {
         Vertex {
             origin: *self,
-            kind: VertexKind::StructField(StructField::new(field, index)),
+            kind: VertexKind::PositionedItem(index, item),
         }
     }
 

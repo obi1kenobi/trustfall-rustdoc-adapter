@@ -384,9 +384,9 @@ pub(super) fn resolve_struct_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             };
 
             Box::new(field_ids_iter.enumerate().map(move |(index, field_id)| {
-                origin.make_struct_field_vertex(
+                origin.make_positioned_item_vertex(
+                    index + 1,
                     item_index.get(field_id).expect("missing item"),
-                    index,
                 )
             }))
         }),
@@ -423,11 +423,11 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 VariantKind::Tuple(fields) => {
                     Box::new(fields.iter().filter(|x| x.is_some()).enumerate().map(
                         move |(index, field_id)| {
-                            origin.make_struct_field_vertex(
+                            origin.make_positioned_item_vertex(
+                                index + 1,
                                 item_index
                                     .get(field_id.as_ref().unwrap())
                                     .expect("missing item"),
-                                index,
                             )
                         },
                     ))
@@ -436,9 +436,9 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                     fields,
                     has_stripped_fields: _,
                 } => Box::new(fields.iter().enumerate().map(move |(index, field_id)| {
-                    origin.make_struct_field_vertex(
+                    origin.make_positioned_item_vertex(
+                        index + 1,
                         item_index.get(field_id).expect("missing item"),
-                        index,
                     )
                 })),
             }
@@ -583,9 +583,9 @@ pub(super) fn resolve_union_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                     .iter()
                     .enumerate()
                     .map(move |(index, field_id)| {
-                        origin.make_struct_field_vertex(
+                        origin.make_positioned_item_vertex(
+                            index + 1,
                             item_index.get(field_id).expect("missing item"),
-                            index,
                         )
                     }),
             )
@@ -601,11 +601,9 @@ pub(super) fn resolve_struct_field_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     match edge_name {
         "raw_type" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let struct_field = vertex.as_struct_field().expect("not a StructField vertex");
+            let field_type = vertex.as_struct_field().expect("not a StructField vertex");
 
-            Box::new(std::iter::once(
-                origin.make_raw_type_vertex(struct_field.raw_type()),
-            ))
+            Box::new(std::iter::once(origin.make_raw_type_vertex(field_type)))
         }),
         _ => unreachable!("resolve_struct_field_edge {edge_name}"),
     }

@@ -22,7 +22,6 @@ mod optimizations;
 mod origin;
 mod properties;
 mod rust_type_name;
-mod struct_field;
 mod vertex;
 
 #[cfg(test)]

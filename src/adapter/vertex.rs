@@ -11,7 +11,7 @@ use crate::{
     ImportablePath, IndexedCrate, PackageIndex,
 };
 
-use super::{enum_variant::EnumVariant, origin::Origin, struct_field::StructField};
+use super::{enum_variant::EnumVariant, origin::Origin};
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
@@ -79,7 +79,7 @@ pub enum VertexKind<'a> {
     Feature(Feature<'a>),
 
     #[non_exhaustive]
-    StructField(StructField<'a>),
+    PositionedItem(usize, &'a Item),
 }
 
 impl Typename for Vertex<'_> {
@@ -87,8 +87,8 @@ impl Typename for Vertex<'_> {
     /// intended to fulfill resolution requests for the __typename property.
     #[inline]
     fn typename(&self) -> &'static str {
-        match &self.kind {
-            VertexKind::Item(item) => match &item.inner {
+        match self.kind {
+            VertexKind::Item(item) | VertexKind::PositionedItem(_, item) => match &item.inner {
                 rustdoc_types::ItemEnum::Module { .. } => "Module",
                 rustdoc_types::ItemEnum::Struct(..) => "Struct",
                 rustdoc_types::ItemEnum::Enum(..) => "Enum",
@@ -128,7 +128,7 @@ impl Typename for Vertex<'_> {
             VertexKind::FunctionParameter(..) => "FunctionParameter",
             VertexKind::FunctionAbi(..) => "FunctionAbi",
             VertexKind::Discriminant(..) => "Discriminant",
-            VertexKind::Variant(ev) => match ev.variant().kind {
+            VertexKind::Variant(ref ev) => match ev.variant().kind {
                 VariantKind::Plain => "PlainVariant",
                 VariantKind::Tuple(..) => "TupleVariant",
                 VariantKind::Struct { .. } => "StructVariant",
@@ -140,7 +140,6 @@ impl Typename for Vertex<'_> {
                 rustdoc_types::GenericParamDefKind::Const { .. } => "GenericConstParameter",
             },
             VertexKind::Feature(..) => "Feature",
-            VertexKind::StructField(..) => "StructField",
         }
     }
 }
@@ -184,7 +183,14 @@ impl<'a> Vertex<'a> {
         match &self.kind {
             VertexKind::Item(item) => Some(item),
             VertexKind::Variant(variant) => Some(variant.item()),
-            VertexKind::StructField(struct_field) => Some(struct_field.item()),
+            VertexKind::PositionedItem(_, item) => Some(item),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_positioned_item(&self) -> Option<(usize, &'a Item)> {
+        match &self.kind {
+            VertexKind::PositionedItem(index, item) => Some((*index, item)),
             _ => None,
         }
     }
@@ -203,11 +209,11 @@ impl<'a> Vertex<'a> {
         })
     }
 
-    pub(super) fn as_struct_field(&self) -> Option<&'_ StructField<'a>> {
-        match &self.kind {
-            VertexKind::StructField(struct_field) => Some(struct_field),
+    pub(super) fn as_struct_field(&self) -> Option<&'a Type> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::StructField(field) => Some(field),
             _ => None,
-        }
+        })
     }
 
     pub(super) fn as_span(&self) -> Option<&'a Span> {

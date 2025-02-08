@@ -133,8 +133,8 @@ pub(super) fn resolve_struct_field_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "position" => resolve_property_with(contexts, |vertex| {
-            let struct_field_vertex = vertex.as_struct_field().expect("not a StructField");
-            struct_field_vertex.position().into()
+            let (index, _) = vertex.as_positioned_item().expect("not a PositionedItem");
+            (index as i64).into()
         }),
         _ => unreachable!("StructField property {property_name}"),
     }
