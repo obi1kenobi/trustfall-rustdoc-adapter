@@ -5252,7 +5252,6 @@ fn enum_variant_positions() {
     results.sort_unstable();
 
     let mut expected_results = vec![
-        // AllVariantTypes enum
         Output {
             enum_name: "AllVariantTypes".into(),
             variant_name: "First".into(),
@@ -5289,7 +5288,6 @@ fn enum_variant_positions() {
             variant_position: 6,
             variant_typename: "StructVariant".into(),
         },
-        // WithDiscriminants enum
         Output {
             enum_name: "WithDiscriminants".into(),
             variant_name: "A".into(),
@@ -5513,7 +5511,6 @@ fn struct_field_positions() {
     results.sort_unstable();
 
     let mut expected_results = vec![
-        // PlainStruct fields
         Output {
             struct_name: "PlainStruct".into(),
             struct_type: "plain".into(),
@@ -5532,7 +5529,6 @@ fn struct_field_positions() {
             field_name: "third".into(),
             field_position: 3,
         },
-        // TupleStruct fields
         Output {
             struct_name: "TupleStruct".into(),
             struct_type: "tuple".into(),
@@ -5551,7 +5547,6 @@ fn struct_field_positions() {
             field_name: "2".into(),
             field_position: 3,
         },
-        // ReprCStruct fields
         Output {
             struct_name: "ReprCStruct".into(),
             struct_type: "plain".into(),
@@ -5570,7 +5565,6 @@ fn struct_field_positions() {
             field_name: "c".into(),
             field_position: 3,
         },
-        // ReprPackedStruct fields
         Output {
             struct_name: "ReprPackedStruct".into(),
             struct_type: "plain".into(),
@@ -5589,7 +5583,6 @@ fn struct_field_positions() {
             field_name: "z".into(),
             field_position: 3,
         },
-        // ReprCTupleStruct fields
         Output {
             struct_name: "ReprCTupleStruct".into(),
             struct_type: "tuple".into(),
@@ -5608,7 +5601,6 @@ fn struct_field_positions() {
             field_name: "2".into(),
             field_position: 3,
         },
-        // ReprTransparentStruct fields (only public fields)
         Output {
             struct_name: "ReprTransparentStruct".into(),
             struct_type: "plain".into(),
@@ -5662,7 +5654,6 @@ fn union_field_positions() {
     results.sort_unstable();
 
     let mut expected_results = vec![
-        // SimpleUnion fields
         Output {
             union_name: "SimpleUnion".into(),
             field_name: "first".into(),
@@ -5678,7 +5669,6 @@ fn union_field_positions() {
             field_name: "third".into(),
             field_position: 3,
         },
-        // UnionWithDifferentSizes fields
         Output {
             union_name: "UnionWithDifferentSizes".into(),
             field_name: "small".into(),
@@ -5694,7 +5684,6 @@ fn union_field_positions() {
             field_name: "large".into(),
             field_position: 3,
         },
-        // UnionWithCompoundTypes fields
         Output {
             union_name: "UnionWithCompoundTypes".into(),
             field_name: "int_array".into(),
