@@ -127,6 +127,19 @@ pub(super) fn resolve_struct_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     }
 }
 
+pub(super) fn resolve_struct_field_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    match property_name {
+        "position" => resolve_property_with(contexts, |vertex| {
+            let (index, _) = vertex.as_positioned_item().expect("not a PositionedItem");
+            (index as i64).into()
+        }),
+        _ => unreachable!("StructField property {property_name}"),
+    }
+}
+
 pub(super) fn resolve_span_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
@@ -179,6 +192,19 @@ pub(super) fn resolve_union_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             resolve_property_with(contexts, field_property!(as_union, has_stripped_fields))
         }
         _ => unreachable!("Union property {property_name}"),
+    }
+}
+
+pub(super) fn resolve_enum_variant_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    match property_name {
+        "position" => resolve_property_with(contexts, |vertex| {
+            let variant = vertex.as_variant().expect("not a Variant vertex");
+            variant.position().into()
+        }),
+        _ => unreachable!("EnumVariant property {property_name}"),
     }
 }
 

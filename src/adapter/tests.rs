@@ -5208,3 +5208,494 @@ fn generic_param_positions() {
     expected_results.sort_unstable();
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn enum_variant_positions() {
+    get_test_data!(data, enum_variants_position);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Enum {
+                    enum_name: name @output
+                    variant {
+                        variant_name: name @output
+                        variant_position: position @output
+                        variant_typename: __typename @output
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::new();
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        enum_name: String,
+        variant_name: String,
+        variant_position: i64,
+        variant_typename: String,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "First".into(),
+            variant_position: 1,
+            variant_typename: "PlainVariant".into(),
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Second".into(),
+            variant_position: 2,
+            variant_typename: "TupleVariant".into(),
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Third".into(),
+            variant_position: 3,
+            variant_typename: "StructVariant".into(),
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Fourth".into(),
+            variant_position: 4,
+            variant_typename: "PlainVariant".into(),
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Fifth".into(),
+            variant_position: 5,
+            variant_typename: "TupleVariant".into(),
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Sixth".into(),
+            variant_position: 6,
+            variant_typename: "StructVariant".into(),
+        },
+        Output {
+            enum_name: "WithDiscriminants".into(),
+            variant_name: "A".into(),
+            variant_position: 1,
+            variant_typename: "PlainVariant".into(),
+        },
+        Output {
+            enum_name: "WithDiscriminants".into(),
+            variant_name: "B".into(),
+            variant_position: 2,
+            variant_typename: "PlainVariant".into(),
+        },
+        Output {
+            enum_name: "WithDiscriminants".into(),
+            variant_name: "C".into(),
+            variant_position: 3,
+            variant_typename: "PlainVariant".into(),
+        },
+        Output {
+            enum_name: "WithDiscriminants".into(),
+            variant_name: "D".into(),
+            variant_position: 4,
+            variant_typename: "PlainVariant".into(),
+        },
+        Output {
+            enum_name: "WithDiscriminants".into(),
+            variant_name: "E".into(),
+            variant_position: 5,
+            variant_typename: "PlainVariant".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn enum_struct_variant_fields() {
+    get_test_data!(data, enum_variants_position);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Enum {
+                    enum_name: name @output
+                    variant {
+                        ... on StructVariant {
+                            variant_name: name @output
+                            field {
+                                struct_field_name: name @output
+                                struct_field_position: position @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::new();
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        enum_name: String,
+        variant_name: String,
+        struct_field_name: String,
+        struct_field_position: i64,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Third".into(),
+            struct_field_name: "x".into(),
+            struct_field_position: 1,
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Third".into(),
+            struct_field_name: "y".into(),
+            struct_field_position: 2,
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Sixth".into(),
+            struct_field_name: "name".into(),
+            struct_field_position: 1,
+        },
+    ];
+
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn enum_tuple_variant_fields() {
+    get_test_data!(data, enum_variants_position);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Enum {
+                    enum_name: name @output
+                    variant {
+                        ... on TupleVariant {
+                            variant_name: name @output
+                            field {
+                                tuple_field_name: name @output
+                                tuple_field_position: position @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::new();
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        enum_name: String,
+        variant_name: String,
+        tuple_field_name: String,
+        tuple_field_position: i64,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Second".into(),
+            tuple_field_name: "0".into(),
+            tuple_field_position: 1,
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Second".into(),
+            tuple_field_name: "1".into(),
+            tuple_field_position: 2,
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Fifth".into(),
+            tuple_field_name: "0".into(),
+            tuple_field_position: 1,
+        },
+    ];
+
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn struct_field_positions() {
+    get_test_data!(data, struct_fields_position);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Struct {
+                    struct_name: name @output
+                    struct_type @output
+                    field {
+                        field_name: name @output
+                        field_position: position @output
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::new();
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        struct_name: String,
+        struct_type: String,
+        field_name: String,
+        field_position: i64,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            struct_name: "PlainStruct".into(),
+            struct_type: "plain".into(),
+            field_name: "first".into(),
+            field_position: 1,
+        },
+        Output {
+            struct_name: "PlainStruct".into(),
+            struct_type: "plain".into(),
+            field_name: "second".into(),
+            field_position: 2,
+        },
+        Output {
+            struct_name: "PlainStruct".into(),
+            struct_type: "plain".into(),
+            field_name: "third".into(),
+            field_position: 3,
+        },
+        Output {
+            struct_name: "TupleStruct".into(),
+            struct_type: "tuple".into(),
+            field_name: "0".into(),
+            field_position: 1,
+        },
+        Output {
+            struct_name: "TupleStruct".into(),
+            struct_type: "tuple".into(),
+            field_name: "1".into(),
+            field_position: 2,
+        },
+        Output {
+            struct_name: "TupleStruct".into(),
+            struct_type: "tuple".into(),
+            field_name: "2".into(),
+            field_position: 3,
+        },
+        Output {
+            struct_name: "ReprCStruct".into(),
+            struct_type: "plain".into(),
+            field_name: "a".into(),
+            field_position: 1,
+        },
+        Output {
+            struct_name: "ReprCStruct".into(),
+            struct_type: "plain".into(),
+            field_name: "b".into(),
+            field_position: 2,
+        },
+        Output {
+            struct_name: "ReprCStruct".into(),
+            struct_type: "plain".into(),
+            field_name: "c".into(),
+            field_position: 3,
+        },
+        Output {
+            struct_name: "ReprPackedStruct".into(),
+            struct_type: "plain".into(),
+            field_name: "x".into(),
+            field_position: 1,
+        },
+        Output {
+            struct_name: "ReprPackedStruct".into(),
+            struct_type: "plain".into(),
+            field_name: "y".into(),
+            field_position: 2,
+        },
+        Output {
+            struct_name: "ReprPackedStruct".into(),
+            struct_type: "plain".into(),
+            field_name: "z".into(),
+            field_position: 3,
+        },
+        Output {
+            struct_name: "ReprCTupleStruct".into(),
+            struct_type: "tuple".into(),
+            field_name: "0".into(),
+            field_position: 1,
+        },
+        Output {
+            struct_name: "ReprCTupleStruct".into(),
+            struct_type: "tuple".into(),
+            field_name: "1".into(),
+            field_position: 2,
+        },
+        Output {
+            struct_name: "ReprCTupleStruct".into(),
+            struct_type: "tuple".into(),
+            field_name: "2".into(),
+            field_position: 3,
+        },
+        Output {
+            struct_name: "ReprTransparentStruct".into(),
+            struct_type: "plain".into(),
+            field_name: "inner".into(),
+            field_position: 1,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn union_field_positions() {
+    get_test_data!(data, union_fields_position);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Union {
+                    union_name: name @output
+                    field {
+                        field_name: name @output
+                        field_position: position @output
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::new();
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        union_name: String,
+        field_name: String,
+        field_position: i64,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            union_name: "SimpleUnion".into(),
+            field_name: "first".into(),
+            field_position: 1,
+        },
+        Output {
+            union_name: "SimpleUnion".into(),
+            field_name: "second".into(),
+            field_position: 2,
+        },
+        Output {
+            union_name: "SimpleUnion".into(),
+            field_name: "third".into(),
+            field_position: 3,
+        },
+        Output {
+            union_name: "UnionWithDifferentSizes".into(),
+            field_name: "small".into(),
+            field_position: 1,
+        },
+        Output {
+            union_name: "UnionWithDifferentSizes".into(),
+            field_name: "medium".into(),
+            field_position: 2,
+        },
+        Output {
+            union_name: "UnionWithDifferentSizes".into(),
+            field_name: "large".into(),
+            field_position: 3,
+        },
+        Output {
+            union_name: "UnionWithCompoundTypes".into(),
+            field_name: "int_array".into(),
+            field_position: 1,
+        },
+        Output {
+            union_name: "UnionWithCompoundTypes".into(),
+            field_name: "float_array".into(),
+            field_position: 2,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
