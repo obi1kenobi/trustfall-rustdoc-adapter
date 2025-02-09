@@ -383,8 +383,11 @@ pub(super) fn resolve_struct_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 rustdoc_types::StructKind::Plain { fields, .. } => Box::new(fields.iter()),
             };
 
-            Box::new(field_ids_iter.map(move |field_id| {
-                origin.make_item_vertex(item_index.get(field_id).expect("missing item"))
+            Box::new(field_ids_iter.enumerate().map(move |(index, field_id)| {
+                origin.make_positioned_item_vertex(
+                    index + 1,
+                    item_index.get(field_id).expect("missing item"),
+                )
             }))
         }),
         _ => unreachable!("resolve_struct_edge {edge_name}"),
@@ -418,19 +421,25 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             match &item.kind {
                 VariantKind::Plain => Box::new(std::iter::empty()),
                 VariantKind::Tuple(fields) => {
-                    Box::new(fields.iter().filter(|x| x.is_some()).map(move |field_id| {
-                        origin.make_item_vertex(
-                            item_index
-                                .get(field_id.as_ref().unwrap())
-                                .expect("missing item"),
-                        )
-                    }))
+                    Box::new(fields.iter().filter(|x| x.is_some()).enumerate().map(
+                        move |(index, field_id)| {
+                            origin.make_positioned_item_vertex(
+                                index + 1,
+                                item_index
+                                    .get(field_id.as_ref().unwrap())
+                                    .expect("missing item"),
+                            )
+                        },
+                    ))
                 }
                 VariantKind::Struct {
                     fields,
                     has_stripped_fields: _,
-                } => Box::new(fields.iter().map(move |field_id| {
-                    origin.make_item_vertex(item_index.get(field_id).expect("missing item"))
+                } => Box::new(fields.iter().enumerate().map(move |(index, field_id)| {
+                    origin.make_positioned_item_vertex(
+                        index + 1,
+                        item_index.get(field_id).expect("missing item"),
+                    )
                 })),
             }
         }),
@@ -568,9 +577,18 @@ pub(super) fn resolve_union_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 }
             };
 
-            Box::new(union_item.fields.iter().map(move |field_id| {
-                origin.make_item_vertex(item_index.get(field_id).expect("missing item"))
-            }))
+            Box::new(
+                union_item
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .map(move |(index, field_id)| {
+                        origin.make_positioned_item_vertex(
+                            index + 1,
+                            item_index.get(field_id).expect("missing item"),
+                        )
+                    }),
+            )
         }),
         _ => unreachable!("resolve_union_edge {edge_name}"),
     }
