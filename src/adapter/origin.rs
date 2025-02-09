@@ -27,6 +27,17 @@ impl Origin {
         }
     }
 
+    pub(super) fn make_positioned_item_vertex<'a>(
+        &self,
+        index: usize,
+        item: &'a Item,
+    ) -> Vertex<'a> {
+        Vertex {
+            origin: *self,
+            kind: VertexKind::PositionedItem(index, item),
+        }
+    }
+
     pub(super) fn make_span_vertex<'a>(&self, span: &'a Span) -> Vertex<'a> {
         Vertex {
             origin: *self,
