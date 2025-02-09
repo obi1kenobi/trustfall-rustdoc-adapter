@@ -77,6 +77,9 @@ pub enum VertexKind<'a> {
 
     #[non_exhaustive]
     Feature(Feature<'a>),
+
+    #[non_exhaustive]
+    PositionedItem(usize, &'a Item),
 }
 
 impl Typename for Vertex<'_> {
@@ -84,8 +87,8 @@ impl Typename for Vertex<'_> {
     /// intended to fulfill resolution requests for the __typename property.
     #[inline]
     fn typename(&self) -> &'static str {
-        match &self.kind {
-            VertexKind::Item(item) => match &item.inner {
+        match self.kind {
+            VertexKind::Item(item) | VertexKind::PositionedItem(_, item) => match &item.inner {
                 rustdoc_types::ItemEnum::Module { .. } => "Module",
                 rustdoc_types::ItemEnum::Struct(..) => "Struct",
                 rustdoc_types::ItemEnum::Enum(..) => "Enum",
@@ -125,7 +128,7 @@ impl Typename for Vertex<'_> {
             VertexKind::FunctionParameter(..) => "FunctionParameter",
             VertexKind::FunctionAbi(..) => "FunctionAbi",
             VertexKind::Discriminant(..) => "Discriminant",
-            VertexKind::Variant(ev) => match ev.variant().kind {
+            VertexKind::Variant(ref ev) => match ev.variant().kind {
                 VariantKind::Plain => "PlainVariant",
                 VariantKind::Tuple(..) => "TupleVariant",
                 VariantKind::Struct { .. } => "StructVariant",
@@ -180,6 +183,14 @@ impl<'a> Vertex<'a> {
         match &self.kind {
             VertexKind::Item(item) => Some(item),
             VertexKind::Variant(variant) => Some(variant.item()),
+            VertexKind::PositionedItem(_, item) => Some(item),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_positioned_item(&self) -> Option<(usize, &'a Item)> {
+        match &self.kind {
+            VertexKind::PositionedItem(index, item) => Some((*index, item)),
             _ => None,
         }
     }

@@ -377,6 +377,11 @@ type StructField implements Item {
 
   visibility_limit: String!
 
+  """
+  The 1-based position of this field in the struct's definition.
+  """
+  position: Int!
+
   # edges from Item
   span: Span
   attribute: [Attribute!]
@@ -520,6 +525,11 @@ interface Variant implements Item {
   """
   public_api_eligible: Boolean!
 
+  """
+  The 1-based position of this variant in the enum's definition.
+  """
+  position: Int!
+
   visibility_limit: String!
 
   # edges from Item
@@ -607,6 +617,11 @@ type PlainVariant implements Item & Variant {
 
   visibility_limit: String!
 
+  """
+  The 1-based position of this variant in the enum's definition.
+  """
+  position: Int!
+
   # edges from Item
   span: Span
   attribute: [Attribute!]
@@ -678,6 +693,11 @@ type TupleVariant implements Item & Variant {
     as above, and then check whether the item itself is `public_api_eligible`.
   """
   public_api_eligible: Boolean!
+
+  """
+  The 1-based position of this variant in the enum's definition.
+  """
+  position: Int!
 
   visibility_limit: String!
 
@@ -754,6 +774,11 @@ type StructVariant implements Item & Variant {
   public_api_eligible: Boolean!
 
   visibility_limit: String!
+
+  """
+  The 1-based position of this variant in the enum's definition.
+  """
+  position: Int!
 
   # edges from Item
   span: Span
