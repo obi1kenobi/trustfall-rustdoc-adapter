@@ -127,7 +127,8 @@ jobs:
       - name: Tag the version
         run: |
           set -euxo pipefail
-          export CURRENT_VERSION="$(./scripts/get_current_version.sh trustfall-rustdoc-adapter)"
+          CURRENT_VERSION="$(./scripts/get_current_version.sh trustfall-rustdoc-adapter)"
+          export CURRENT_VERSION
           git tag "v$CURRENT_VERSION"
           git push origin "v$CURRENT_VERSION"
 
@@ -154,9 +155,9 @@ jobs:
           export EXIT_CODE="$?"
           set -e
           if [[ "$EXIT_CODE" == "7" ]]; then
-            echo "is_new_version=no" >> $GITHUB_OUTPUT
+            echo "is_new_version=no" >> "$GITHUB_OUTPUT"
           elif [[ "$EXIT_CODE" == "0" ]]; then
-            echo "is_new_version=yes" >> $GITHUB_OUTPUT
+            echo "is_new_version=yes" >> "$GITHUB_OUTPUT"
           else
             # Unexpected outcome, indicates a bug.
             exit "$EXIT_CODE"
