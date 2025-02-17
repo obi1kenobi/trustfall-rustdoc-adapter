@@ -301,3 +301,17 @@ pub trait DeprecatedMethod {
 pub trait MethodDeprecatedArgType {
     fn method(&self, token: hidden_module::DeprecatedToken);
 }
+
+/// A direct case of two traits declaring blankets on each other.
+pub mod direct_cycle {
+    pub mod hidden {
+        #[doc(hidden)]
+        pub trait DirectCycleSuper {}
+    }
+
+    pub trait DirectCycleSub: hidden::DirectCycleSuper {}
+
+    impl<T: DirectCycleSub> hidden::DirectCycleSuper for T {}
+
+    impl<T: hidden::DirectCycleSuper> DirectCycleSub for T {}
+}
