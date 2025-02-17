@@ -659,6 +659,38 @@ fn rustdoc_sealed_traits() {
             public_api_sealed: true,
         },
         Output {
+            name: "NonRefRecursiveSealed".into(),
+            path: vec![],
+            sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "NonRefSealedPlusRecursiveBlanket".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "cyclic_bounds2".into(),
+                "NonRefSealedPlusRecursiveBlanket".into(),
+            ]],
+            sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "DirectCycleSuper".into(),
+            path: vec![],
+            sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "DirectCycleSub".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "direct_cycle".into(),
+                "DirectCycleSub".into(),
+            ]],
+            sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
             name: "HiddenSealed".into(),
             path: vec![vec![
                 "sealed_traits".into(),
@@ -1172,6 +1204,29 @@ fn rustdoc_sealed_traits() {
             ]],
             sealed: false,
             public_api_sealed: false,
+        },
+        Output {
+            name: "DirectCycleSuper".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "direct_cycle".into(),
+                "hidden".into(),
+                "DirectCycleSuper".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "DirectCycleSub".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "doc_hidden".into(),
+                "direct_cycle".into(),
+                "DirectCycleSub".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
         },
     ];
     expected_results.sort_unstable();

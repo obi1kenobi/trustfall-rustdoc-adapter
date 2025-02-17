@@ -380,3 +380,42 @@ pub mod cyclic_bounds {
 
     impl<T: SealedPlusRecursiveBlanket> SealedPlusRecursiveBlanket for &T {}
 }
+
+/// Another variation of the above idea.
+/// In this one, we use `T` instead of `&T` which also suprisingly compiles.
+pub mod cyclic_bounds2 {
+    mod recursive {
+        pub trait NonRefRecursiveSealed {}
+
+        impl<T: super::NonRefSealedPlusRecursiveBlanket> NonRefRecursiveSealed for T {}
+    }
+
+    /// This is sealed, here's proof:
+    /// ```compile_fail
+    /// struct Example;
+    ///
+    /// impl sealed_traits::cyclic_bounds2::NonRefSealedPlusRecursiveBlanket for Example {}
+    /// ```
+    pub trait NonRefSealedPlusRecursiveBlanket: recursive::NonRefRecursiveSealed {}
+
+    impl<T: NonRefSealedPlusRecursiveBlanket> NonRefSealedPlusRecursiveBlanket for T {}
+}
+
+/// A direct case of two traits declaring blankets on each other.
+pub mod direct_cycle {
+    mod private {
+        pub trait DirectCycleSuper {}
+    }
+
+    /// This is sealed here's proof:
+    /// ```compile_fail
+    /// struct Example;
+    ///
+    /// impl sealed_traits::direct_cycle::DirectCycleSub for Example {}
+    /// ```
+    pub trait DirectCycleSub: private::DirectCycleSuper {}
+
+    impl<T: DirectCycleSub> private::DirectCycleSuper for T {}
+
+    impl<T: private::DirectCycleSuper> DirectCycleSub for T {}
+}
