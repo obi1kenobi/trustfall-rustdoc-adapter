@@ -1,0 +1,6 @@
+[package]
+name = "static_export_name_2021"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
