@@ -1550,11 +1550,11 @@ fn static_export_name() {
     let expected_results = vec![
         Output {
             name: "VAR1".into(),
-            export_name: Some("VAR1".into())
+            export_name: Some("VAR1".into()),
         },
         Output {
             name: "VAR2".into(),
-            export_name: Some("EXTERNALLY_VISIBLE".into())
+            export_name: Some("EXTERNALLY_VISIBLE".into()),
         },
     ];
 
@@ -1565,10 +1565,7 @@ fn static_export_name() {
             .collect();
     results2021.sort_unstable();
 
-    similar_asserts::assert_eq!(
-        expected_results,
-        results2021,
-    );
+    similar_asserts::assert_eq!(expected_results, results2021,);
 
     let mut results: Vec<Output> =
         trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
@@ -1577,10 +1574,7 @@ fn static_export_name() {
             .collect();
     results.sort_unstable();
 
-    similar_asserts::assert_eq!(
-        expected_results,
-        results
-    );
+    similar_asserts::assert_eq!(expected_results, results);
 }
 
 #[test]
@@ -1963,10 +1957,7 @@ fn function_export_name() {
             .collect();
     results2021.sort_unstable();
 
-    similar_asserts::assert_eq!(
-        expected_results,
-        results2021,
-    );
+    similar_asserts::assert_eq!(expected_results, results2021,);
 
     // Ensure that looking up functions by export name works correctly,
     // since this path is expected to hit our index instead of iterating over everything.
@@ -1991,11 +1982,15 @@ fn function_export_name() {
             .into_iter()
             .collect();
 
-        let mut results2021: Vec<_> =
-            trustfall::execute_query(&schema, adapter2021.clone(), inner_query, inner_variables.clone())
-                .expect("failed to run query")
-                .map(|row| row.try_into_struct().expect("shape mismatch"))
-                .collect();
+        let mut results2021: Vec<_> = trustfall::execute_query(
+            &schema,
+            adapter2021.clone(),
+            inner_query,
+            inner_variables.clone(),
+        )
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
         results2021.sort_unstable();
 
         similar_asserts::assert_eq!(vec![row], results2021);
@@ -2008,10 +2003,7 @@ fn function_export_name() {
             .collect();
     results.sort_unstable();
 
-    similar_asserts::assert_eq!(
-        expected_results,
-        results
-    );
+    similar_asserts::assert_eq!(expected_results, results);
 
     // Ensure that looking up functions by export name works correctly,
     // since this path is expected to hit our index instead of iterating over everything.
@@ -2023,11 +2015,15 @@ fn function_export_name() {
             .into_iter()
             .collect();
 
-        let mut results: Vec<_> =
-            trustfall::execute_query(&schema, adapter.clone(), inner_query, inner_variables.clone())
-                .expect("failed to run query")
-                .map(|row| row.try_into_struct().expect("shape mismatch"))
-                .collect();
+        let mut results: Vec<_> = trustfall::execute_query(
+            &schema,
+            adapter.clone(),
+            inner_query,
+            inner_variables.clone(),
+        )
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
         results.sort_unstable();
 
         similar_asserts::assert_eq!(vec![row], results);
