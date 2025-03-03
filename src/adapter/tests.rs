@@ -5943,3 +5943,98 @@ fn non_exhaustive_attribute() {
 
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+/// Ensure that `#[derive(...)]` applies the `#[automatically_derived]` attribute,
+/// since that's key for the correct behavior of some of our queries.
+#[test]
+fn automatically_derived() {
+    get_test_data!(data, automatically_derived);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Struct {
+                    impl {
+                        attrs @output
+
+                        implemented_trait {
+                            instantiated_name @output
+                            bare_name @filter(op: "one_of", value: ["$traits"])
+
+                            trait {
+                                canonical_path {
+                                    canonical_path: path @output
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, Vec<&str>> = btreemap! {
+        "traits" => vec!["Debug", "Clone", "PartialOrd", "Ord", "PartialEq", "Eq", "Hash"],
+    };
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        instantiated_name: String,
+        attrs: Vec<String>,
+        canonical_path: Vec<String>,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            instantiated_name: "Clone".into(),
+            attrs: vec!["#[automatically_derived]".into()],
+            canonical_path: vec!["core".into(), "clone".into(), "Clone".into()],
+        },
+        Output {
+            instantiated_name: "Debug".into(),
+            attrs: vec!["#[automatically_derived]".into()],
+            canonical_path: vec!["core".into(), "fmt".into(), "Debug".into()],
+        },
+        Output {
+            instantiated_name: "Eq".into(),
+            attrs: vec!["#[automatically_derived]".into()],
+            canonical_path: vec!["core".into(), "cmp".into(), "Eq".into()],
+        },
+        Output {
+            instantiated_name: "Hash".into(),
+            attrs: vec!["#[automatically_derived]".into()],
+            canonical_path: vec!["core".into(), "hash".into(), "Hash".into()],
+        },
+        Output {
+            instantiated_name: "Ord".into(),
+            attrs: vec!["#[automatically_derived]".into()],
+            canonical_path: vec!["core".into(), "cmp".into(), "Ord".into()],
+        },
+        Output {
+            instantiated_name: "PartialEq".into(),
+            attrs: vec!["#[automatically_derived]".into()],
+            canonical_path: vec!["core".into(), "cmp".into(), "PartialEq".into()],
+        },
+        Output {
+            instantiated_name: "PartialOrd".into(),
+            attrs: vec!["#[automatically_derived]".into()],
+            canonical_path: vec!["core".into(), "cmp".into(), "PartialOrd".into()],
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
