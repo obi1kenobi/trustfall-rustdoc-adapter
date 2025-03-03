@@ -1514,7 +1514,12 @@ fn rustdoc_finds_statics() {
 
 #[test]
 fn static_export_name() {
+    get_test_data!(data2021, static_export_name_2021);
     get_test_data!(data, static_export_name);
+
+    let adapter2021 = RustdocAdapter::new(&data2021, None);
+    let adapter2021 = Arc::new(&adapter2021);
+
     let adapter = RustdocAdapter::new(&data, None);
     let adapter = Arc::new(&adapter);
 
@@ -1542,6 +1547,26 @@ fn static_export_name() {
         export_name: Option<String>,
     }
 
+    let expected_results = vec![
+        Output {
+            name: "VAR1".into(),
+            export_name: Some("VAR1".into()),
+        },
+        Output {
+            name: "VAR2".into(),
+            export_name: Some("EXTERNALLY_VISIBLE".into()),
+        },
+    ];
+
+    let mut results2021: Vec<Output> =
+        trustfall::execute_query(&schema, adapter2021.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results2021.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results2021,);
+
     let mut results: Vec<Output> =
         trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
             .expect("failed to run query")
@@ -1549,19 +1574,7 @@ fn static_export_name() {
             .collect();
     results.sort_unstable();
 
-    similar_asserts::assert_eq!(
-        vec![
-            Output {
-                name: "VAR1".into(),
-                export_name: Some("VAR1".into())
-            },
-            Output {
-                name: "VAR2".into(),
-                export_name: Some("EXTERNALLY_VISIBLE".into())
-            },
-        ],
-        results
-    );
+    similar_asserts::assert_eq!(expected_results, results);
 }
 
 #[test]
@@ -1874,7 +1887,12 @@ fn function_abi() {
 
 #[test]
 fn function_export_name() {
+    get_test_data!(data2021, function_export_name_2021);
     get_test_data!(data, function_export_name);
+
+    let adapter2021 = RustdocAdapter::new(&data2021, None);
+    let adapter2021 = Arc::new(&adapter2021);
+
     let adapter = RustdocAdapter::new(&data, None);
     let adapter = Arc::new(&adapter);
 
@@ -1904,47 +1922,46 @@ fn function_export_name() {
         visibility_limit: String,
     }
 
-    let mut results: Vec<_> =
-        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+    let expected_results = vec![
+        Output {
+            name: "example_export_name".into(),
+            export_name: Some("renamed".into()),
+            visibility_limit: "public".into(),
+        },
+        Output {
+            name: "example_not_mangled".into(),
+            export_name: Some("example_not_mangled".into()),
+            visibility_limit: "public".into(),
+        },
+        Output {
+            name: "mangled".into(),
+            export_name: None,
+            visibility_limit: "public".into(),
+        },
+        Output {
+            name: "private_export_name".into(),
+            export_name: Some("private_renamed".into()),
+            visibility_limit: "crate".into(),
+        },
+        Output {
+            name: "private_not_mangled".into(),
+            export_name: Some("private_not_mangled".into()),
+            visibility_limit: "crate".into(),
+        },
+    ];
+
+    let mut results2021: Vec<_> =
+        trustfall::execute_query(&schema, adapter2021.clone(), query, variables.clone())
             .expect("failed to run query")
             .map(|row| row.try_into_struct().expect("shape mismatch"))
             .collect();
-    results.sort_unstable();
+    results2021.sort_unstable();
 
-    similar_asserts::assert_eq!(
-        vec![
-            Output {
-                name: "example_export_name".into(),
-                export_name: Some("renamed".into()),
-                visibility_limit: "public".into(),
-            },
-            Output {
-                name: "example_not_mangled".into(),
-                export_name: Some("example_not_mangled".into()),
-                visibility_limit: "public".into(),
-            },
-            Output {
-                name: "mangled".into(),
-                export_name: None,
-                visibility_limit: "public".into(),
-            },
-            Output {
-                name: "private_export_name".into(),
-                export_name: Some("private_renamed".into()),
-                visibility_limit: "crate".into(),
-            },
-            Output {
-                name: "private_not_mangled".into(),
-                export_name: Some("private_not_mangled".into()),
-                visibility_limit: "crate".into(),
-            },
-        ],
-        results
-    );
+    similar_asserts::assert_eq!(expected_results, results2021,);
 
     // Ensure that looking up functions by export name works correctly,
     // since this path is expected to hit our index instead of iterating over everything.
-    let query = r#"
+    let inner_query = r#"
     {
         Crate {
             item {
@@ -1957,19 +1974,56 @@ fn function_export_name() {
         }
     }
     "#;
+    for row in results2021 {
+        let Some(export_name) = &row.export_name else {
+            continue;
+        };
+        let inner_variables: BTreeMap<&str, &str> = [("export_name", export_name.as_str())]
+            .into_iter()
+            .collect();
+
+        let mut results2021: Vec<_> = trustfall::execute_query(
+            &schema,
+            adapter2021.clone(),
+            inner_query,
+            inner_variables.clone(),
+        )
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+        results2021.sort_unstable();
+
+        similar_asserts::assert_eq!(vec![row], results2021);
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+
+    // Ensure that looking up functions by export name works correctly,
+    // since this path is expected to hit our index instead of iterating over everything.
     for row in results {
         let Some(export_name) = &row.export_name else {
             continue;
         };
-        let variables: BTreeMap<&str, &str> = [("export_name", export_name.as_str())]
+        let inner_variables: BTreeMap<&str, &str> = [("export_name", export_name.as_str())]
             .into_iter()
             .collect();
 
-        let mut results: Vec<_> =
-            trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
-                .expect("failed to run query")
-                .map(|row| row.try_into_struct().expect("shape mismatch"))
-                .collect();
+        let mut results: Vec<_> = trustfall::execute_query(
+            &schema,
+            adapter.clone(),
+            inner_query,
+            inner_variables.clone(),
+        )
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
         results.sort_unstable();
 
         similar_asserts::assert_eq!(vec![row], results);

@@ -28,7 +28,11 @@ use crate::attributes::Attribute;
 /// If this function is called with an item that doesn't support external names,
 /// the result is unspecified.
 pub(crate) fn item_export_name(item: &rustdoc_types::Item) -> Option<&str> {
-    if item.attrs.iter().any(|attr| attr == "#[no_mangle]") {
+    if item
+        .attrs
+        .iter()
+        .any(|attr| attr == "#[no_mangle]" || attr == "#[unsafe(no_mangle)]")
+    {
         // Items with `#[no_mangle]` attributes are exported under their item name.
         // Ref: https://doc.rust-lang.org/reference/abi.html#the-no_mangle-attribute
         item.name.as_deref()
@@ -36,13 +40,23 @@ pub(crate) fn item_export_name(item: &rustdoc_types::Item) -> Option<&str> {
         item.attrs
             .iter()
             .filter_map(|attr| {
-                if attr.starts_with("#[export_name") {
+                if attr.contains("export_name") {
                     let parsed = Attribute::new(attr);
-                    if parsed.content.base == "export_name" {
+
+                    let export_name_attr = if parsed.content.base == "unsafe" {
                         parsed
                             .content
-                            .assigned_item
-                            .map(|name| name.trim_matches('"'))
+                            .arguments
+                            .as_ref()
+                            .and_then(|arg| arg.iter().find(|p| p.base == "export_name"))
+                    } else if parsed.content.base == "export_name" {
+                        Some(&parsed.content)
+                    } else {
+                        None
+                    };
+
+                    if let Some(attr) = export_name_attr {
+                        attr.assigned_item.map(|name| name.trim_matches('"'))
                     } else {
                         None
                     }
