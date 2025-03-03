@@ -6038,3 +6038,171 @@ fn automatically_derived() {
 
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn struct_repr_attributes() {
+    get_test_data!(data, struct_fields_position);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Struct {
+                    name @output
+                    attrs @output
+
+                    attr_: attribute {
+                        raw: raw_attribute @output
+                        content {
+                            base @filter(op: "=", value: ["$repr"])
+                            argument {
+                                repr_kind: base @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, &str> = btreemap! {
+        "repr" => "repr"
+    };
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        attrs: Vec<String>,
+        attr_raw: String,
+        attr_repr_kind: String,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            name: "ReprCStruct".into(),
+            attrs: vec!["#[repr(C)]".into()],
+            attr_raw: "#[repr(C)]".into(),
+            attr_repr_kind: "C".into(),
+        },
+        Output {
+            name: "ReprPackedStruct".into(),
+            attrs: vec!["#[repr(packed)]".into()],
+            attr_raw: "#[repr(packed)]".into(),
+            attr_repr_kind: "packed".into(),
+        },
+        Output {
+            name: "ReprCTupleStruct".into(),
+            attrs: vec!["#[repr(C)]".into()],
+            attr_raw: "#[repr(C)]".into(),
+            attr_repr_kind: "C".into(),
+        },
+        Output {
+            name: "ReprTransparentStruct".into(),
+            attrs: vec!["#[repr(transparent)]".into()],
+            attr_raw: "#[repr(transparent)]".into(),
+            attr_repr_kind: "transparent".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn enum_repr_attributes() {
+    get_test_data!(data, enum_discriminants);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Enum {
+                    name @output
+                    attrs @output
+
+                    attr_: attribute {
+                        raw: raw_attribute @output
+                        content {
+                            base @filter(op: "=", value: ["$repr"])
+                            argument {
+                                repr_kind: base @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, &str> = btreemap! {
+        "repr" => "repr"
+    };
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        attrs: Vec<String>,
+        attr_raw: String,
+        attr_repr_kind: String,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            name: "A".into(),
+            attrs: vec!["#[repr(C)]".into()],
+            attr_raw: "#[repr(C)]".into(),
+            attr_repr_kind: "C".into(),
+        },
+        Output {
+            name: "FieldlessWithDiscrimants".into(),
+            attrs: vec!["#[repr(u8)]".into()],
+            attr_raw: "#[repr(u8)]".into(),
+            attr_repr_kind: "u8".into(),
+        },
+        Output {
+            name: "Fieldful".into(),
+            attrs: vec!["#[repr(C, i64)]".into()],
+            attr_raw: "#[repr(C, i64)]".into(),
+            attr_repr_kind: "C".into(),
+        },
+        Output {
+            name: "Fieldful".into(),
+            attrs: vec!["#[repr(C, i64)]".into()],
+            attr_raw: "#[repr(C, i64)]".into(),
+            attr_repr_kind: "i64".into(),
+        },
+        Output {
+            name: "Pathological".into(),
+            attrs: vec!["#[repr(i128)]".into()],
+            attr_raw: "#[repr(i128)]".into(),
+            attr_repr_kind: "i128".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
