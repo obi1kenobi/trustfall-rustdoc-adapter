@@ -5808,3 +5808,138 @@ fn union_field_positions() {
 
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn non_exhaustive_attribute() {
+    get_test_data!(data, non_exhaustive_attribute);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let enum_query = r#"
+    {
+        Crate {
+            item {
+                ... on Enum {
+                    enum_name: name @output
+                    enum_attrs: attrs @output
+
+                    enum_attr_: attribute @optional {
+                        raw: raw_attribute @output
+                        content {
+                            base @output
+                        }
+                    }
+
+                    variant {
+                        variant: name @output
+                        variant_attrs: attrs @output
+
+                        variant_attr_: attribute @optional {
+                            raw: raw_attribute @output
+                            content {
+                                base @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::new();
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct EnumOutput {
+        enum_name: String,
+        enum_attrs: Vec<String>,
+        enum_attr_raw: Option<String>,
+        enum_attr_base: Option<String>,
+        variant: String,
+        variant_attrs: Vec<String>,
+        variant_attr_raw: Option<String>,
+        variant_attr_base: Option<String>,
+    }
+
+    let mut results: Vec<EnumOutput> =
+        trustfall::execute_query(&schema, adapter.clone(), enum_query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        EnumOutput {
+            enum_name: "NonExhaustiveEnum".into(),
+            enum_attrs: vec!["#[non_exhaustive]".into()],
+            enum_attr_raw: Some("#[non_exhaustive]".into()),
+            enum_attr_base: Some("non_exhaustive".into()),
+            variant: "First".into(),
+            variant_attrs: vec![],
+            variant_attr_raw: None,
+            variant_attr_base: None,
+        },
+        EnumOutput {
+            enum_name: "MyEnum".into(),
+            enum_attrs: vec![],
+            enum_attr_raw: None,
+            enum_attr_base: None,
+            variant: "NonExhaustiveVariant".into(),
+            variant_attrs: vec!["#[non_exhaustive]".into()],
+            variant_attr_raw: Some("#[non_exhaustive]".into()),
+            variant_attr_base: Some("non_exhaustive".into()),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+
+    let struct_query = r#"
+    {
+        Crate {
+            item {
+                ... on Struct {
+                    name @output
+                    attrs @output
+
+                    attr_: attribute @optional {
+                        raw: raw_attribute @output
+                        content {
+                            base @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::new();
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        attrs: Vec<String>,
+        attr_raw: Option<String>,
+        attr_base: Option<String>,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), struct_query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![Output {
+        name: "NonExhaustive".into(),
+        attrs: vec!["#[non_exhaustive]".into()],
+        attr_raw: Some("#[non_exhaustive]".into()),
+        attr_base: Some("non_exhaustive".into()),
+    }];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
