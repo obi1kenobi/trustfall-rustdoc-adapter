@@ -5693,6 +5693,24 @@ fn struct_field_positions() {
             field_position: 3,
         },
         Output {
+            struct_name: "ReprPackedWithAlignment".into(),
+            struct_type: "plain".into(),
+            field_name: "x".into(),
+            field_position: 1,
+        },
+        Output {
+            struct_name: "ReprPackedWithAlignment".into(),
+            struct_type: "plain".into(),
+            field_name: "y".into(),
+            field_position: 2,
+        },
+        Output {
+            struct_name: "ReprPackedWithAlignment".into(),
+            struct_type: "plain".into(),
+            field_name: "z".into(),
+            field_position: 3,
+        },
+        Output {
             struct_name: "ReprCTupleStruct".into(),
             struct_type: "tuple".into(),
             field_name: "0".into(),
@@ -6100,6 +6118,12 @@ fn struct_repr_attributes() {
             name: "ReprPackedStruct".into(),
             attrs: vec!["#[repr(packed)]".into()],
             attr_raw: "#[repr(packed)]".into(),
+            attr_repr_kind: "packed".into(),
+        },
+        Output {
+            name: "ReprPackedWithAlignment".into(),
+            attrs: vec!["#[repr(packed(2))]".into()],
+            attr_raw: "#[repr(packed(2))]".into(),
             attr_repr_kind: "packed".into(),
         },
         Output {

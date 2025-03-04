@@ -20,6 +20,13 @@ pub struct ReprPackedStruct {
     pub z: bool,
 }
 
+#[repr(packed(2))]
+pub struct ReprPackedWithAlignment {
+    pub x: i32,
+    pub y: bool,
+    pub z: String,
+}
+
 #[repr(C)]
 pub struct ReprCTupleStruct(pub i32, pub String, pub bool);
 
