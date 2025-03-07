@@ -1,3 +1,5 @@
+#![no_std]
+
 // In every scope here, `Foo` and `Bar` switch which structs they refer to.
 //
 // In the top-level and in the innermost scopes,

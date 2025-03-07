@@ -1,3 +1,5 @@
+#![no_std]
+
 #![allow(unused_variables)]
 
 pub fn function<'a, 'b, T, U, const N: usize, const M: usize>(left: &'a [T; N], right: &'b [U; M]) {}
@@ -9,7 +11,7 @@ pub trait Trait<'a, T, const N: usize> {
 pub fn impl_trait<T, U>(first: T, impld: impl Into<U>) -> impl Iterator<Item = T> {}
 
 pub struct Example<'a, 'b> {
-    _marker: std::marker::PhantomData<&'a &'b ()>,
+    _marker: core::marker::PhantomData<&'a &'b ()>,
 }
 
 impl<'a, 'b> Example<'a, 'b> {
@@ -19,7 +21,7 @@ impl<'a, 'b> Example<'a, 'b> {
 }
 
 pub struct SingleLifetimeElided<'a> {
-    _marker: std::marker::PhantomData<&'a ()>,
+    _marker: core::marker::PhantomData<&'a ()>,
 }
 
 impl SingleLifetimeElided<'_> {

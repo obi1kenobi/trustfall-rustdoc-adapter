@@ -1,3 +1,5 @@
+#![no_std]
+
 #[unsafe(no_mangle)]
 pub fn example_not_mangled() {}
 

@@ -1,3 +1,5 @@
+#![no_std]
+
 // This crate exports:
 // - `Foo` only as itself.
 // - `inner::First` as itself: it's a function, variants are in the type namespace so no conflict.

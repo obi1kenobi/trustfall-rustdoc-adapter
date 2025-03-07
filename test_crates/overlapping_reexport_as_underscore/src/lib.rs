@@ -1,3 +1,5 @@
+#![no_std]
+
 //! This crate re-exports only the struct `Example`.
 //!
 //! Even though `second` imports two items named `Example`, one of them is renamed to `_`

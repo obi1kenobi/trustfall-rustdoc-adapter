@@ -1,3 +1,5 @@
+#![no_std]
+
 //! This crate re-exports only the name `Struct`.
 //!
 //! However, glob imports of this file (in the style of a prelude)

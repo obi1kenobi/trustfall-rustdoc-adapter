@@ -1,3 +1,5 @@
+#![no_std]
+
 //! This package exports the following renames of `Foo` (which itself is not directly visible):
 //! - `Exported<'a, T, const N: usize>`
 //! - `ExportedRenamedParams<'b, U, const M: usize>`
@@ -19,7 +21,7 @@
 
 mod inner {
     pub struct Foo<'a, T, const N: usize> {
-        _marker: std::marker::PhantomData<&'a T>,
+        _marker: core::marker::PhantomData<&'a T>,
         _n: [i64; N],
     }
 

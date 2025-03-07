@@ -1,3 +1,5 @@
+#![no_std]
+
 //! This crate does not re-export any *nameable* items.
 //!
 //! However, glob imports of this file (in the style of a prelude)

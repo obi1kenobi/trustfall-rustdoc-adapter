@@ -1,3 +1,5 @@
+#![no_std]
+
 //! This package exports the following:
 //! - `inner::GenericFoo<A, B>`
 //! - `ChangedFoo<const A: usize, const B: usize>`
@@ -8,7 +10,7 @@
 
 pub mod inner {
     pub struct GenericFoo<A, B> {
-        _marker: std::marker::PhantomData<(A, B)>,
+        _marker: core::marker::PhantomData<(A, B)>,
     }
 }
 

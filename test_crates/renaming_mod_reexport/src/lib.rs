@@ -1,3 +1,5 @@
+#![no_std]
+
 //! The below function should be available as:
 //! - `inner::a::foo()`
 //! - `inner::b::foo()`
