@@ -1,3 +1,5 @@
+#![no_std]
+
 // This crate exports only the names `Bar` and `Baz`.
 // While both `Foo` structs are public, their names conflict and are not exported.
 

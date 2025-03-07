@@ -1,3 +1,5 @@
+#![no_std]
+
 //! In Rust, type names and value names (including both `fn` and `const`) have different,
 //! mutually-disjoint namespaces. It's allowed for those namespaces to have matching names.
 //! When the name is used, the surrounding context determines whether it's resolved

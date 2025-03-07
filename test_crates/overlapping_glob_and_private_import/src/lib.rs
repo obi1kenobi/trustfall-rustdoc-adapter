@@ -1,3 +1,5 @@
+#![no_std]
+
 // This crate does not export any names!
 // The only name it could export is `sibling::Foo`, but shadowing prevents it.
 

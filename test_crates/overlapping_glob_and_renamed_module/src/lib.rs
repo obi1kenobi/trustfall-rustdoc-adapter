@@ -1,3 +1,5 @@
+#![no_std]
+
 // This crate exports:
 // - `sibling::duplicated::Foo` only as itself
 // - `inner::duplicated::Bar` only as itself.

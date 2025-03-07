@@ -1,3 +1,5 @@
+#![no_std]
+
 //! This package exports the following:
 //! - `inner::Foo`, also as `inner::AliasedFoo` and `ExportedFoo`
 //! - `inner::Bar`, also as `inner::AliasedBar` and `ExportedBar`
@@ -15,7 +17,7 @@ pub mod inner {
     pub struct Foo;
 
     pub struct Bar<'a, T, const N: usize> {
-        _marker: std::marker::PhantomData<&'a T>,
+        _marker: core::marker::PhantomData<&'a T>,
         _n: [i64; N],
     }
 
