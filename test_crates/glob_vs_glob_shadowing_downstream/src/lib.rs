@@ -1,3 +1,5 @@
+#![no_std]
+
 // This crate only exports the name `second::Bar`.
 // Inside `first`, the name `Foo` conflicts between the two glob exports.
 //

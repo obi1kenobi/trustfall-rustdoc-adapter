@@ -1,3 +1,5 @@
+#![no_std]
+
 // Glob imports do not import items whose names would conflict
 // with locally-defined items with those names.
 //

@@ -1,3 +1,5 @@
+#![no_std]
+
 /// Example adapted from <https://github.com/rust-lang/rust/issues/111338>
 mod first {
     mod a {

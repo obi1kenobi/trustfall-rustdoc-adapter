@@ -1,3 +1,5 @@
+#![no_std]
+
 // The union fields are publicly visible, but not importable.
 pub union Foo {
     pub left: i64,
