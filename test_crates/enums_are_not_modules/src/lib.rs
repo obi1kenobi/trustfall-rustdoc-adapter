@@ -1,3 +1,5 @@
+#![no_std]
+
 pub enum Foo {
     // Enum variants are the exception: they are both visible and importable.
     Variant,

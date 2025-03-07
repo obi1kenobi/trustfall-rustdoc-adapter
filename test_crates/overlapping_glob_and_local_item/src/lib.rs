@@ -1,3 +1,5 @@
+#![no_std]
+
 // This crate exports:
 // - `Foo` only as itself
 // - `inner::Foo` only as itself, meaning that the glob import is a no-op here

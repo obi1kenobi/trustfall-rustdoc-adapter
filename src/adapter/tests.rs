@@ -4575,7 +4575,7 @@ fn type_generic_bounds() {
             kind: "Union".into(),
             name: "ExampleUnion".into(),
             generic: "T".into(),
-            bound: "std::fmt::Debug".into(),
+            bound: "core::fmt::Debug".into(),
         },
         Output {
             kind: "Union".into(),

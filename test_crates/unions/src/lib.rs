@@ -1,3 +1,5 @@
+#![no_std]
+
 // Unions have their own special test suite because they were added after structs
 // and enums.
 //
@@ -95,7 +97,7 @@ pub mod reexports {
 // Part 2: union data/info querying is correct
 
 mod data {
-    use std::mem::ManuallyDrop;
+    use core::mem::ManuallyDrop;
 
     pub union NoFieldsPublic {
         x: usize,

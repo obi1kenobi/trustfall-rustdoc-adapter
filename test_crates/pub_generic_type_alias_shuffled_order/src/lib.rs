@@ -1,3 +1,5 @@
+#![no_std]
+
 //! This package exports the following:
 //! - `inner::GenericFoo<A, B>`
 //! - `inner::LifetimeFoo<'a, 'b>`
@@ -13,11 +15,11 @@
 
 pub mod inner {
     pub struct GenericFoo<A, B> {
-        _marker: std::marker::PhantomData<(A, B)>,
+        _marker: core::marker::PhantomData<(A, B)>,
     }
 
     pub struct LifetimeFoo<'a, 'b> {
-        _marker: std::marker::PhantomData<&'a &'b ()>,
+        _marker: core::marker::PhantomData<&'a &'b ()>,
     }
 
     pub struct ConstFoo<const A: usize, const B: usize> {

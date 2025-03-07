@@ -1,3 +1,5 @@
+#![no_std]
+
 //! This package exports the following:
 //! - `inner::DefaultConst`
 //! - `inner::DefaultType`
@@ -14,19 +16,19 @@
 
 pub mod inner {
     pub struct DefaultConst<'a, T, const N: usize = 5> {
-        _marker: std::marker::PhantomData<&'a [T; N]>,
+        _marker: core::marker::PhantomData<&'a [T; N]>,
     }
 
     pub struct DefaultType<'a, const N: usize, T = i64> {
-        _marker: std::marker::PhantomData<&'a [T; N]>,
+        _marker: core::marker::PhantomData<&'a [T; N]>,
     }
 
     pub struct ConstOnly<const N: usize = 5> {
-        _marker: std::marker::PhantomData<[i64; N]>,
+        _marker: core::marker::PhantomData<[i64; N]>,
     }
 
     pub struct TypeOnly<T = i64> {
-        _marker: std::marker::PhantomData<T>,
+        _marker: core::marker::PhantomData<T>,
     }
 }
 

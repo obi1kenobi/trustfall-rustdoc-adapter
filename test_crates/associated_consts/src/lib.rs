@@ -1,3 +1,5 @@
+#![no_std]
+
 pub struct Counter(i64);
 
 impl Counter {

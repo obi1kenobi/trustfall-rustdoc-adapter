@@ -1,3 +1,5 @@
+#![no_std]
+
 // There's no shadowing across glob re-exports of the same name
 // if it's the same item both times.
 //

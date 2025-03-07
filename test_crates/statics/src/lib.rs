@@ -1,3 +1,5 @@
+#![no_std]
+
 pub static FIRST: u32 = 1;
 
 pub static mut MUT: i64 = 0;
