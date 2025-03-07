@@ -1,3 +1,5 @@
+#![no_std]
+
 // This crate exports:
 // - `Foo` only as itself
 // - `inner::First` only as itself, overriding the glob import

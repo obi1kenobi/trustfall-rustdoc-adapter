@@ -1,12 +1,14 @@
+#![no_std]
+
 pub struct ExampleStruct<T: Ord> {
-    _marker: std::marker::PhantomData<T>,
+    _marker: core::marker::PhantomData<T>,
 }
 
 pub enum ExampleEnum<T: PartialEq + Sync> {
     Variant(T),
 }
 
-pub union ExampleUnion<T: std::fmt::Debug + Copy> {
+pub union ExampleUnion<T: core::fmt::Debug + Copy> {
     value: T,
 }
 

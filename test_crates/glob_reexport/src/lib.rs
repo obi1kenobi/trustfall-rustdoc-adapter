@@ -1,3 +1,5 @@
+#![no_std]
+
 //! This package exports the following:
 //! - `foo`, also as `inner::foo`
 //! - `Bar`, also as `inner::Bar`

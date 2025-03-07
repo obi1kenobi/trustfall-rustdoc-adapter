@@ -1,3 +1,5 @@
+#![no_std]
+
 /// Usable externally as:
 /// ```rust
 /// declarative_macros::top_level!();

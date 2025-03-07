@@ -1,3 +1,5 @@
+#![no_std]
+
 extern "C" {
     pub fn legacy_extern_fn();
 }

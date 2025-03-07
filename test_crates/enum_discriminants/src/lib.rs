@@ -1,3 +1,5 @@
+#![no_std]
+
 #![allow(incomplete_features)]
 #![feature(repr128)]
 /// Some examples from <https://doc.rust-lang.org/reference/items/enumerations.html#implicit-discriminants>

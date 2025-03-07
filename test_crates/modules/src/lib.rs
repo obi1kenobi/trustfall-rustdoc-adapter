@@ -1,3 +1,5 @@
+#![no_std]
+
 pub mod hello {
     pub mod world {
         pub struct T1 {}

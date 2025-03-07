@@ -1,3 +1,5 @@
+#![no_std]
+
 pub struct Foo {
     // This field is publicly visible, but not importable.
     pub field: (),
