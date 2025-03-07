@@ -1,3 +1,5 @@
+#![no_std]
+
 pub fn top_level() {}
 
 pub struct Foo;

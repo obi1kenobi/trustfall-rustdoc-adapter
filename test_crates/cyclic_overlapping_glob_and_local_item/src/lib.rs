@@ -1,3 +1,5 @@
+#![no_std]
+
 // This crate exports:
 // - `Foo` only as itself
 // - `inner::Foo` also as `inner::nested::Foo`, `nested::Foo`, and `nested::inner::Foo`.

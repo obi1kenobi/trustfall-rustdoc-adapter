@@ -1,3 +1,5 @@
+#![no_std]
+
 //! This package exports the following:
 //! - `inner::Foo`
 //! - `inner::Bar`
@@ -10,12 +12,12 @@
 
 pub mod inner {
     pub struct Foo<'a, T, const N: usize> {
-        _marker: std::marker::PhantomData<&'a T>,
+        _marker: core::marker::PhantomData<&'a T>,
         _n: [i64; N],
     }
 
     pub struct Bar<'a, const N: usize, T> {
-        _marker: std::marker::PhantomData<&'a T>,
+        _marker: core::marker::PhantomData<&'a T>,
         _n: [i64; N],
     }
 }

@@ -1,3 +1,5 @@
+#![no_std]
+
 #[no_mangle]
 pub static VAR1: i32 = 42;
 

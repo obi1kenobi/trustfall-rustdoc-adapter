@@ -1,3 +1,5 @@
+#![no_std]
+
 //! This package does *not* include any re-exports of `inner::Foo` and `inner::Bar`.
 //!
 //! All type aliases change the semantics of the underlying type's generic parameters,
@@ -9,12 +11,12 @@
 
 pub mod inner {
     pub struct Foo<'a, T = i64, const N: usize = 5> {
-        _marker: std::marker::PhantomData<&'a T>,
+        _marker: core::marker::PhantomData<&'a T>,
         _n: [i64; N],
     }
 
     pub struct Bar<'a, const N: usize = 5, T = i64> {
-        _marker: std::marker::PhantomData<&'a T>,
+        _marker: core::marker::PhantomData<&'a T>,
         _n: [i64; N],
     }
 }

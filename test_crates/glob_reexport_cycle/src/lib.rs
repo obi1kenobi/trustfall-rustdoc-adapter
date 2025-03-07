@@ -1,3 +1,5 @@
+#![no_std]
+
 //! This package exports the following:
 //! - `first::foo`, also as `second::foo`
 //! - `second::Bar`, also as `first::Bar`
