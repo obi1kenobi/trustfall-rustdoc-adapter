@@ -1,3 +1,5 @@
+#![no_std]
+
 //! This crate exports the following macros:
 //! - `top_level_exported`, at top level only
 //! - `private_mod_exported`, at top level only

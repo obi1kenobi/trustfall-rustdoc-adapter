@@ -1,3 +1,5 @@
+#![no_std]
+
 pub mod inner {
     pub const FIRST: i64 = 0;
 

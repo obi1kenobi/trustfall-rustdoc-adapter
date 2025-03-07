@@ -1,3 +1,5 @@
+#![no_std]
+
 pub const FIRST: u32 = 1;
 
 pub mod inner {
