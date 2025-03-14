@@ -6322,7 +6322,7 @@ fn method_self_receiver() {
             by_value: true,
             by_reference: false,
             by_mut_reference: false,
-            kind: "Pin<Self>".into(),
+            kind: "Pin<&mut Self>".into(),
         },
         Output {
             struct_name: "Example".into(),
@@ -6330,7 +6330,7 @@ fn method_self_receiver() {
             by_value: false,
             by_reference: true,
             by_mut_reference: false,
-            kind: "Pin<Self>".into(),
+            kind: "Pin<&mut Self>".into(),
         },
         Output {
             struct_name: "Example".into(),
@@ -6338,7 +6338,7 @@ fn method_self_receiver() {
             by_value: false,
             by_reference: false,
             by_mut_reference: true,
-            kind: "Pin<Self>".into(),
+            kind: "Pin<&mut Self>".into(),
         },
         Output {
             struct_name: "Example".into(),
@@ -6450,7 +6450,7 @@ fn method_self_receiver() {
             by_value: true,
             by_reference: false,
             by_mut_reference: false,
-            kind: "CustomReceiver<Self>".into(),
+            kind: "CustomReceiver<&Self>".into(),
         },
         Output {
             struct_name: "Example".into(),
@@ -6466,10 +6466,9 @@ fn method_self_receiver() {
             by_value: true,
             by_reference: false,
             by_mut_reference: false,
-            kind: "Pin<Arc<Self>>".into(),
+            kind: "Pin<&Arc<Self>>".into(),
         },
     ];
     expected_results.sort_unstable();
-
     similar_asserts::assert_eq!(expected_results, results);
 }

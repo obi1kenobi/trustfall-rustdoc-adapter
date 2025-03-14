@@ -129,7 +129,7 @@ impl Typename for Vertex<'_> {
                 _ => "RawType",
             },
             VertexKind::FunctionParameter(..) => "FunctionParameter",
-            VertexKind::MethodReceiver(..) => "MethodReceiver",
+            VertexKind::MethodReceiver(..) => "Receiver",
             VertexKind::FunctionAbi(..) => "FunctionAbi",
             VertexKind::Discriminant(..) => "Discriminant",
             VertexKind::Variant(ref ev) => match ev.variant().kind {

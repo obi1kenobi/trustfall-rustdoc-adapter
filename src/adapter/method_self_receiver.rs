@@ -36,22 +36,23 @@ impl<'a> MethodSelfReceiver<'a> {
         )
     }
 
-    pub(crate) fn kind(&self) -> String {
+    pub(super) fn kind(&self) -> String {
         extract_kind_string(self.0)
     }
 }
 
 fn extract_kind_string(ty: &Type) -> String {
     match ty {
-        // Self is the simplest case
-        Type::Generic(name) if name == "Self" => "Self".to_string(),
-
-        // Handle BorrowedRef by extracting the inner type
+        // For &self and &mut self, we need to extract the inner type
         Type::BorrowedRef { type_, .. } => extract_kind_string(type_),
+
+        // Self is the simplest case - this handles both 'self' and 'mut self'
+        Type::Generic(name) if name == "Self" => "Self".to_string(),
 
         // Handle ResolvedPath types like Box<Self>, Pin<&mut Self>, etc.
         Type::ResolvedPath(path) => {
-            let name = path.path.split("::").last().unwrap();
+            // Get just the type name without the path
+            let name = path.path.split("::").last().unwrap_or(&path.path);
 
             if let Some(args) = &path.args {
                 match args.as_ref() {
@@ -59,10 +60,25 @@ fn extract_kind_string(ty: &Type) -> String {
                         let args_str: Vec<String> = args
                             .iter()
                             .map(|arg| match arg {
-                                rustdoc_types::GenericArg::Type(t) => extract_kind_string(t),
+                                rustdoc_types::GenericArg::Type(t) => {
+                                    // For Pin<&mut Self>, we need to preserve the &mut
+                                    match t {
+                                        Type::BorrowedRef {
+                                            is_mutable, type_, ..
+                                        } => {
+                                            let inner = extract_kind_string(type_);
+                                            if *is_mutable {
+                                                format!("&mut {}", inner)
+                                            } else {
+                                                format!("&{}", inner)
+                                            }
+                                        }
+                                        _ => extract_kind_string(t),
+                                    }
+                                }
                                 rustdoc_types::GenericArg::Lifetime(lt) => lt.clone(),
                                 rustdoc_types::GenericArg::Const(c) => c.expr.clone(),
-                                _ => unreachable!("infer not supported"),
+                                _ => "?".to_string(),
                             })
                             .collect();
                         format!("{}<{}>", name, args_str.join(", "))
