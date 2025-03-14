@@ -2,20 +2,20 @@ use rustdoc_types::{GenericArgs, Type};
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
-pub(crate) struct MethodSelfReceiver<'a>(&'a Type);
+pub struct MethodSelfReceiver<'a>(&'a Type);
 
 impl<'a> MethodSelfReceiver<'a> {
-    pub fn new(ty: &'a Type) -> Self {
+    pub(super) fn new(ty: &'a Type) -> Self {
         Self(ty)
     }
 
     #[inline]
-    pub(crate) fn by_value(&self) -> bool {
+    pub(super) fn by_value(&self) -> bool {
         !matches!(self.0, Type::BorrowedRef { .. })
     }
 
     #[inline]
-    pub(crate) fn by_reference(&self) -> bool {
+    pub(super) fn by_reference(&self) -> bool {
         matches!(
             self.0,
             Type::BorrowedRef {
@@ -26,7 +26,7 @@ impl<'a> MethodSelfReceiver<'a> {
     }
 
     #[inline]
-    pub(crate) fn by_mut_reference(&self) -> bool {
+    pub(super) fn by_mut_reference(&self) -> bool {
         matches!(
             self.0,
             Type::BorrowedRef {
@@ -74,7 +74,7 @@ fn extract_kind_string(ty: &Type) -> String {
             }
         }
 
-        // For other types, just convert to a debug string
+        // should not encounter other types
         _ => unreachable!("unsupported type: {:?}", ty),
     }
 }
