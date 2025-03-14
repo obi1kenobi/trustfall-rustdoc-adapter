@@ -12,6 +12,7 @@ use crate::{adapter::supported_item_kind, attributes::Attribute, PackageIndex};
 
 use super::{
     enum_variant::LazyDiscriminants,
+    method_self_receiver::MethodSelfReceiver,
     optimizations,
     origin::Origin,
     vertex::{Feature, Vertex},
@@ -258,6 +259,35 @@ pub(super) fn resolve_function_like_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             Box::new(std::iter::once(origin.make_function_abi_vertex(abi)))
         }),
         _ => unreachable!("resolve_function_like_edge {edge_name}"),
+    }
+}
+
+pub(super) fn resolve_method_receiver_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    edge_name: &str,
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
+    match edge_name {
+        "receiver" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let method = vertex.as_function().expect("vertex was not a Function");
+
+            // Check if the first parameter is a self receiver
+            let receiver = method.sig.inputs.first().and_then(|(name, ty)| {
+                if name.starts_with("self") {
+                    Some(MethodSelfReceiver::new(ty))
+                } else {
+                    None
+                }
+            });
+
+            match receiver {
+                Some(receiver) => Box::new(std::iter::once(
+                    origin.make_method_receiver_vertex(receiver),
+                )),
+                None => Box::new(std::iter::empty()),
+            }
+        }),
+        _ => unreachable!("resolve_method_receiver_edge {edge_name}"),
     }
 }
 

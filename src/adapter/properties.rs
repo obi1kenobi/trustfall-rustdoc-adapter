@@ -306,6 +306,31 @@ pub(super) fn resolve_function_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     }
 }
 
+pub(super) fn resolve_method_receiver_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    match property_name {
+        "by_value" => resolve_property_with(contexts, |vertex| {
+            let receiver = vertex.as_method_receiver().expect("not a MethodReceiver");
+            receiver.by_value().into()
+        }),
+        "by_reference" => resolve_property_with(contexts, |vertex| {
+            let receiver = vertex.as_method_receiver().expect("not a MethodReceiver");
+            receiver.by_reference().into()
+        }),
+        "by_mut_reference" => resolve_property_with(contexts, |vertex| {
+            let receiver = vertex.as_method_receiver().expect("not a MethodReceiver");
+            receiver.by_mut_reference().into()
+        }),
+        "kind" => resolve_property_with(contexts, |vertex| {
+            let receiver = vertex.as_method_receiver().expect("not a MethodReceiver");
+            receiver.kind().into()
+        }),
+        _ => unreachable!("MethodReceiver property {property_name}"),
+    }
+}
+
 pub(super) fn resolve_function_parameter_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,

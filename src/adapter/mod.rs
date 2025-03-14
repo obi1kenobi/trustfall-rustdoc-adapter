@@ -18,6 +18,7 @@ use self::{
 
 mod edges;
 mod enum_variant;
+mod method_self_receiver;
 mod optimizations;
 mod origin;
 mod properties;
@@ -217,6 +218,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 "GenericConstParameter" => {
                     properties::resolve_generic_const_parameter_property(contexts, property_name)
                 }
+                "Receiver" => properties::resolve_method_receiver_property(contexts, property_name),
                 _ => unreachable!("resolve_property {type_name} {property_name}"),
             }
         }
@@ -303,6 +305,9 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 if matches!(edge_name.as_ref(), "generic_parameter") =>
             {
                 edges::resolve_generic_parameter_edge(contexts, edge_name)
+            }
+            "Method" if matches!(edge_name.as_ref(), "receiver") => {
+                edges::resolve_method_receiver_edge(contexts, edge_name)
             }
             "Module" => edges::resolve_module_edge(
                 contexts,
