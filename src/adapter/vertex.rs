@@ -11,7 +11,7 @@ use crate::{
     ImportablePath, IndexedCrate, PackageIndex,
 };
 
-use super::{enum_variant::EnumVariant, origin::Origin};
+use super::{enum_variant::EnumVariant, origin::Origin, receiver::Receiver};
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
@@ -58,6 +58,9 @@ pub enum VertexKind<'a> {
 
     #[non_exhaustive]
     FunctionAbi(&'a Abi),
+
+    #[non_exhaustive]
+    Receiver(Receiver<'a>),
 
     #[non_exhaustive]
     Discriminant(Cow<'a, str>),
@@ -126,6 +129,7 @@ impl Typename for Vertex<'_> {
                 _ => "RawType",
             },
             VertexKind::FunctionParameter(..) => "FunctionParameter",
+            VertexKind::Receiver(..) => "Receiver",
             VertexKind::FunctionAbi(..) => "FunctionAbi",
             VertexKind::Discriminant(..) => "Discriminant",
             VertexKind::Variant(ref ev) => match ev.variant().kind {
@@ -389,6 +393,13 @@ impl<'a> Vertex<'a> {
             rustdoc_types::ItemEnum::Impl(x) => Some(&x.generics),
             _ => None,
         })
+    }
+
+    pub(super) fn as_receiver(&self) -> Option<&Receiver> {
+        match &self.kind {
+            VertexKind::Receiver(receiver) => Some(receiver),
+            _ => None,
+        }
     }
 }
 
