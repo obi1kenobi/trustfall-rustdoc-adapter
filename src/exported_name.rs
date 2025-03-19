@@ -28,7 +28,8 @@ use crate::attributes::Attribute;
 /// If this function is called with an item that doesn't support external names,
 /// the result is unspecified.
 pub(crate) fn item_export_name(item: &rustdoc_types::Item) -> Option<&str> {
-    // First check for export_name attribute, as it takes precedence
+    // First check for export_name attribute, as it takes precedence:
+    // https://github.com/rust-lang/rust/issues/47446
     let export_name = item
         .attrs
         .iter()
