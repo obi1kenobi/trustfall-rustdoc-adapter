@@ -9,6 +9,7 @@ use crate::{
 
 use super::{
     enum_variant::{EnumVariant, LazyDiscriminants},
+    receiver::Receiver,
     vertex::{ImplementedTrait, Vertex, VertexKind},
 };
 
@@ -161,6 +162,13 @@ impl Origin {
         Vertex {
             origin: *self,
             kind: VertexKind::GenericParameter(generics, param, position),
+        }
+    }
+
+    pub(super) fn make_receiver_vertex<'a>(&self, receiver: Receiver<'a>) -> Vertex<'a> {
+        Vertex {
+            origin: *self,
+            kind: VertexKind::Receiver(receiver),
         }
     }
 }
