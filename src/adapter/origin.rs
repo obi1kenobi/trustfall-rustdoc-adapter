@@ -9,7 +9,7 @@ use crate::{
 
 use super::{
     enum_variant::{EnumVariant, LazyDiscriminants},
-    method_self_receiver::MethodSelfReceiver,
+    receiver::Receiver,
     vertex::{ImplementedTrait, Vertex, VertexKind},
 };
 
@@ -165,13 +165,10 @@ impl Origin {
         }
     }
 
-    pub(super) fn make_method_receiver_vertex<'a>(
-        &self,
-        receiver: MethodSelfReceiver<'a>,
-    ) -> Vertex<'a> {
+    pub(super) fn make_receiver_vertex<'a>(&self, receiver: Receiver<'a>) -> Vertex<'a> {
         Vertex {
             origin: *self,
-            kind: VertexKind::MethodReceiver(receiver),
+            kind: VertexKind::Receiver(receiver),
         }
     }
 }

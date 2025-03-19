@@ -6232,7 +6232,7 @@ fn enum_repr_attributes() {
 }
 
 #[test]
-fn method_self_receiver() {
+fn receiver() {
     get_test_data!(data, method_self_receivers);
     let adapter = RustdocAdapter::new(&data, None);
     let adapter = Arc::new(&adapter);

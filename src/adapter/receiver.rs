@@ -1,10 +1,11 @@
 use rustdoc_types::{GenericArgs, Type};
+use std::borrow::Cow;
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
-pub struct MethodSelfReceiver<'a>(&'a Type);
+pub struct Receiver<'a>(&'a Type);
 
-impl<'a> MethodSelfReceiver<'a> {
+impl<'a> Receiver<'a> {
     pub(super) fn new(ty: &'a Type) -> Self {
         Self(ty)
     }
@@ -36,18 +37,18 @@ impl<'a> MethodSelfReceiver<'a> {
         )
     }
 
-    pub(super) fn kind(&self) -> String {
+    pub(super) fn kind(&self) -> Cow<'_, str> {
         extract_kind_string(self.0)
     }
 }
 
-fn extract_kind_string(ty: &Type) -> String {
+fn extract_kind_string(ty: &Type) -> Cow<'_, str> {
     match ty {
         // For &self and &mut self, we need to extract the inner type
         Type::BorrowedRef { type_, .. } => extract_kind_string(type_),
 
         // Self is the simplest case - this handles both 'self' and 'mut self'
-        Type::Generic(name) if name == "Self" => "Self".to_string(),
+        Type::Generic(name) if name == "Self" => Cow::Borrowed("Self"),
 
         // Handle ResolvedPath types like Box<Self>, Pin<&mut Self>, etc.
         Type::ResolvedPath(path) => {
@@ -57,7 +58,7 @@ fn extract_kind_string(ty: &Type) -> String {
             if let Some(args) = &path.args {
                 match args.as_ref() {
                     GenericArgs::AngleBracketed { args, .. } => {
-                        let args_str: Vec<String> = args
+                        let args_str: Vec<Cow<'_, str>> = args
                             .iter()
                             .map(|arg| match arg {
                                 rustdoc_types::GenericArg::Type(t) => {
@@ -68,25 +69,36 @@ fn extract_kind_string(ty: &Type) -> String {
                                         } => {
                                             let inner = extract_kind_string(type_);
                                             if *is_mutable {
-                                                format!("&mut {}", inner)
+                                                Cow::Owned(format!("&mut {}", inner))
                                             } else {
-                                                format!("&{}", inner)
+                                                Cow::Owned(format!("&{}", inner))
                                             }
                                         }
                                         _ => extract_kind_string(t),
                                     }
                                 }
-                                rustdoc_types::GenericArg::Lifetime(lt) => lt.clone(),
-                                rustdoc_types::GenericArg::Const(c) => c.expr.clone(),
-                                _ => "?".to_string(),
+                                rustdoc_types::GenericArg::Lifetime(lt) => {
+                                    Cow::Borrowed(lt.as_str())
+                                }
+                                rustdoc_types::GenericArg::Const(c) => {
+                                    Cow::Borrowed(c.expr.as_str())
+                                }
+                                _ => Cow::Borrowed("?"),
                             })
                             .collect();
-                        format!("{}<{}>", name, args_str.join(", "))
+
+                        let args_joined = args_str
+                            .iter()
+                            .map(|cow| cow.as_ref())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+
+                        Cow::Owned(format!("{}<{}>", name, args_joined))
                     }
-                    _ => name.to_string(),
+                    _ => Cow::Borrowed(name),
                 }
             } else {
-                name.to_string()
+                Cow::Borrowed(name)
             }
         }
 

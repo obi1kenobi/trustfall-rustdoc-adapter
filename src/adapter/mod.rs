@@ -18,10 +18,10 @@ use self::{
 
 mod edges;
 mod enum_variant;
-mod method_self_receiver;
 mod optimizations;
 mod origin;
 mod properties;
+mod receiver;
 mod rust_type_name;
 mod vertex;
 

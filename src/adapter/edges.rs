@@ -12,9 +12,9 @@ use crate::{adapter::supported_item_kind, attributes::Attribute, PackageIndex};
 
 use super::{
     enum_variant::LazyDiscriminants,
-    method_self_receiver::MethodSelfReceiver,
     optimizations,
     origin::Origin,
+    receiver::Receiver,
     vertex::{Feature, Vertex},
     RustdocAdapter,
 };
@@ -273,19 +273,18 @@ pub(super) fn resolve_method_receiver_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 
             // Check if the first parameter is a self receiver
             let receiver = method.sig.inputs.first().and_then(|(name, ty)| {
-                if name.starts_with("self") {
-                    Some(MethodSelfReceiver::new(ty))
+                if name == "self" {
+                    Some(Receiver::new(ty))
                 } else {
                     None
                 }
             });
 
-            match receiver {
-                Some(receiver) => Box::new(std::iter::once(
-                    origin.make_method_receiver_vertex(receiver),
-                )),
-                None => Box::new(std::iter::empty()),
-            }
+            Box::new(
+                receiver
+                    .into_iter()
+                    .map(move |r| origin.make_receiver_vertex(r)),
+            )
         }),
         _ => unreachable!("resolve_method_receiver_edge {edge_name}"),
     }

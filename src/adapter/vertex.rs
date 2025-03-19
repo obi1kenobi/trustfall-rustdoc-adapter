@@ -11,7 +11,7 @@ use crate::{
     ImportablePath, IndexedCrate, PackageIndex,
 };
 
-use super::{enum_variant::EnumVariant, method_self_receiver::MethodSelfReceiver, origin::Origin};
+use super::{enum_variant::EnumVariant, origin::Origin, receiver::Receiver};
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
@@ -60,7 +60,7 @@ pub enum VertexKind<'a> {
     FunctionAbi(&'a Abi),
 
     #[non_exhaustive]
-    MethodReceiver(MethodSelfReceiver<'a>),
+    Receiver(Receiver<'a>),
 
     #[non_exhaustive]
     Discriminant(Cow<'a, str>),
@@ -129,7 +129,7 @@ impl Typename for Vertex<'_> {
                 _ => "RawType",
             },
             VertexKind::FunctionParameter(..) => "FunctionParameter",
-            VertexKind::MethodReceiver(..) => "Receiver",
+            VertexKind::Receiver(..) => "Receiver",
             VertexKind::FunctionAbi(..) => "FunctionAbi",
             VertexKind::Discriminant(..) => "Discriminant",
             VertexKind::Variant(ref ev) => match ev.variant().kind {
@@ -395,9 +395,9 @@ impl<'a> Vertex<'a> {
         })
     }
 
-    pub(super) fn as_method_receiver(&self) -> Option<&MethodSelfReceiver> {
+    pub(super) fn as_receiver(&self) -> Option<&Receiver> {
         match &self.kind {
-            VertexKind::MethodReceiver(receiver) => Some(receiver),
+            VertexKind::Receiver(receiver) => Some(receiver),
             _ => None,
         }
     }
