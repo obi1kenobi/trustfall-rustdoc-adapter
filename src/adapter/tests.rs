@@ -1542,6 +1542,25 @@ fn static_export_name() {
         export_name: Option<String>,
     }
 
+    let expected_results = vec![
+        Output {
+            name: "VAR1".into(),
+            export_name: Some("VAR1".into()),
+        },
+        Output {
+            name: "VAR2".into(),
+            export_name: Some("EXTERNALLY_VISIBLE".into()),
+        },
+        Output {
+            name: "VAR3".into(),
+            export_name: Some("EXTERNALLY_VISIBLE_3".into()),
+        },
+        Output {
+            name: "VAR4".into(),
+            export_name: Some("EXTERNALLY_VISIBLE_4".into()),
+        },
+    ];
+
     let mut results: Vec<Output> =
         trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
             .expect("failed to run query")
@@ -1549,19 +1568,7 @@ fn static_export_name() {
             .collect();
     results.sort_unstable();
 
-    similar_asserts::assert_eq!(
-        vec![
-            Output {
-                name: "VAR1".into(),
-                export_name: Some("VAR1".into())
-            },
-            Output {
-                name: "VAR2".into(),
-                export_name: Some("EXTERNALLY_VISIBLE".into())
-            },
-        ],
-        results
-    );
+    similar_asserts::assert_eq!(expected_results, results,);
 }
 
 #[test]
@@ -1904,6 +1911,45 @@ fn function_export_name() {
         visibility_limit: String,
     }
 
+    let mut expected_results = vec![
+        Output {
+            name: "example_export_name".into(),
+            export_name: Some("renamed".into()),
+            visibility_limit: "public".into(),
+        },
+        Output {
+            name: "example_not_mangled".into(),
+            export_name: Some("example_not_mangled".into()),
+            visibility_limit: "public".into(),
+        },
+        Output {
+            name: "mangled".into(),
+            export_name: None,
+            visibility_limit: "public".into(),
+        },
+        Output {
+            name: "private_export_name".into(),
+            export_name: Some("private_renamed".into()),
+            visibility_limit: "crate".into(),
+        },
+        Output {
+            name: "export_name_not_mangled".into(),
+            export_name: Some("renamed_3".into()),
+            visibility_limit: "crate".into(),
+        },
+        Output {
+            name: "export_name_not_mangled_reversed".into(),
+            export_name: Some("renamed_4".into()),
+            visibility_limit: "crate".into(),
+        },
+        Output {
+            name: "private_not_mangled".into(),
+            export_name: Some("private_not_mangled".into()),
+            visibility_limit: "crate".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
     let mut results: Vec<_> =
         trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
             .expect("failed to run query")
@@ -1911,36 +1957,7 @@ fn function_export_name() {
             .collect();
     results.sort_unstable();
 
-    similar_asserts::assert_eq!(
-        vec![
-            Output {
-                name: "example_export_name".into(),
-                export_name: Some("renamed".into()),
-                visibility_limit: "public".into(),
-            },
-            Output {
-                name: "example_not_mangled".into(),
-                export_name: Some("example_not_mangled".into()),
-                visibility_limit: "public".into(),
-            },
-            Output {
-                name: "mangled".into(),
-                export_name: None,
-                visibility_limit: "public".into(),
-            },
-            Output {
-                name: "private_export_name".into(),
-                export_name: Some("private_renamed".into()),
-                visibility_limit: "crate".into(),
-            },
-            Output {
-                name: "private_not_mangled".into(),
-                export_name: Some("private_not_mangled".into()),
-                visibility_limit: "crate".into(),
-            },
-        ],
-        results
-    );
+    similar_asserts::assert_eq!(expected_results, results);
 
     // Ensure that looking up functions by export name works correctly,
     // since this path is expected to hit our index instead of iterating over everything.
