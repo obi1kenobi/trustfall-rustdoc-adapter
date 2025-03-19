@@ -1466,6 +1466,10 @@ type Function implements Item & FunctionLike & Importable & GenericItem {
 }
 
 """
+An associated function ("method") associated with a struct, enum, union, or trait type.
+
+It may or may not take a receiver argument (such as `&self`, `self`, or `&mut self`).
+
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Method.html
@@ -1549,6 +1553,75 @@ type Method implements Item & FunctionLike & GenericItem {
   since its desugaring is different: it's more like an associated type than a generic.
   """
   generic_parameter: [GenericParameter]
+
+  # own edges
+  """
+  The kind of `self` value that the method takes, if any.
+  """
+  receiver: Receiver
+}
+
+"""
+The kind of `self` value that a method takes.
+
+For example:
+- `fn method(self) {}` has `Self` as a receiver: its kind is `"Self"` and it's taken by value.
+- `fn method(&self) {}` has `&Self` as a receiver: its kind is `"Self"` and it's taken by reference.
+- `fn method(&mut self) {}` has `&mut Self` as a receiver: its kind is `"Self"` and it's taken by
+  mutable reference.
+- `fn method(self: Pin<&mut Self>) {}` has `Pin<&mut Self>` as a receiver:
+  its kind is `"Pin<&mut Self>"` and it's taken by value.
+"""
+type Receiver {
+  """
+  Whether the receiver takes `self` by value, regardless of its type.
+
+  Mutually exclusive with both `by_reference` and `by_mut_reference`; exactly one of them is `true`.
+
+  For example:
+  - `true` for receiver types `Self` and `Pin<&mut Self>`.
+  - `false` for receiver types `&Self` and `&mut Self`.
+  """
+  by_value: Boolean!
+
+  """
+  Whether the receiver takes `self` by immutable reference, regardless of its type.
+
+  Mutually exclusive with both `by_value` and `by_mut_reference`; exactly one of them is `true`.
+
+  For example:
+  - `true` for receiver types `&Self` (commonly used as `&self`) and `&Box<Self>`.
+  - `false` for receiver types `Self`, `&mut Self`, and `Pin<&Self>`.
+  """
+  by_reference: Boolean!
+
+  """
+  Whether the receiver takes `self` by mutable reference, regardless of its type.
+
+  Mutually exclusive with both `by_value` and `by_reference`; exactly one of them is `true`.
+
+  For example:
+  - `true` for receiver types `&mut Self` (commonly used as `&mut self`) and `&mut Box<Self>`.
+  - `false` for receiver types `Self`, `&Self`, and `Pin<&mut Self>`.
+  """
+  by_mut_reference: Boolean!
+
+  """
+  The portion of the receiver type aside from any outer `&`/`&mut` applied to it.
+
+  For example:
+  - `"Self"` for `self`, `&self`, and `&mut self` receivers.
+    `mut self` is identical to `self` for our purposes since its mutability is information
+    for the method body only and has no visible effect externally.
+  - `"Box<Self>"` for `Box<Self>`, `&Box<Self>`, and `&mut Box<Self>` receivers.
+  - `"Pin<&mut Self>"` for `Pin<&mut Self>`, `&Pin<&mut Self>`, and `&mut Pin<&mut Self>` receivers.
+  - `"Rc<Box<Self>>"` for a receiver like `self: &Rc<Box<Self>`.
+  - Assuming a `CustomReceiver` type that implements the `Receiver` trait,
+    `"CustomReceiver<Self>"` for a receiver like `self: &CustomReceiver<Self>`.
+    Only the direct declared name of the type will be present, even if the type is
+    publicly re-exported under a different name and/or path.
+  """
+  kind: String!
 }
 
 """
