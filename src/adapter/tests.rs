@@ -6232,7 +6232,7 @@ fn enum_repr_attributes() {
 }
 
 #[test]
-fn receiver() {
+fn method_self_receiver() {
     get_test_data!(data, method_self_receivers);
     let adapter = RustdocAdapter::new(&data, None);
     let adapter = Arc::new(&adapter);
@@ -6334,7 +6334,23 @@ fn receiver() {
         },
         Output {
             struct_name: "Example".into(),
+            method_name: "by_ref_pinned_mut_ref_lifetime".into(),
+            by_value: false,
+            by_reference: true,
+            by_mut_reference: false,
+            kind: "Pin<&mut Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
             method_name: "by_mut_ref_pinned_mut_ref".into(),
+            by_value: false,
+            by_reference: false,
+            by_mut_reference: true,
+            kind: "Pin<&mut Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_mut_ref_pinned_mut_ref_lifetime".into(),
             by_value: false,
             by_reference: false,
             by_mut_reference: true,

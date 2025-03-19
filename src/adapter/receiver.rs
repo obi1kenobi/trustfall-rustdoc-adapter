@@ -83,7 +83,7 @@ fn extract_kind_string(ty: &Type) -> Cow<'_, str> {
                                 rustdoc_types::GenericArg::Const(c) => {
                                     Cow::Borrowed(c.expr.as_str())
                                 }
-                                _ => Cow::Borrowed("?"),
+                                _ => unreachable!("should not encounter infer"),
                             })
                             .collect();
 

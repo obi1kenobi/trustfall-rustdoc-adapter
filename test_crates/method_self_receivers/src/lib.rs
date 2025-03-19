@@ -37,9 +37,13 @@ impl Example {
 
     pub fn by_pinned_mut_ref(self: std::pin::Pin<&mut Self>) {}
 
-    pub fn by_ref_pinned_mut_ref(self: &std::pin::Pin<&mut Self>) {}
+    pub fn by_ref_pinned_mut_ref(self: &std::pin::Pin<&'_ mut Self>) {}
+
+    pub fn by_ref_pinned_mut_ref_lifetime<'a>(self: &std::pin::Pin<&'a mut Self>) {}
 
     pub fn by_mut_ref_pinned_mut_ref(self: &mut std::pin::Pin<&mut Self>) {}
+
+    pub fn by_mut_ref_pinned_mut_ref_lifetime(self: &mut std::pin::Pin<&'_ mut Self>) {}
 
     pub fn by_boxed_value(self: Box<Self>) {}
 
@@ -67,9 +71,7 @@ impl Example {
 
     pub fn by_custom_receiver_mut_ref(self: &mut CustomReceiver<Self>) {}
 
-    pub fn by_custom_receiver_with_ref_self(self: CustomReceiver<&Self>) {}
-
-    // Pin can be combined with other receivers too.
+    pub fn by_custom_receiver_with_ref_self(self: CustomReceiver<&'_ Self>) {}
 
     pub fn by_pinned_box(self: std::pin::Pin<Box<Self>>) {}
 
