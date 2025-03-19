@@ -76,4 +76,6 @@ impl Example {
     pub fn by_pinned_box(self: std::pin::Pin<Box<Self>>) {}
 
     pub fn by_pinned_ref_arc(self: std::pin::Pin<&std::sync::Arc<Self>>) {}
+
+    pub fn wrong_self(selfless: ()) {}
 }
