@@ -59,18 +59,18 @@ pub(crate) fn item_export_name(item: &rustdoc_types::Item) -> Option<&str> {
         })
         .next();
 
-    if export_name.is_some() {
-        export_name
-    } else if item
-        .attrs
-        .iter()
-        .any(|attr| attr == "#[no_mangle]" || attr == "#[unsafe(no_mangle)]")
-    {
-        // If no export_name is found, check for no_mangle attribute
+    export_name.or_else(|| {
+        // Check for no_mangle attribute
         // Items with `#[no_mangle]` attributes are exported under their item name.
         // Ref: https://doc.rust-lang.org/reference/abi.html#the-no_mangle-attribute
-        item.name.as_deref()
-    } else {
-        None
-    }
+        if item
+            .attrs
+            .iter()
+            .any(|attr| attr == "#[no_mangle]" || attr == "#[unsafe(no_mangle)]")
+        {
+            item.name.as_deref()
+        } else {
+            None
+        }
+    })
 }
