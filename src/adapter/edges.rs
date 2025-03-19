@@ -14,6 +14,7 @@ use super::{
     enum_variant::LazyDiscriminants,
     optimizations,
     origin::Origin,
+    receiver::Receiver,
     vertex::{Feature, Vertex},
     RustdocAdapter,
 };
@@ -258,6 +259,34 @@ pub(super) fn resolve_function_like_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             Box::new(std::iter::once(origin.make_function_abi_vertex(abi)))
         }),
         _ => unreachable!("resolve_function_like_edge {edge_name}"),
+    }
+}
+
+pub(super) fn resolve_receiver_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    edge_name: &str,
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
+    match edge_name {
+        "receiver" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let method = vertex.as_function().expect("vertex was not a Function");
+
+            // Check if the first parameter is a self receiver
+            let receiver = method.sig.inputs.first().and_then(|(name, ty)| {
+                if name == "self" {
+                    Some(Receiver::new(ty))
+                } else {
+                    None
+                }
+            });
+
+            Box::new(
+                receiver
+                    .into_iter()
+                    .map(move |r| origin.make_receiver_vertex(r)),
+            )
+        }),
+        _ => unreachable!("resolve_receiver_edge {edge_name}"),
     }
 }
 

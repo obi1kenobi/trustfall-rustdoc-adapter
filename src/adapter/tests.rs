@@ -6249,3 +6249,261 @@ fn enum_repr_attributes() {
 
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn method_self_receiver() {
+    get_test_data!(data, method_self_receivers);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Struct {
+                    struct_name: name @output
+                    attrs @output
+
+                    inherent_impl {
+                        method {
+                            method_name: name @output
+                            receiver {
+                                by_value @output
+                                by_reference @output
+                                by_mut_reference @output
+                                kind @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::new();
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        struct_name: String,
+        method_name: String,
+        by_value: bool,
+        by_reference: bool,
+        by_mut_reference: bool,
+        kind: String,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_ref".into(),
+            by_value: false,
+            by_reference: true,
+            by_mut_reference: false,
+            kind: "Self".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_mut_ref".into(),
+            by_value: false,
+            by_reference: false,
+            by_mut_reference: true,
+            kind: "Self".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_value".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Self".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_mut_value".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Self".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_pinned_mut_ref".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Pin<&mut Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_ref_pinned_mut_ref".into(),
+            by_value: false,
+            by_reference: true,
+            by_mut_reference: false,
+            kind: "Pin<&mut Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_ref_pinned_mut_ref_lifetime".into(),
+            by_value: false,
+            by_reference: true,
+            by_mut_reference: false,
+            kind: "Pin<&mut Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_mut_ref_pinned_mut_ref".into(),
+            by_value: false,
+            by_reference: false,
+            by_mut_reference: true,
+            kind: "Pin<&mut Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_mut_ref_pinned_mut_ref_lifetime".into(),
+            by_value: false,
+            by_reference: false,
+            by_mut_reference: true,
+            kind: "Pin<&mut Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_boxed_value".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_ref_boxed_value".into(),
+            by_value: false,
+            by_reference: true,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_mut_ref_boxed_value".into(),
+            by_value: false,
+            by_reference: false,
+            by_mut_reference: true,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_rc_value".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Rc<Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_ref_rc_value".into(),
+            by_value: false,
+            by_reference: true,
+            by_mut_reference: false,
+            kind: "Rc<Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_mut_ref_rc_value".into(),
+            by_value: false,
+            by_reference: false,
+            by_mut_reference: true,
+            kind: "Rc<Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_arc_value".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Arc<Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_ref_arc_value".into(),
+            by_value: false,
+            by_reference: true,
+            by_mut_reference: false,
+            kind: "Arc<Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_mut_ref_arc_value".into(),
+            by_value: false,
+            by_reference: false,
+            by_mut_reference: true,
+            kind: "Arc<Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_box_of_rc_ref".into(),
+            by_value: false,
+            by_reference: true,
+            by_mut_reference: false,
+            kind: "Rc<Box<Self>>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_custom_receiver_value".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "CustomReceiver<Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_custom_receiver_ref".into(),
+            by_value: false,
+            by_reference: true,
+            by_mut_reference: false,
+            kind: "CustomReceiver<Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_custom_receiver_mut_ref".into(),
+            by_value: false,
+            by_reference: false,
+            by_mut_reference: true,
+            kind: "CustomReceiver<Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_custom_receiver_with_ref_self".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "CustomReceiver<&Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_pinned_box".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Pin<Box<Self>>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_pinned_ref_arc".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Pin<&Arc<Self>>".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+}
