@@ -1,5 +1,6 @@
-use rustdoc_types::{GenericArgs, Type};
 use std::borrow::Cow;
+
+use rustdoc_types::{GenericArgs, Type};
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
