@@ -306,7 +306,7 @@ pub(super) fn resolve_function_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     }
 }
 
-pub(super) fn resolve_method_receiver_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+pub(super) fn resolve_receiver_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {

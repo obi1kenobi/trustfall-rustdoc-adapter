@@ -262,7 +262,7 @@ pub(super) fn resolve_function_like_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     }
 }
 
-pub(super) fn resolve_method_receiver_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+pub(super) fn resolve_receiver_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
@@ -286,7 +286,7 @@ pub(super) fn resolve_method_receiver_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                     .map(move |r| origin.make_receiver_vertex(r)),
             )
         }),
-        _ => unreachable!("resolve_method_receiver_edge {edge_name}"),
+        _ => unreachable!("resolve_receiver_edge {edge_name}"),
     }
 }
 
