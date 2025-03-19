@@ -4,7 +4,7 @@ pub struct Example(i64);
 
 pub struct CustomReceiver<T>(T);
 
-/// Per the docs: https://doc.rust-lang.org/std/ops/trait.Receiver.html
+/// Per the docs: <https://doc.rust-lang.org/std/ops/trait.Receiver.html>
 ///
 /// N.B.: `Pin` currently doesn't appear to be able to be combined with custom receivers.
 ///
