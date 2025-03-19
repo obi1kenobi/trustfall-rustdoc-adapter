@@ -1556,6 +1556,14 @@ fn static_export_name() {
             name: "VAR2".into(),
             export_name: Some("EXTERNALLY_VISIBLE".into()),
         },
+        Output {
+            name: "VAR3".into(),
+            export_name: Some("EXTERNALLY_VISIBLE_3".into()),
+        },
+        Output {
+            name: "VAR4".into(),
+            export_name: Some("EXTERNALLY_VISIBLE_4".into()),
+        },
     ];
 
     let mut results2021: Vec<Output> =
@@ -1922,7 +1930,7 @@ fn function_export_name() {
         visibility_limit: String,
     }
 
-    let expected_results = vec![
+    let mut expected_results = vec![
         Output {
             name: "example_export_name".into(),
             export_name: Some("renamed".into()),
@@ -1944,11 +1952,22 @@ fn function_export_name() {
             visibility_limit: "crate".into(),
         },
         Output {
+            name: "export_name_not_mangled".into(),
+            export_name: Some("renamed_3".into()),
+            visibility_limit: "crate".into(),
+        },
+        Output {
+            name: "export_name_not_mangled_reversed".into(),
+            export_name: Some("renamed_4".into()),
+            visibility_limit: "crate".into(),
+        },
+        Output {
             name: "private_not_mangled".into(),
             export_name: Some("private_not_mangled".into()),
             visibility_limit: "crate".into(),
         },
     ];
+    expected_results.sort_unstable();
 
     let mut results2021: Vec<_> =
         trustfall::execute_query(&schema, adapter2021.clone(), query, variables.clone())
