@@ -64,14 +64,14 @@ impl Example {
     pub fn by_mut_ref_arc_value(self: &mut std::sync::Arc<Self>) {}
 
     pub fn by_box_of_rc_ref(self: &std::rc::Rc<Box<Self>>) {}
+    // The commented-out lines aren't valid in this version of Rust.
+    // pub fn by_custom_receiver_value(self: CustomReceiver<Self>) {}
 
-    pub fn by_custom_receiver_value(self: CustomReceiver<Self>) {}
+    // pub fn by_custom_receiver_ref(self: &CustomReceiver<Self>) {}
 
-    pub fn by_custom_receiver_ref(self: &CustomReceiver<Self>) {}
+    // pub fn by_custom_receiver_mut_ref(self: &mut CustomReceiver<Self>) {}
 
-    pub fn by_custom_receiver_mut_ref(self: &mut CustomReceiver<Self>) {}
-
-    pub fn by_custom_receiver_with_ref_self(self: CustomReceiver<&'_ Self>) {}
+    // pub fn by_custom_receiver_with_ref_self(self: CustomReceiver<&'_ Self>) {}
 
     pub fn by_pinned_box(self: std::pin::Pin<Box<Self>>) {}
 
