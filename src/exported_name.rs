@@ -28,42 +28,49 @@ use crate::attributes::Attribute;
 /// If this function is called with an item that doesn't support external names,
 /// the result is unspecified.
 pub(crate) fn item_export_name(item: &rustdoc_types::Item) -> Option<&str> {
-    if item
+    // First check for export_name attribute, as it takes precedence
+    let export_name = item
+        .attrs
+        .iter()
+        .filter_map(|attr| {
+            if attr.contains("export_name") {
+                let parsed = Attribute::new(attr);
+
+                let export_name_attr = if parsed.content.base == "unsafe" {
+                    parsed
+                        .content
+                        .arguments
+                        .as_ref()
+                        .and_then(|arg| arg.iter().find(|p| p.base == "export_name"))
+                } else if parsed.content.base == "export_name" {
+                    Some(&parsed.content)
+                } else {
+                    None
+                };
+
+                if let Some(attr) = export_name_attr {
+                    attr.assigned_item.map(|name| name.trim_matches('"'))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .next();
+
+    if export_name.is_some() {
+        export_name
+    } else if item
         .attrs
         .iter()
         .any(|attr| attr == "#[no_mangle]" || attr == "#[unsafe(no_mangle)]")
     {
+        // If no export_name is found, check for no_mangle attribute
         // Items with `#[no_mangle]` attributes are exported under their item name.
         // Ref: https://doc.rust-lang.org/reference/abi.html#the-no_mangle-attribute
         item.name.as_deref()
     } else {
-        item.attrs
-            .iter()
-            .filter_map(|attr| {
-                if attr.contains("export_name") {
-                    let parsed = Attribute::new(attr);
-
-                    let export_name_attr = if parsed.content.base == "unsafe" {
-                        parsed
-                            .content
-                            .arguments
-                            .as_ref()
-                            .and_then(|arg| arg.iter().find(|p| p.base == "export_name"))
-                    } else if parsed.content.base == "export_name" {
-                        Some(&parsed.content)
-                    } else {
-                        None
-                    };
-
-                    if let Some(attr) = export_name_attr {
-                        attr.assigned_item.map(|name| name.trim_matches('"'))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-            .next()
+        None
     }
 }
