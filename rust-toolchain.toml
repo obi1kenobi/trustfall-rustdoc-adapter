@@ -2,4 +2,5 @@
 # emits the desired format.
 
 [toolchain]
-channel = "nightly"
+# Pin to the latest nightly version that supports version 36.
+channel = "nightly-2024-12-02"
