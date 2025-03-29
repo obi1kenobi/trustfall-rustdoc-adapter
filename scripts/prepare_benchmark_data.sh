@@ -46,9 +46,19 @@ else
 	tar -x -f "${source_tarball}" -C "${cache_path}"
 fi
 
+cd "${repo_path}" || bail "failed to cd into the source repository"
+
+# Cargo outputs a version string that looks like:
+# cargo 1.85.0-nightly (c86f4b3a1 2024-12-24)
+# In order to get the date from the end, we get all characters after the
+# last ' ' and then remove the final parentheses.
+cargo_version=`cargo --version`
+cargo_version="${cargo_version##* }"
+cargo_version="${cargo_version%?}"
+
 cd "${source_dir}/sdk/ec2" || bail "failed to cd into the extracted sources"
 
 echo "Generating rustdoc JSON..."
-RUSTDOCFLAGS="-Z unstable-options --document-private-items --document-hidden-items --output-format=json --cap-lints=allow" cargo +nightly doc --lib --no-deps || bail "failed to generate rustdoc JSON"
+RUSTDOCFLAGS="-Z unstable-options --document-private-items --document-hidden-items --output-format=json --cap-lints=allow" cargo +nightly-${cargo_version} doc --lib --no-deps || bail "failed to generate rustdoc JSON"
 
 cp -v "$source_dir/target/doc/aws_sdk_ec2.json" "$bench_data_path"
