@@ -4008,6 +4008,295 @@ fn generic_type_parameters() {
 }
 
 #[test]
+fn generic_type_param_maybe_sized() {
+    get_test_data!(data, generic_type_param_maybe_sized);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let top_level_query = r#"
+{
+    Crate {
+        item {
+            ... on GenericItem {
+                name @output
+                name @filter(op: "!=", value: ["$method_name"])
+
+                generic_parameter {
+                    ... on GenericTypeParameter {
+                        generic_name: name @output
+                        maybe_sized @output
+                        type_bound @fold {
+                            bound: name @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let impl_owner_methods_query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                impl {
+                    method {
+                        name @output
+
+                        generic_parameter {
+                            ... on GenericTypeParameter {
+                                generic_name: name @output
+                                maybe_sized @output
+                                type_bound @fold {
+                                    bound: name @output
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let trait_methods_query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                method {
+                    name @output
+
+                    generic_parameter {
+                        ... on GenericTypeParameter {
+                            generic_name: name @output
+                            maybe_sized @output
+                            type_bound @fold {
+                                bound: name @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, i64> = BTreeMap::default();
+    let mut top_level_variables: BTreeMap<&str, &str> = BTreeMap::default();
+    top_level_variables.insert("method_name", "method");
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        generic_name: String,
+        maybe_sized: bool,
+        bound: Vec<String>,
+    }
+
+    let mut results: Vec<Output> = trustfall::execute_query(
+        &schema,
+        adapter.clone(),
+        top_level_query,
+        top_level_variables.clone(),
+    )
+    .expect("failed to run top level query")
+    .chain(
+        trustfall::execute_query(
+            &schema,
+            adapter.clone(),
+            impl_owner_methods_query,
+            variables.clone(),
+        )
+        .expect("failed to run impl owners query"),
+    )
+    .chain(
+        trustfall::execute_query(
+            &schema,
+            adapter.clone(),
+            trait_methods_query,
+            variables.clone(),
+        )
+        .expect("failed to run trait methods query"),
+    )
+    .map(|row| row.try_into_struct().expect("shape mismatch"))
+    .collect();
+
+    // Ensure that the results are in sorted order, and also that the aggregated bounds are sorted.
+    results.sort_unstable();
+    results.iter_mut().for_each(|row| row.bound.sort_unstable());
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "GenericStruct".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "GenericStruct".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "GenericStruct".into(),
+            generic_name: "V".into(),
+            maybe_sized: false,
+            bound: Vec::new(),
+        },
+        Output {
+            name: "GenericEnum".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "GenericEnum".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "GenericEnum".into(),
+            generic_name: "V".into(),
+            maybe_sized: false,
+            bound: Vec::new(),
+        },
+        Output {
+            name: "GenericUnion".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+            bound: { ["Sized", "Copy"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "GenericUnion".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "GenericUnion".into(),
+            generic_name: "V".into(),
+            maybe_sized: false,
+            bound: Vec::new(),
+        },
+        Output {
+            name: "GenericTrait".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "GenericTrait".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "GenericTrait".into(),
+            generic_name: "V".into(),
+            maybe_sized: false,
+            bound: Vec::new(),
+        },
+        Output {
+            name: "method".into(),
+            generic_name: "W".into(),
+            maybe_sized: true,
+            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "method".into(),
+            generic_name: "X".into(),
+            maybe_sized: false,
+            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "method".into(),
+            generic_name: "Y".into(),
+            maybe_sized: false,
+            bound: Vec::new(),
+        },
+        Output {
+            name: "generic_fn".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "generic_fn".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "generic_fn".into(),
+            generic_name: "V".into(),
+            maybe_sized: false,
+            bound: Vec::new(),
+        },
+        Output {
+            name: "generic_fn_with_where_bound".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "generic_fn_with_where_bound".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "generic_fn_with_where_bound".into(),
+            generic_name: "V".into(),
+            maybe_sized: false,
+            bound: Vec::new(),
+        },
+        Output {
+            name: "impl_trait".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "impl_trait".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
+        },
+        Output {
+            name: "impl_trait".into(),
+            generic_name: "V".into(),
+            maybe_sized: false,
+            bound: Vec::new(),
+        },
+        Output {
+            name: "impl_trait".into(),
+            generic_name: "impl GenericTrait<T, U, V>".into(),
+            maybe_sized: false,
+            bound: ["GenericTrait"]
+            .into_iter()
+            .map(ToString::to_string)
+            .collect(),
+        },
+    ];
+    expected_results.sort_unstable();
+    expected_results.iter_mut().for_each(|row| row.bound.sort_unstable());
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
 fn generic_const_parameters() {
     get_test_data!(data, generic_parameters);
     let adapter = RustdocAdapter::new(&data, None);
