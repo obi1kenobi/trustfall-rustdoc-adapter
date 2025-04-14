@@ -785,6 +785,37 @@ pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>
                 _ => unreachable!("vertex was not a GenericTypeParameter: {vertex:?}"),
             }
         }),
+        "maybe_sized" => resolve_property_with(contexts, |vertex| {
+            let (_, generic) = vertex
+                .as_generic_parameter()
+                .expect("vertex was not a GenericTypeParameter");
+
+            match &generic.kind {
+                rustdoc_types::GenericParamDefKind::Type { bounds, .. } => {
+                    let mut is_explecitly_unsized = false;
+
+                    for bound in bounds {
+                        match bound {
+                            rustdoc_types::GenericBound::TraitBound { trait_, modifier , ..} => {
+                                if trait_.path.ends_with("Sized") {
+                                    match modifier {
+                                        rustdoc_types::TraitBoundModifier::Maybe => {
+                                            is_explecitly_unsized = true;
+                                            break;
+                                        }
+                                        _ => ()
+                                    }
+                                }
+                            },
+                            _ => ()
+                        }
+                    }
+
+                    (is_explecitly_unsized).into()
+                },
+                _ => unreachable!("vertex was not a GenericTypeParameter: {vertex:?}"),
+            }
+        }),
         _ => unreachable!("GenericTypeParameter property {property_name}"),
     }
 }

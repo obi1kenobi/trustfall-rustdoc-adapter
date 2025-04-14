@@ -2586,6 +2586,15 @@ type GenericTypeParameter implements GenericParameter {
   """
   type_bound: [ImplementedTrait!]
 
+  """
+  Whether the type parameter is sized.
+
+  This is normally `false`.
+
+  If it is `true`, this generic parameter has a bound '?Sized'.
+  """
+  maybe_sized: Boolean!
+
   # TODO: needs lifetime bounds
   # lifetime_bound: ?
 }

@@ -106,6 +106,7 @@ fn fmt_generic_param_def(this: &GenericParamDef, f: &mut Formatter<'_>) -> Resul
             bounds,
             default,
             is_synthetic,
+            ..
         } => {
             if *is_synthetic {
                 unreachable!("synthetic generic parameters should not be printed.\n\
