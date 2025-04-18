@@ -1,4 +1,4 @@
-use rustdoc_types::{ItemEnum, Visibility};
+use rustdoc_types::{ItemEnum, Visibility, WherePredicate};
 use trustfall::{
     provider::{
         accessor_property, field_property, resolve_property_with, AsVertex, ContextIterator,
@@ -786,29 +786,72 @@ pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>
             }
         }),
         "maybe_sized" => resolve_property_with(contexts, |vertex| {
-            let (_, generic) = vertex
+            let (generics, param) = vertex
                 .as_generic_parameter()
                 .expect("vertex was not a GenericTypeParameter");
 
-            match &generic.kind {
+            let mut is_explicitly_maybe_sized = false;
+            let mut not_maybe_sized = false;
+            match &param.kind {
                 rustdoc_types::GenericParamDefKind::Type { bounds, .. } => {
-                    let mut is_explicitly_maybe_sized = false;
-
                     for bound in bounds {
-                        if let rustdoc_types::GenericBound::TraitBound { trait_, modifier , ..} = bound {
+                        if let rustdoc_types::GenericBound::TraitBound {
+                            trait_, modifier, ..
+                        } = bound
+                        {
                             if trait_.path.ends_with("Sized") {
                                 if let rustdoc_types::TraitBoundModifier::Maybe = modifier {
                                     is_explicitly_maybe_sized = true;
+                                } else {
+                                    not_maybe_sized = true;
                                     break;
                                 }
                             }
                         }
                     }
-
-                    (is_explicitly_maybe_sized).into()
-                },
+                }
                 _ => unreachable!("vertex was not a GenericTypeParameter: {vertex:?}"),
             }
+
+            if !not_maybe_sized {
+                for predicate in &generics.where_predicates {
+                    if let WherePredicate::BoundPredicate {
+                        type_: rustdoc_types::Type::Generic(generic_name),
+                        bounds: where_bounds,
+                        ..
+                    } = predicate
+                    {
+                        if generic_name == &param.name {
+                            for bound in where_bounds {
+                                if let rustdoc_types::GenericBound::TraitBound {
+                                    trait_,
+                                    modifier,
+                                    ..
+                                } = bound
+                                {
+                                    if trait_.path.ends_with("Sized") {
+                                        if let rustdoc_types::TraitBoundModifier::Maybe = modifier {
+                                            is_explicitly_maybe_sized = true;
+                                        } else {
+                                            not_maybe_sized = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if not_maybe_sized {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if not_maybe_sized {
+                is_explicitly_maybe_sized = false;
+            }
+
+            (is_explicitly_maybe_sized).into()
         }),
         _ => unreachable!("GenericTypeParameter property {property_name}"),
     }

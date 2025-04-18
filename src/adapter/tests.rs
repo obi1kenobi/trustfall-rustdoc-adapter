@@ -4025,9 +4025,6 @@ fn generic_type_param_maybe_sized() {
                     ... on GenericTypeParameter {
                         generic_name: name @output
                         maybe_sized @output
-                        type_bound @fold {
-                            bound: name @output
-                        }
                     }
                 }
             }
@@ -4048,9 +4045,6 @@ fn generic_type_param_maybe_sized() {
                             ... on GenericTypeParameter {
                                 generic_name: name @output
                                 maybe_sized @output
-                                type_bound @fold {
-                                    bound: name @output
-                                }
                             }
                         }
                     }
@@ -4072,9 +4066,6 @@ fn generic_type_param_maybe_sized() {
                         ... on GenericTypeParameter {
                             generic_name: name @output
                             maybe_sized @output
-                            type_bound @fold {
-                                bound: name @output
-                            }
                         }
                     }
                 }
@@ -4096,7 +4087,6 @@ fn generic_type_param_maybe_sized() {
         name: String,
         generic_name: String,
         maybe_sized: bool,
-        bound: Vec<String>,
     }
 
     let mut results: Vec<Output> = trustfall::execute_query(
@@ -4129,7 +4119,6 @@ fn generic_type_param_maybe_sized() {
 
     // Ensure that the results are in sorted order, and also that the aggregated bounds are sorted.
     results.sort_unstable();
-    results.iter_mut().for_each(|row| row.bound.sort_unstable());
 
     // We write the results in the order the items appear in the test file,
     // and sort them afterward in order to compare with the (sorted) query results.
@@ -4140,158 +4129,154 @@ fn generic_type_param_maybe_sized() {
             name: "GenericStruct".into(),
             generic_name: "T".into(),
             maybe_sized: true,
-            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
             name: "GenericStruct".into(),
             generic_name: "U".into(),
             maybe_sized: false,
-            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
             name: "GenericStruct".into(),
             generic_name: "V".into(),
             maybe_sized: false,
-            bound: Vec::new(),
         },
         Output {
             name: "GenericEnum".into(),
             generic_name: "T".into(),
             maybe_sized: true,
-            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
             name: "GenericEnum".into(),
             generic_name: "U".into(),
             maybe_sized: false,
-            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
             name: "GenericEnum".into(),
             generic_name: "V".into(),
             maybe_sized: false,
-            bound: Vec::new(),
         },
         Output {
             name: "GenericUnion".into(),
             generic_name: "T".into(),
             maybe_sized: true,
-            bound: { ["Sized", "Copy"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
             name: "GenericUnion".into(),
             generic_name: "U".into(),
             maybe_sized: false,
-            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
             name: "GenericUnion".into(),
             generic_name: "V".into(),
             maybe_sized: false,
-            bound: Vec::new(),
         },
         Output {
             name: "GenericTrait".into(),
             generic_name: "T".into(),
             maybe_sized: true,
-            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
             name: "GenericTrait".into(),
             generic_name: "U".into(),
             maybe_sized: false,
-            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
             name: "GenericTrait".into(),
             generic_name: "V".into(),
             maybe_sized: false,
-            bound: Vec::new(),
         },
         Output {
             name: "method".into(),
             generic_name: "W".into(),
             maybe_sized: true,
-            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
             name: "method".into(),
             generic_name: "X".into(),
             maybe_sized: false,
-            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
             name: "method".into(),
             generic_name: "Y".into(),
             maybe_sized: false,
-            bound: Vec::new(),
         },
         Output {
-            name: "generic_fn".into(),
+            name: "generic_fn1".into(),
             generic_name: "T".into(),
             maybe_sized: true,
-            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
-            name: "generic_fn".into(),
+            name: "generic_fn1".into(),
             generic_name: "U".into(),
             maybe_sized: false,
-            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
-            name: "generic_fn".into(),
+            name: "generic_fn1".into(),
             generic_name: "V".into(),
             maybe_sized: false,
-            bound: Vec::new(),
         },
         Output {
-            name: "generic_fn_with_where_bound".into(),
+            name: "generic_fn2".into(),
+            generic_name: "T".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn3".into(),
+            generic_name: "T".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn4".into(),
+            generic_name: "T".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn5".into(),
+            generic_name: "T".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn6".into(),
+            generic_name: "T".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn7".into(),
             generic_name: "T".into(),
             maybe_sized: true,
-            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
-            name: "generic_fn_with_where_bound".into(),
+            name: "generic_fn7".into(),
             generic_name: "U".into(),
             maybe_sized: false,
-            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
-            name: "generic_fn_with_where_bound".into(),
+            name: "generic_fn7".into(),
             generic_name: "V".into(),
             maybe_sized: false,
-            bound: Vec::new(),
         },
         Output {
             name: "impl_trait".into(),
             generic_name: "T".into(),
             maybe_sized: true,
-            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
             name: "impl_trait".into(),
             generic_name: "U".into(),
             maybe_sized: false,
-            bound: { ["Sized"].into_iter().map(ToString::to_string).collect() },
         },
         Output {
             name: "impl_trait".into(),
             generic_name: "V".into(),
             maybe_sized: false,
-            bound: Vec::new(),
         },
         Output {
             name: "impl_trait".into(),
             generic_name: "impl GenericTrait<T, U, V>".into(),
             maybe_sized: false,
-            bound: ["GenericTrait"]
-            .into_iter()
-            .map(ToString::to_string)
-            .collect(),
         },
     ];
     expected_results.sort_unstable();
-    expected_results.iter_mut().for_each(|row| row.bound.sort_unstable());
 
     similar_asserts::assert_eq!(expected_results, results);
 }
