@@ -790,8 +790,7 @@ pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>
                 .as_generic_parameter()
                 .expect("vertex was not a GenericTypeParameter");
 
-            let mut is_explicitly_maybe_sized = false;
-            let mut not_maybe_sized = false;
+            let mut target_id: Option<u32> = None;
             match &param.kind {
                 rustdoc_types::GenericParamDefKind::Type { bounds, .. } => {
                     for bound in bounds {
@@ -801,9 +800,7 @@ pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>
                         {
                             if trait_.path.ends_with("Sized") {
                                 if let rustdoc_types::TraitBoundModifier::Maybe = modifier {
-                                    is_explicitly_maybe_sized = true;
-                                } else {
-                                    not_maybe_sized = true;
+                                    target_id = Some(trait_.id.0);
                                     break;
                                 }
                             }
@@ -813,7 +810,7 @@ pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>
                 _ => unreachable!("vertex was not a GenericTypeParameter: {vertex:?}"),
             }
 
-            if !not_maybe_sized {
+            if let None = target_id {
                 for predicate in &generics.where_predicates {
                     if let WherePredicate::BoundPredicate {
                         type_: rustdoc_types::Type::Generic(generic_name),
@@ -831,15 +828,13 @@ pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>
                                 {
                                     if trait_.path.ends_with("Sized") {
                                         if let rustdoc_types::TraitBoundModifier::Maybe = modifier {
-                                            is_explicitly_maybe_sized = true;
-                                        } else {
-                                            not_maybe_sized = true;
+                                            target_id = Some(trait_.id.0);
                                             break;
                                         }
                                     }
                                 }
                             }
-                            if not_maybe_sized {
+                            if let Some(id) = target_id {
                                 break;
                             }
                         }
@@ -847,11 +842,58 @@ pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>
                 }
             }
 
-            if not_maybe_sized {
-                is_explicitly_maybe_sized = false;
+            if let None = target_id {
+                return false.into();
             }
 
-            (is_explicitly_maybe_sized).into()
+            let target_id = target_id.unwrap();
+            match &param.kind {
+                rustdoc_types::GenericParamDefKind::Type { bounds, .. } => {
+                    for bound in bounds {
+                        if let rustdoc_types::GenericBound::TraitBound {
+                            trait_, modifier, ..
+                        } = bound
+                        {
+                            if trait_.id.0 == target_id {
+                                if let rustdoc_types::TraitBoundModifier::Maybe = modifier {
+                                    continue;
+                                }
+                                return false.into();
+                            }
+                        }
+                    }
+                }
+                _ => unreachable!("vertex was not a GenericTypeParameter: {vertex:?}"),
+            }
+
+            for predicate in &generics.where_predicates {
+                if let WherePredicate::BoundPredicate {
+                    type_: rustdoc_types::Type::Generic(generic_name),
+                    bounds: where_bounds,
+                    ..
+                } = predicate
+                {
+                    if generic_name == &param.name {
+                        for bound in where_bounds {
+                            if let rustdoc_types::GenericBound::TraitBound {
+                                trait_,
+                                modifier,
+                                ..
+                            } = bound
+                            {
+                                if trait_.id.0 == target_id {
+                                    if let rustdoc_types::TraitBoundModifier::Maybe = modifier {
+                                        continue;
+                                    }
+                                    return false.into();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return true.into();
         }),
         _ => unreachable!("GenericTypeParameter property {property_name}"),
     }

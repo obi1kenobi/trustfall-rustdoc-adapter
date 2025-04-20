@@ -4223,7 +4223,7 @@ fn generic_type_param_maybe_sized() {
         Output {
             name: "generic_fn3".into(),
             generic_name: "T".into(),
-            maybe_sized: false,
+            maybe_sized: true,
         },
         Output {
             name: "generic_fn4".into(),
@@ -4243,15 +4243,20 @@ fn generic_type_param_maybe_sized() {
         Output {
             name: "generic_fn7".into(),
             generic_name: "T".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn8".into(),
+            generic_name: "T".into(),
             maybe_sized: true,
         },
         Output {
-            name: "generic_fn7".into(),
+            name: "generic_fn8".into(),
             generic_name: "U".into(),
             maybe_sized: false,
         },
         Output {
-            name: "generic_fn7".into(),
+            name: "generic_fn8".into(),
             generic_name: "V".into(),
             maybe_sized: false,
         },

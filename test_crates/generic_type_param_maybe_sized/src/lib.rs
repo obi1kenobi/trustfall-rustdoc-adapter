@@ -1,38 +1,43 @@
 use std::boxed::Box;
-pub struct GenericStruct<T: ?Sized, U: Sized, V> {
+pub struct GenericStruct<T: ?core::marker::Sized, U: core::marker::Sized, V> {
     x: Box<T>,
     y: U,
     z: V,
 }
 
-pub enum GenericEnum<T: ?Sized, U: Sized, V> {
+pub enum GenericEnum<T: ?core::marker::Sized, U: core::marker::Sized, V> {
     Variant(Box<T>),
     Variant2(U),
     Variant3(V),
 }
 
-pub union GenericUnion<T: ?Sized + Copy, U: Sized, V> {
+pub union GenericUnion<T: ?core::marker::Sized + Copy, U: core::marker::Sized, V> {
     field: std::mem::ManuallyDrop<Box<T>>,
     field2: std::mem::ManuallyDrop<U>,
     field3: std::mem::ManuallyDrop<V>,
 }
 
-pub trait GenericTrait<T: ?Sized, U: Sized, V> {
-    fn method<W: ?Sized, X: Sized, Y>(value: &Box<T>);
+pub trait GenericTrait<T: ?core::marker::Sized, U: core::marker::Sized, V> {
+    fn method<W: ?core::marker::Sized, X: core::marker::Sized, Y>(value: &Box<T>);
 }
 
-pub fn generic_fn1<T: ?Sized, U: Sized, V>(x: &T) {}
+pub fn generic_fn1<T: ?core::marker::Sized, U: core::marker::Sized, V>(x: &T) {}
 
-pub fn generic_fn2<T: Sized + ?Sized>(value: &T) {}
+pub trait Sized { fn method(); }
 
-pub fn generic_fn3<T: Sized + ?Sized>(value: &T) where T: Sized {}
+pub fn generic_fn2<T: core::marker::Sized + ?core::marker::Sized>(value: &T) {}
 
-pub fn generic_fn4<T: ?Sized + Sized>(value: &T) where T: Sized {}
+pub fn generic_fn3<T: Sized + ?core::marker::Sized>(value: T) {}
 
-pub fn generic_fn5<T: ?Sized>(value: &T) where T: Sized {}
+pub fn generic_fn4<T: core::marker::Sized + ?core::marker::Sized>(value: &T) where T: core::marker::Sized {}
 
-pub fn generic_fn6<T: Sized>(value: &T) where T: ?Sized {}
+pub fn generic_fn5<T: ?core::marker::Sized + core::marker::Sized>(value: &T) where T: core::marker::Sized {}
 
-pub fn generic_fn7<T, U, V>(value: &T) where T: ?Sized, U: Sized {}
+pub fn generic_fn6<T: ?core::marker::Sized>(value: &T) where T: core::marker::Sized {}
 
-pub fn impl_trait<T: ?Sized, U: Sized, V>(value: impl GenericTrait<T, U, V>) {}
+pub fn generic_fn7<T: core::marker::Sized>(value: &T) where T: ?core::marker::Sized {}
+
+pub fn generic_fn8<T, U, V>(value: &T) where T: ?core::marker::Sized, U: core::marker::Sized {}
+
+pub fn impl_trait<T: ?core::marker::Sized, U: core::marker::Sized, V>(value: impl GenericTrait<T, U, V>) {}
+
