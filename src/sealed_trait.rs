@@ -436,44 +436,46 @@ fn is_method_or_item_sealed(
                         .set_pub_api_sealed();
                 }
 
-                // Check for pub-in-priv function parameters.
+                // Check for sealing caused by function parameters.
+                // Any implementations of the trait must name the function parameter types.
                 for (_, param) in &func.sig.inputs {
-                    if let rustdoc_types::Type::ResolvedPath(path) = param {
-                        if let Some(item_flag) = flags.get(&path.id) {
-                            if !item_flag.is_reachable() {
-                                // Non-importable item, so this trait is method-sealed.
-                                flags
-                                    .get_mut(trait_id)
-                                    .expect("no flags entry for trait item ID")
-                                    .set_unconditionally_sealed();
-                                return true;
-                            } else if item_flag.is_non_pub_api_reachable() {
-                                flags
-                                    .get_mut(trait_id)
-                                    .expect("no flags entry for trait item ID")
-                                    .set_pub_api_sealed();
-                            }
-                        };
-                    }
-                }
-
-                // Check for pub-in-priv function return values.
-                if let Some(rustdoc_types::Type::ResolvedPath(path)) = &func.sig.output {
-                    if let Some(item_flag) = flags.get(&path.id) {
-                        if !item_flag.is_reachable() {
-                            // Non-importable item, so this trait is method-sealed.
-                            flags
-                                .get_mut(trait_id)
-                                .expect("no flags entry for trait item ID")
-                                .set_unconditionally_sealed();
-                            return true;
-                        } else if item_flag.is_non_pub_api_reachable() {
+                    match is_sealed_due_to_type(index, flags, param) {
+                        SealedStatus::Unknown => {}
+                        SealedStatus::PubApiSealed => {
                             flags
                                 .get_mut(trait_id)
                                 .expect("no flags entry for trait item ID")
                                 .set_pub_api_sealed();
                         }
-                    };
+                        SealedStatus::UnconditionallySealed => {
+                            flags
+                                .get_mut(trait_id)
+                                .expect("no flags entry for trait item ID")
+                                .set_unconditionally_sealed();
+                            return true;
+                        }
+                    }
+                }
+
+                // Check for sealing caused by function return values.
+                // Any implementations of the trait must name the function return type.
+                if let Some(ty) = &func.sig.output {
+                    match is_sealed_due_to_type(index, flags, ty) {
+                        SealedStatus::Unknown => {}
+                        SealedStatus::PubApiSealed => {
+                            flags
+                                .get_mut(trait_id)
+                                .expect("no flags entry for trait item ID")
+                                .set_pub_api_sealed();
+                        }
+                        SealedStatus::UnconditionallySealed => {
+                            flags
+                                .get_mut(trait_id)
+                                .expect("no flags entry for trait item ID")
+                                .set_unconditionally_sealed();
+                            return true;
+                        }
+                    }
                 }
             }
             rustdoc_types::ItemEnum::AssocType { type_, .. } if type_.is_none() => {
@@ -503,22 +505,22 @@ fn is_method_or_item_sealed(
                         .set_pub_api_sealed();
                 }
 
-                if let rustdoc_types::Type::ResolvedPath(path) = type_ {
-                    if let Some(type_flag) = flags.get(&path.id) {
-                        if !type_flag.is_reachable() {
-                            // Non-importable item, so this trait is unconditionally item-sealed.
-                            flags
-                                .get_mut(trait_id)
-                                .expect("no flags entry for trait item ID")
-                                .set_unconditionally_sealed();
-                            return true;
-                        } else if type_flag.is_non_pub_api_reachable() {
-                            flags
-                                .get_mut(trait_id)
-                                .expect("no flags entry for trait item ID")
-                                .set_pub_api_sealed();
-                        }
-                    };
+                // Any implementations of the trait must name the constant's type.
+                match is_sealed_due_to_type(index, flags, type_) {
+                    SealedStatus::Unknown => {}
+                    SealedStatus::PubApiSealed => {
+                        flags
+                            .get_mut(trait_id)
+                            .expect("no flags entry for trait item ID")
+                            .set_pub_api_sealed();
+                    }
+                    SealedStatus::UnconditionallySealed => {
+                        flags
+                            .get_mut(trait_id)
+                            .expect("no flags entry for trait item ID")
+                            .set_unconditionally_sealed();
+                        return true;
+                    }
                 }
             }
             _ => {}
@@ -526,6 +528,149 @@ fn is_method_or_item_sealed(
     }
 
     false
+}
+
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+enum SealedStatus {
+    #[default]
+    Unknown = 0,
+    PubApiSealed = 1,
+    UnconditionallySealed = 2,
+}
+
+fn is_sealed_due_to_type(
+    index: &HashMap<Id, Item>,
+    flags: &HashMap<Id, ItemFlag>,
+    type_: &rustdoc_types::Type,
+) -> SealedStatus {
+    match type_ {
+        rustdoc_types::Type::ResolvedPath(path) => {
+            is_sealed_due_to_path_type(index, flags, path)
+        }
+        rustdoc_types::Type::DynTrait(dyn_trait) => {
+            // TODO: Cover this case with test cases.
+            dyn_trait.traits.iter().map(|t| is_sealed_due_to_path_type(index, flags,&t.trait_)).max().unwrap_or_default()
+        }
+        rustdoc_types::Type::FunctionPointer(_function_pointer) => {
+            // TODO: Cover this case properly.
+            todo!()
+        }
+        rustdoc_types::Type::Tuple(items) => {
+            // TODO: Cover this with test cases.
+            items.iter().map(|ty| is_sealed_due_to_type(index, flags, ty)).max().unwrap_or_default()
+        }
+        rustdoc_types::Type::ImplTrait(generic_bounds) => {
+            // TODO: Cover this with test cases.
+            generic_bounds.iter().filter_map(|bound| match bound {
+                GenericBound::TraitBound { trait_, .. } => {
+                    // TODO: For `impl Trait`, can anything other than the trait cause sealing?
+                    //       Perhaps via generic parameter definitions?
+                    //       The answer isn't obvious; revisit this.
+                    Some(is_sealed_due_to_path_type(index, flags, trait_))
+                }
+                GenericBound::Outlives { .. } |
+                GenericBound::Use { .. } => None,
+            }).next().unwrap_or_default()
+        }
+        rustdoc_types::Type::Slice(inner) |
+        rustdoc_types::Type::Array { type_: inner, .. } |
+        rustdoc_types::Type::Pat { type_: inner, .. } |
+        rustdoc_types::Type::RawPointer { type_: inner, .. } |
+        rustdoc_types::Type::BorrowedRef { type_: inner, .. } => {
+            is_sealed_due_to_type(index, flags, inner)
+        }
+        rustdoc_types::Type::Generic(_) | // a direct generic parameter like `T`
+        rustdoc_types::Type::Primitive(_) |
+        rustdoc_types::Type::Infer => SealedStatus::Unknown,
+        rustdoc_types::Type::QualifiedPath { .. } => {
+            // TODO: I'm genuinely not sure if qualified paths can affect trait sealing at all.
+            //       Figure this out, then implement this properly.
+            SealedStatus::Unknown
+        }
+    }
+}
+
+fn is_sealed_due_to_path_type(
+    index: &HashMap<Id, Item>,
+    flags: &HashMap<Id, ItemFlag>,
+    path: &rustdoc_types::Path,
+) -> SealedStatus {
+    let Some(item) = index.get(&path.id) else {
+        // Not an item from our crate.
+        return SealedStatus::Unknown;
+    };
+    if let rustdoc_types::ItemEnum::TypeAlias(alias) = &item.inner {
+        return is_sealed_due_to_type_alias(index, flags, item, alias);
+    }
+
+    if let Some(item_flag) = flags.get(&path.id) {
+        if !item_flag.is_reachable() {
+            // Non-importable item, so this trait is sealed.
+            SealedStatus::UnconditionallySealed
+        } else if item_flag.is_non_pub_api_reachable() {
+            SealedStatus::PubApiSealed
+        } else {
+            // TODO: Can paths cause type-related sealing in any way other than importability?
+            //       For example, somehow via their generic arguments,
+            //       like `Foo<Bar>` if `Foo` is public API but `Bar` is not.
+            //       Explore this further, the answer might be "yes" and isn't obvious.
+            SealedStatus::Unknown
+        }
+    } else {
+        SealedStatus::Unknown
+    }
+}
+
+fn is_sealed_due_to_type_alias(
+    index: &HashMap<Id, Item>,
+    flags: &HashMap<Id, ItemFlag>,
+    alias_item: &Item,
+    alias_info: &rustdoc_types::TypeAlias,
+) -> SealedStatus {
+    // The sealed status here depends on a complex interaction between sealing effects from:
+    // - the alias item itself
+    // - the underlying type it points to.
+
+    let type_alias_flags = flags.get(&alias_item.id).expect("no flags entry for type alias item ID");
+    let type_alias_status = if type_alias_flags.is_pub_reachable() {
+        SealedStatus::Unknown
+    } else if type_alias_flags.is_non_pub_api_reachable() {
+        SealedStatus::PubApiSealed
+    } else {
+        SealedStatus::UnconditionallySealed
+    };
+
+    let underlying_status = is_sealed_due_to_type(index, flags, &alias_info.type_);
+
+    match (underlying_status, type_alias_status) {
+        (SealedStatus::Unknown, _) => {
+            // The underlying type is directly usable without any sealing effects.
+            // Trait impls can just desugar away the type alias and ignore it entirely.
+            SealedStatus::Unknown
+        }
+        (SealedStatus::PubApiSealed, SealedStatus::Unknown) => {
+            // The underlying is non-public API but the type alias is public API.
+            // Trait impls can avoid the non-public API effect by just using the type alias.
+            SealedStatus::Unknown
+        }
+        (SealedStatus::PubApiSealed, _) => {
+            // The underlying is non-public API, and the type alias is either private or
+            // also pub but non-public API. Trait impls can use the underlying directly again,
+            // to get only non-public API sealing effects.
+            SealedStatus::PubApiSealed
+        }
+        (SealedStatus::UnconditionallySealed, type_alias_status) => {
+            // Unconditional sealing only happens if the underlying is private or pub-in-priv.
+            // It's an error in Rust to have a public type alias that exposes a private type,
+            // regardless of the public API status of the type alias.
+            //
+            // If the underlying is private, the type alias must be private too.
+            //
+            // If the underlying is pub-in-priv, then the type alias' own status overrides it
+            // since it may make the underlying reachable again.
+            type_alias_status
+        }
+    }
 }
 
 fn effective_supertraits_iter(trait_inner: &Trait) -> impl Iterator<Item = &GenericBound> + '_ {

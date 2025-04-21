@@ -233,6 +233,10 @@ pub(crate) fn build_flags_index(
         .values()
         .flatten()
         .for_each(|(item, modifiers)| {
+            // TODO: When we start tracking importable type aliases (`pub type`),
+            //       be very careful here. The alias might not be importable,
+            //       but the underlying type it points to might be.
+            //       See `test_crates/sealed_trait/type_alias.rs` for some edge cases.
             let flag = flags.entry(item.id).or_default();
             if !modifiers.deprecated && modifiers.doc_hidden {
                 flag.set_doc_hidden_reachable();
