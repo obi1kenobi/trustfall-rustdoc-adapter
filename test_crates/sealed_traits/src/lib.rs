@@ -1,4 +1,5 @@
 pub mod doc_hidden;
+pub mod type_alias;
 
 mod private {
     pub trait Sealed {}

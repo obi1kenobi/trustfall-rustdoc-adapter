@@ -1228,6 +1228,182 @@ fn rustdoc_sealed_traits() {
             sealed: false,
             public_api_sealed: true,
         },
+        Output {
+            name: "TakeTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "pub_type_alias".into(),
+                "TakeTypeAlias".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "ReturnTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "pub_type_alias".into(),
+                "ReturnTypeAlias".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "TakeTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "private_type_alias".into(),
+                "TakeTypeAlias".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "ReturnTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "private_type_alias".into(),
+                "ReturnTypeAlias".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "TakeTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "private_type".into(),
+                "TakeTypeAlias".into(),
+            ]],
+            sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "ReturnTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "private_type".into(),
+                "ReturnTypeAlias".into(),
+            ]],
+            sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "TakeTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "generic_private_type".into(),
+                "TakeTypeAlias".into(),
+            ]],
+            sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "ReturnTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "generic_private_type".into(),
+                "ReturnTypeAlias".into(),
+            ]],
+            sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "TakeTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "hidden_alias".into(),
+                "TakeTypeAlias".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "ReturnTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "hidden_alias".into(),
+                "ReturnTypeAlias".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "TakeTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "private_alias_to_hidden".into(),
+                "TakeTypeAlias".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "ReturnTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "private_alias_to_hidden".into(),
+                "ReturnTypeAlias".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "TakeTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "pub_alias_to_hidden".into(),
+                "TakeTypeAlias".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "ReturnTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "pub_alias_to_hidden".into(),
+                "ReturnTypeAlias".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "TakeTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "hidden_alias_to_hidden".into(),
+                "TakeTypeAlias".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "ReturnTypeAlias".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "type_alias".into(),
+                "hidden_alias_to_hidden".into(),
+                "ReturnTypeAlias".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: true,
+        },
     ];
     expected_results.sort_unstable();
 
