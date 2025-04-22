@@ -237,6 +237,8 @@ fn determine_if_trait_is_sealed_with_no_external_blankets(
         }
     }
 
+    visited_trait_ids.remove(&trait_item.id);
+
     false
 }
 
