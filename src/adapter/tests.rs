@@ -1228,6 +1228,46 @@ fn rustdoc_sealed_traits() {
             sealed: false,
             public_api_sealed: true,
         },
+        Output {
+            name: "Base".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "regression_csc_1200".into(),
+                "Base".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "Left".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "regression_csc_1200".into(),
+                "Left".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "Right".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "regression_csc_1200".into(),
+                "Right".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            name: "Top".into(),
+            path: vec![vec![
+                "sealed_traits".into(),
+                "regression_csc_1200".into(),
+                "Top".into(),
+            ]],
+            sealed: false,
+            public_api_sealed: false,
+        },
     ];
     expected_results.sort_unstable();
 
