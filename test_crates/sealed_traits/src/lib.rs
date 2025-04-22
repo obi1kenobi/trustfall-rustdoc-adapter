@@ -1,3 +1,4 @@
+pub mod regression_csc_1200;
 pub mod doc_hidden;
 
 mod private {
