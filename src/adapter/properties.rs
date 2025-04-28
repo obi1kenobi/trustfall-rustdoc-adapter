@@ -736,7 +736,7 @@ pub(crate) fn resolve_generic_parameter_property<'a, V: AsVertex<Vertex<'a>> + '
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "name" => resolve_property_with(contexts, |vertex| {
-            let (_, _, generic) = vertex
+            let (_, generic) = vertex
                 .as_generic_parameter()
                 .expect("vertex was not a GenericParameter");
 
@@ -759,11 +759,10 @@ pub(crate) fn resolve_generic_parameter_property<'a, V: AsVertex<Vertex<'a>> + '
 pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
-    current_crate: &'a PackageIndex<'a>, 
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "has_default" => resolve_property_with(contexts, |vertex| {
-            let (_, _, generic) = vertex
+            let (_, generic) = vertex
                 .as_generic_parameter()
                 .expect("vertex was not a GenericTypeParameter");
 
@@ -775,7 +774,7 @@ pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>
             }
         }),
         "synthetic" => resolve_property_with(contexts, |vertex| {
-            let (_, _, generic) = vertex
+            let (_, generic) = vertex
                 .as_generic_parameter()
                 .expect("vertex was not a GenericTypeParameter");
 
@@ -787,21 +786,114 @@ pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>
             }
         }),
         "maybe_sized" => resolve_property_with(contexts, |vertex| {
-            // 1. Get data including parent_id
-            let (parent_id, _generics_context, param_def) =
-                vertex.as_generic_parameter()
-                      .expect("Vertex was not GenericParameter");
+            let (generics, param) = vertex
+                .as_generic_parameter()
+                .expect("vertex was not a GenericTypeParameter");
 
-            // 2. Access the map via context
-            let maybe_sized_map = &current_crate.own_crate.generic_param_maybe_sized;
+            let mut target_id: Option<u32> = None;
+            match &param.kind {
+                rustdoc_types::GenericParamDefKind::Type { bounds, .. } => {
+                    for bound in bounds {
+                        if let rustdoc_types::GenericBound::TraitBound {
+                            trait_, modifier, ..
+                        } = bound
+                        {
+                            if trait_.path.ends_with("Sized") {
+                                if let rustdoc_types::TraitBoundModifier::Maybe = modifier {
+                                    target_id = Some(trait_.id.0);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => unreachable!("vertex was not a GenericTypeParameter: {vertex:?}"),
+            }
 
-            // 3. Lookup (O(1))
-            let result = maybe_sized_map
-                .get(&(parent_id, param_def.name.clone()))
-                .copied() // Option<bool>
-                .unwrap_or(false); // Default safety
+            if let None = target_id {
+                for predicate in &generics.where_predicates {
+                    if let WherePredicate::BoundPredicate {
+                        type_: rustdoc_types::Type::Generic(generic_name),
+                        bounds: where_bounds,
+                        ..
+                    } = predicate
+                    {
+                        if generic_name == &param.name {
+                            for bound in where_bounds {
+                                if let rustdoc_types::GenericBound::TraitBound {
+                                    trait_,
+                                    modifier,
+                                    ..
+                                } = bound
+                                {
+                                    if trait_.path.ends_with("Sized") {
+                                        if let rustdoc_types::TraitBoundModifier::Maybe = modifier {
+                                            target_id = Some(trait_.id.0);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if let Some(id) = target_id {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
 
-            result.into()
+            if let None = target_id {
+                return false.into();
+            }
+
+            let target_id = target_id.unwrap();
+            match &param.kind {
+                rustdoc_types::GenericParamDefKind::Type { bounds, .. } => {
+                    for bound in bounds {
+                        if let rustdoc_types::GenericBound::TraitBound {
+                            trait_, modifier, ..
+                        } = bound
+                        {
+                            if trait_.id.0 == target_id {
+                                if let rustdoc_types::TraitBoundModifier::Maybe = modifier {
+                                    continue;
+                                }
+                                return false.into();
+                            }
+                        }
+                    }
+                }
+                _ => unreachable!("vertex was not a GenericTypeParameter: {vertex:?}"),
+            }
+
+            for predicate in &generics.where_predicates {
+                if let WherePredicate::BoundPredicate {
+                    type_: rustdoc_types::Type::Generic(generic_name),
+                    bounds: where_bounds,
+                    ..
+                } = predicate
+                {
+                    if generic_name == &param.name {
+                        for bound in where_bounds {
+                            if let rustdoc_types::GenericBound::TraitBound {
+                                trait_,
+                                modifier,
+                                ..
+                            } = bound
+                            {
+                                if trait_.id.0 == target_id {
+                                    if let rustdoc_types::TraitBoundModifier::Maybe = modifier {
+                                        continue;
+                                    }
+                                    return false.into();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return true.into();
         }),
         _ => unreachable!("GenericTypeParameter property {property_name}"),
     }
@@ -813,7 +905,7 @@ pub(crate) fn resolve_generic_const_parameter_property<'a, V: AsVertex<Vertex<'a
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "has_default" => resolve_property_with(contexts, |vertex| {
-            let (_, _, generic) = vertex
+            let (_, generic) = vertex
                 .as_generic_parameter()
                 .expect("vertex was not a GenericConstParameter");
 

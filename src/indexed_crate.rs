@@ -8,7 +8,7 @@ use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
-use rustdoc_types::{Crate, GenericBound, GenericParamDefKind, Generics, Id, Item, TraitBoundModifier, Type, WherePredicate};
+use rustdoc_types::{Crate, Id, Item};
 
 use crate::{
     adapter::supported_item_kind,
@@ -221,10 +221,6 @@ pub struct IndexedCrate<'a> {
     /// A more complete future solution may generate multiple crates' rustdoc JSON
     /// and link to the external crate's trait items as necessary.
     pub(crate) manually_inlined_builtin_traits: HashMap<Id, Item>,
-
-    // Key: (ID of the item defining the generics, Name of the type parameter)
-    // Value: bool (true if maybe_sized, false if definitely Sized)
-    pub(crate) generic_param_maybe_sized: HashMap<(Id, String), bool>,
 }
 
 /// Map a Key to a List (Vec) of values
@@ -425,7 +421,6 @@ impl<'a> IndexedCrate<'a> {
             impl_index: None,
             fn_owner_index: None,
             export_name_index: None,
-            generic_param_maybe_sized: HashMap::default(), // Initialize empty first
         };
 
         debug_assert!(
@@ -468,8 +463,6 @@ impl<'a> IndexedCrate<'a> {
         value.fn_owner_index = Some(build_fn_owner_index(&crate_.index));
         value.export_name_index = Some(build_export_name_index(&crate_.index));
 
-        value.generic_param_maybe_sized = build_generic_param_maybe_sized_index(&crate_.index);
-        
         value
     }
 
@@ -632,90 +625,6 @@ fn build_export_name_index(index: &HashMap<Id, Item>) -> HashMap<&str, &Item> {
     })
     .collect()
 }
-
-fn build_generic_param_maybe_sized_index(crate_index: &HashMap<Id, Item>) -> HashMap<(Id, String), bool> {
-    let mut maybe_sized_map = HashMap::default();
-
-    // --- Sized Trait Identification (Placeholder/Fallback) ---
-    // TODO: Ideally, get the actual Id of core::marker::Sized *once* here if possible.
-    // let sized_trait_id: Option<&Id> = find_sized_trait_id(crate_index);
-    let sized_trait_path_suffix = "Sized"; // Fallback
-
-    for (item_id, item) in crate_index.iter() {
-        // Get the Generics context if the item has one
-        let generics_context: Option<&Generics> = match &item.inner {
-            rustdoc_types::ItemEnum::Struct(s) => Some(&s.generics),
-            rustdoc_types::ItemEnum::Enum(e) => Some(&e.generics),
-            rustdoc_types::ItemEnum::Union(u) => Some(&u.generics),
-            rustdoc_types::ItemEnum::Trait(t) => Some(&t.generics),
-            rustdoc_types::ItemEnum::Function(f) => Some(&f.generics),
-            rustdoc_types::ItemEnum::Impl(i) => Some(&i.generics),
-            rustdoc_types::ItemEnum::TypeAlias(ta) => Some(&ta.generics),
-            _ => None,
-        };
-
-        if let Some(generics) = generics_context {
-            // Iterate through each parameter defined in the <...> part
-            for param_def in &generics.params {
-                // We only care about Type parameters (like T, not 'a or const N)
-                if let GenericParamDefKind::Type { bounds: inline_bounds, .. } = &param_def.kind {
-                    let param_name = &param_def.name;
-
-                    // --- Logic to determine if this parameter is maybe_sized ---
-                    let mut is_explicitly_maybe_sized = false;
-
-                    // --- Check 1: Inline Bounds (e.g., <T: ?Sized>) ---
-                    for bound in inline_bounds {
-                        if let GenericBound::TraitBound { trait_, modifier, .. } = bound {
-                             // Check if it's the Sized trait (using fallback)
-                            if trait_.path.ends_with(sized_trait_path_suffix) {
-                                if matches!(modifier, TraitBoundModifier::Maybe) {
-                                    is_explicitly_maybe_sized = true;
-                                    break; // Found ?Sized, no need to check further inline
-                                }
-                            }
-                        }
-                    }
-
-                    // --- Check 2: Where Predicates (e.g., where T: ?Sized) ---
-                    // Only check if we didn't already find ?Sized inline
-                    if !is_explicitly_maybe_sized {
-                        for predicate in &generics.where_predicates {
-                            if let WherePredicate::BoundPredicate { type_, bounds: where_bounds, .. } = predicate {
-                                // Check if this predicate applies to *our* type parameter
-                                if let Type::Generic(name) = type_ {
-                                    if name == param_name {
-                                        // Check this predicate's bounds list
-                                        for bound in where_bounds {
-                                             if let GenericBound::TraitBound { trait_, modifier, .. } = bound {
-                                                // Check if it's the Sized trait (using fallback)
-                                                if trait_.path.ends_with(sized_trait_path_suffix) {
-                                                    if matches!(modifier, TraitBoundModifier::Maybe) {
-                                                        is_explicitly_maybe_sized = true;
-                                                        break; // Found ?Sized
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        // If we found it in this predicate, stop checking other predicates
-                                        if is_explicitly_maybe_sized { break; }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // --- Store Result ---
-                    // The result is simply whether we found an explicit '?Sized' anywhere.
-                    // If not found, the default is Sized, so maybe_sized is false.
-                    maybe_sized_map.insert((*item_id, param_name.clone()), is_explicitly_maybe_sized);
-                }
-            }
-        }
-    }
-    maybe_sized_map
-}
-
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
