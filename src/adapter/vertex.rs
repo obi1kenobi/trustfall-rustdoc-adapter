@@ -1,8 +1,7 @@
 use std::{borrow::Cow, num::NonZeroUsize, rc::Rc};
 
 use rustdoc_types::{
-    Abi, Constant, Crate, Enum, Function, GenericBound, GenericParamDef, Impl, Item, Module, Path,
-    Span, Static, Struct, Trait, Type, Union, VariantKind,
+    Abi, Constant, Crate, Enum, Function, GenericBound, GenericParamDef, Id, Impl, Item, Module, Path, Span, Static, Struct, Trait, Type, Union, VariantKind
 };
 use trustfall::provider::Typename;
 
@@ -73,6 +72,7 @@ pub enum VertexKind<'a> {
 
     #[non_exhaustive]
     GenericParameter(
+        Id,
         &'a rustdoc_types::Generics,
         &'a GenericParamDef,
         Option<NonZeroUsize>,
@@ -138,7 +138,7 @@ impl Typename for Vertex<'_> {
                 VariantKind::Struct { .. } => "StructVariant",
             },
             VertexKind::DeriveHelperAttr(..) => "DeriveMacroHelperAttribute",
-            VertexKind::GenericParameter(_, param, _) => match &param.kind {
+            VertexKind::GenericParameter(_, _, param, _) => match &param.kind {
                 rustdoc_types::GenericParamDefKind::Lifetime { .. } => "GenericLifetimeParameter",
                 rustdoc_types::GenericParamDefKind::Type { .. } => "GenericTypeParameter",
                 rustdoc_types::GenericParamDefKind::Const { .. } => "GenericConstParameter",
@@ -369,16 +369,16 @@ impl<'a> Vertex<'a> {
 
     pub(super) fn as_generic_parameter(
         &self,
-    ) -> Option<(&'a rustdoc_types::Generics, &'a GenericParamDef)> {
+    ) -> Option<(Id, &'a rustdoc_types::Generics, &'a rustdoc_types::GenericParamDef)> {
         match &self.kind {
-            VertexKind::GenericParameter(generics, param, _) => Some((generics, param)),
+            VertexKind::GenericParameter(parent_id, generics, param, _) => Some((*parent_id, generics, param)),
             _ => None,
         }
     }
 
     pub(super) fn as_generic_parameter_position(&self) -> Option<Option<NonZeroUsize>> {
         match &self.kind {
-            VertexKind::GenericParameter(_, _, position) => Some(*position),
+            VertexKind::GenericParameter(_, _, _, position) => Some(*position),
             _ => None,
         }
     }
