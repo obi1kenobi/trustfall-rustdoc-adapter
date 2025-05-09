@@ -372,9 +372,9 @@ fn fmt_generic_bound(this: &GenericBound, f: &mut Formatter<'_>) -> Result {
             write!(f, "use<")?;
             intersperse(f, ", ", vec, |arg, f| match arg {
                 rustdoc_types::PreciseCapturingArg::Lifetime(lifetime) => {
-                    write!(f, "'{}", lifetime)
+                    write!(f, "'{lifetime}")
                 }
-                rustdoc_types::PreciseCapturingArg::Param(p) => write!(f, "{}", p),
+                rustdoc_types::PreciseCapturingArg::Param(p) => write!(f, "{p}"),
             })?;
             write!(f, ">")
         }
@@ -389,7 +389,7 @@ display_wrapper!(GenericBound, fmt_generic_bound, bool);
 
 fn fmt_constant(this: &Constant, f: &mut Formatter<'_>) -> Result {
     if let Some(val) = &this.0.value {
-        write!(f, "{}", val)
+        write!(f, "{val}")
     } else {
         // The stringified form is unstable.  For example, `{ 1 + 2 }` currently
         // becomes `{ _ }`.
@@ -640,13 +640,13 @@ mod tests {
     fn typename() {
         let test_case = "rust_type_name";
 
-        let rustdoc_path = format!("./localdata/test_data/{}/rustdoc.json", test_case);
+        let rustdoc_path = format!("./localdata/test_data/{test_case}/rustdoc.json");
         let content = std::fs::read_to_string(&rustdoc_path)
             .with_context(|| format!("Could not load {rustdoc_path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
             .expect("failed to load rustdoc");
         let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
 
-        let manifest_path = format!("./test_crates/{}/Cargo.toml", test_case);
+        let manifest_path = format!("./test_crates/{test_case}/Cargo.toml");
 
         let mut metadata = cargo_metadata::MetadataCommand::new()
             .manifest_path(&manifest_path)
