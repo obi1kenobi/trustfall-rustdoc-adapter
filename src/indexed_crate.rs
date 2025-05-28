@@ -881,7 +881,10 @@ fn create_manually_inlined_builtin_traits(crate_: &Crate) -> (HashMap<Id, Item>,
         })
         .collect();
 
-    assert_eq!(manually_inlined_builtin_traits.len(), MANUAL_TRAIT_ITEMS.len(), "failed to find some expected built-in traits: found only {manually_inlined_builtin_traits:?} and expected {MANUAL_TRAIT_ITEMS:?}");
+    assert_eq!(
+        manually_inlined_builtin_traits.len(), MANUAL_TRAIT_ITEMS.len(),
+        "failed to find some expected built-in traits: found only {manually_inlined_builtin_traits:?} and expected {MANUAL_TRAIT_ITEMS:?}",
+    );
 
     let sized_id = manually_inlined_builtin_traits
         .iter()
