@@ -6573,12 +6573,12 @@ fn generic_type_param_maybe_sized() {
     }
 }
 "#;
-let impl_query = r#"
+    let impl_query = r#"
 {
     Crate {
         item {
             ... on ImplOwner {
-                impl {
+                inherent_impl {
                     generic_parameter {
                         ... on GenericTypeParameter {
                             generic_name: name @output
@@ -6600,7 +6600,7 @@ let impl_query = r#"
     Crate {
         item {
             ... on ImplOwner {
-                impl {
+                inherent_impl {
                     method {
                         name @output
 
@@ -6660,13 +6660,8 @@ let impl_query = r#"
     )
     .expect("failed to run top level query")
     .chain(
-        trustfall::execute_query(
-            &schema,
-            adapter.clone(),
-            impl_query,
-            variables.clone(),
-        )
-        .expect("failed to run impl query"),
+        trustfall::execute_query(&schema, adapter.clone(), impl_query, variables.clone())
+            .expect("failed to run impl query"),
     )
     .chain(
         trustfall::execute_query(
@@ -6884,7 +6879,7 @@ let impl_query = r#"
         },
         Output {
             name: "impl_trait2".into(),
-            generic_name: "impl GenericTrait<T, U, V> + ?Sized".into(),
+            generic_name: "impl GenericTrait<T, U, V> + ?core::marker::Sized".into(),
             maybe_sized: true,
         },
         Output {

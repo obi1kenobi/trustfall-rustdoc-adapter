@@ -49,7 +49,7 @@ pub fn generic_fn2<T: core::marker::Sized + ?core::marker::Sized>(value: &T) {}
 pub fn generic_fn3<T: Sized + ?core::marker::Sized>(value: T) {}
 
 // `T` is sized. `SizedRenamed` is an import rename of the built-in `Sized` trait.
-pub fn generic_f3a<T: SizedRenamed + ?core::marker::Sized>(value: T) {}
+pub fn generic_fn3a<T: SizedRenamed + ?core::marker::Sized>(value: T) {}
 
 // `T` is sized. The `?Sized` is overridden by both explicit bounds: the `where` and the `:` bound.
 pub fn generic_fn4<T: core::marker::Sized + ?core::marker::Sized>(value: &T)
