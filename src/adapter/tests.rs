@@ -6902,6 +6902,22 @@ fn generic_type_param_maybe_sized() {
             generic_name: "T".into(),
             maybe_sized: false,
         },
+        Output {
+            name: "ImplicitlySized".into(),
+            generic_name: "T".into(),
+            // See the note in the test crate.
+            // Our `maybe_sized` analysis is local, which believes this to be `true`.
+            // A smarter, global analysis would actually determine the correct answer is `false`.
+            maybe_sized: true,
+        },
+        Output {
+            name: "ImplicitlySizedFromBuiltInTrait".into(),
+            generic_name: "T".into(),
+            // See the note in the test crate.
+            // Our `maybe_sized` analysis is local, which believes this to be `true`.
+            // A smarter, global analysis would actually determine the correct answer is `false`.
+            maybe_sized: true,
+        },
     ];
     expected_results.sort_unstable();
 
