@@ -2586,6 +2586,21 @@ type GenericTypeParameter implements GenericParameter {
   """
   type_bound: [ImplementedTrait!]
 
+  """
+  Whether the type parameter is `?Sized`.
+
+  Generic parameters are `Sized` by default, in which case this is `false`.
+  They may opt out of that implicit bound by specifying a bound on `?Sized`,
+  in which case the value here will be `true`.
+
+  This value considers all local bounds involving `Sized`.
+  For example:
+  - `T: Sized + ?Sized` is considered `Sized`, and the value here is `false`.
+  - `T: SomeTrait + ?Sized` is considered `?Sized` and the value here is `true`,
+    even if `SomeTrait` is defined as `trait SomeTrait: Sized`.
+  """
+  maybe_sized: Boolean!
+
   # TODO: needs lifetime bounds
   # lifetime_bound: ?
 }
