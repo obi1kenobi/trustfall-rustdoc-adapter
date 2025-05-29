@@ -147,7 +147,7 @@ impl<T> ImplNarrowing<T> {
 }
 
 // Anything that implements this trait must be `Sized`.
-trait SizedSuper: Sized {}
+trait SizedSuper: core::marker::Sized {}
 
 // `T` here is a weird edge case:
 // - A *local* analysis of the bounds determines it to be `?Sized`.
@@ -162,6 +162,7 @@ trait SizedSuper: Sized {}
 // This is also "infectious", auto-trait-like: a trait way upstream of `T`'s supertraits
 // may change its bounds in a way that changes whether `T` is sized or not.
 #[allow(private_bounds)]
+#[allow(clippy::needless_maybe_sized)]
 pub struct ImplicitlySized<T: SizedSuper + ?core::marker::Sized>(T);
 
 // `T` here is another such weird edge case:
