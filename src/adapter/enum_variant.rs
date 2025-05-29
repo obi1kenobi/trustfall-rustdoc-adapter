@@ -130,10 +130,10 @@ impl DiscriminantValue {
 impl fmt::Display for DiscriminantValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DiscriminantValue::I64(i) => write!(f, "{}", i),
-            DiscriminantValue::U64(i) => write!(f, "{}", i),
-            DiscriminantValue::I128(i) => write!(f, "{}", i),
-            DiscriminantValue::U128(i) => write!(f, "{}", i),
+            DiscriminantValue::I64(i) => write!(f, "{i}"),
+            DiscriminantValue::U64(i) => write!(f, "{i}"),
+            DiscriminantValue::I128(i) => write!(f, "{i}"),
+            DiscriminantValue::U128(i) => write!(f, "{i}"),
         }
     }
 }
