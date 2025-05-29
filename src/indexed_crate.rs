@@ -221,6 +221,10 @@ pub struct IndexedCrate<'a> {
     /// A more complete future solution may generate multiple crates' rustdoc JSON
     /// and link to the external crate's trait items as necessary.
     pub(crate) manually_inlined_builtin_traits: HashMap<Id, Item>,
+
+    /// The ID of the built-in `core::marker::Sized` trait.
+    /// Used for analyzing `?Sized` generic types.
+    pub(crate) sized_trait: Id,
 }
 
 /// Map a Key to a List (Vec) of values
@@ -412,10 +416,14 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
 
 impl<'a> IndexedCrate<'a> {
     pub fn new(crate_: &'a Crate) -> Self {
+        let (manually_inlined_builtin_traits, sized_trait) =
+            create_manually_inlined_builtin_traits(crate_);
+
         let mut value = Self {
             inner: crate_,
             visibility_tracker: VisibilityTracker::from_crate(crate_),
-            manually_inlined_builtin_traits: create_manually_inlined_builtin_traits(crate_),
+            manually_inlined_builtin_traits,
+            sized_trait,
             flags: None,
             imports_index: None,
             impl_index: None,
@@ -849,7 +857,7 @@ fn new_trait(manual_trait_item: &ManualTraitItem, id: Id, crate_id: u32) -> Item
     }
 }
 
-fn create_manually_inlined_builtin_traits(crate_: &Crate) -> HashMap<Id, Item> {
+fn create_manually_inlined_builtin_traits(crate_: &Crate) -> (HashMap<Id, Item>, Id) {
     let paths = &crate_.paths;
 
     // `paths` may have thousands of items.
@@ -858,19 +866,33 @@ fn create_manually_inlined_builtin_traits(crate_: &Crate) -> HashMap<Id, Item> {
     #[cfg(not(feature = "rayon"))]
     let iter = paths.iter();
 
-    iter.filter_map(|(id, entry)| {
-        if entry.kind != rustdoc_types::ItemKind::Trait {
-            return None;
-        }
+    let manually_inlined_builtin_traits: HashMap<Id, Item> = iter
+        .filter_map(|(id, entry)| {
+            if entry.kind != rustdoc_types::ItemKind::Trait {
+                return None;
+            }
 
-        // This is a linear scan, but across a tiny array.
-        // It isn't worth doing anything fancier here.
-        MANUAL_TRAIT_ITEMS
-            .iter()
-            .find(|t| t.path == entry.path)
-            .map(|manual| (*id, new_trait(manual, *id, entry.crate_id)))
-    })
-    .collect()
+            // This is a linear scan, but across a tiny array.
+            // It isn't worth doing anything fancier here.
+            MANUAL_TRAIT_ITEMS
+                .iter()
+                .find(|t| t.path == entry.path)
+                .map(|manual| (*id, new_trait(manual, *id, entry.crate_id)))
+        })
+        .collect();
+
+    assert_eq!(
+        manually_inlined_builtin_traits.len(), MANUAL_TRAIT_ITEMS.len(),
+        "failed to find some expected built-in traits: found only {manually_inlined_builtin_traits:?} and expected {MANUAL_TRAIT_ITEMS:?}",
+    );
+
+    let sized_id = manually_inlined_builtin_traits
+        .iter()
+        .find(|(_, item)| item.name.as_deref() == Some("Sized"))
+        .map(|(id, _)| *id)
+        .expect("failed to find `Sized` trait");
+
+    (manually_inlined_builtin_traits, sized_id)
 }
 
 #[cfg(test)]
