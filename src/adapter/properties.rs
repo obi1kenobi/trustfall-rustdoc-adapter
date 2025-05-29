@@ -1,4 +1,4 @@
-use rustdoc_types::{ItemEnum, Visibility};
+use rustdoc_types::{ItemEnum, Visibility, WherePredicate};
 use trustfall::{
     provider::{
         accessor_property, field_property, resolve_property_with, AsVertex, ContextIterator,
@@ -759,6 +759,8 @@ pub(crate) fn resolve_generic_parameter_property<'a, V: AsVertex<Vertex<'a>> + '
 pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "has_default" => resolve_property_with(contexts, |vertex| {
@@ -784,6 +786,88 @@ pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>
                 }
                 _ => unreachable!("vertex was not a GenericTypeParameter: {vertex:?}"),
             }
+        }),
+        "maybe_sized" => resolve_property_with(contexts, move |vertex| {
+            let (generics, param) = vertex
+                .as_generic_parameter()
+                .expect("vertex was not a GenericTypeParameter");
+
+            let sized_trait_id = match vertex.origin {
+                Origin::CurrentCrate => current_crate,
+                Origin::PreviousCrate => previous_crate.expect("no previous crate provided"),
+            }
+            .own_crate
+            .sized_trait;
+
+            let mut maybe_sized = false;
+
+            match &param.kind {
+                rustdoc_types::GenericParamDefKind::Type { bounds, .. } => {
+                    for bound in bounds {
+                        if let rustdoc_types::GenericBound::TraitBound {
+                            trait_, modifier, ..
+                        } = bound
+                        {
+                            if trait_.id == sized_trait_id {
+                                match modifier {
+                                    rustdoc_types::TraitBoundModifier::None => {
+                                        // The generic includes an explicit `Sized` bound.
+                                        // It is definitely sized, even if it also has `?Sized`.
+                                        return false.into();
+                                    }
+                                    rustdoc_types::TraitBoundModifier::Maybe => {
+                                        // The generic includes a `?Sized` bound relaxation.
+                                        // But it still might *not* be `?Sized` since it might
+                                        // include an explicit `Sized` bound too.
+                                        maybe_sized = true;
+                                    }
+                                    _ => {} // Other modifiers don't apply here.
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => unreachable!("vertex was not a GenericTypeParameter: {vertex:?}"),
+            }
+
+            for predicate in &generics.where_predicates {
+                if let WherePredicate::BoundPredicate {
+                    type_: rustdoc_types::Type::Generic(generic_name),
+                    bounds: where_bounds,
+                    ..
+                } = &predicate
+                {
+                    if generic_name.as_str() == param.name {
+                        for bound in where_bounds {
+                            if let rustdoc_types::GenericBound::TraitBound {
+                                trait_,
+                                modifier,
+                                ..
+                            } = bound
+                            {
+                                if trait_.id == sized_trait_id {
+                                    match modifier {
+                                        rustdoc_types::TraitBoundModifier::None => {
+                                            // The generic includes an explicit `Sized` bound.
+                                            // It is definitely sized, even if it also has `?Sized`.
+                                            return false.into();
+                                        }
+                                        rustdoc_types::TraitBoundModifier::Maybe => {
+                                            // The generic includes a `?Sized` bound relaxation.
+                                            // But it still might *not* be `?Sized` since it might
+                                            // include an explicit `Sized` bound too.
+                                            maybe_sized = true;
+                                        }
+                                        _ => {} // Other modifiers don't apply here.
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            maybe_sized.into()
         }),
         _ => unreachable!("GenericTypeParameter property {property_name}"),
     }

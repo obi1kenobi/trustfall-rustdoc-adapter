@@ -212,9 +212,12 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 {
                     properties::resolve_generic_parameter_property(contexts, property_name)
                 }
-                "GenericTypeParameter" => {
-                    properties::resolve_generic_type_parameter_property(contexts, property_name)
-                }
+                "GenericTypeParameter" => properties::resolve_generic_type_parameter_property(
+                    contexts,
+                    property_name,
+                    self.current_crate,
+                    self.previous_crate,
+                ),
                 "GenericConstParameter" => {
                     properties::resolve_generic_const_parameter_property(contexts, property_name)
                 }

@@ -70,9 +70,9 @@ fn extract_kind_string(ty: &Type) -> Cow<'_, str> {
                                         } => {
                                             let inner = extract_kind_string(type_);
                                             if *is_mutable {
-                                                Cow::Owned(format!("&mut {}", inner))
+                                                Cow::Owned(format!("&mut {inner}"))
                                             } else {
-                                                Cow::Owned(format!("&{}", inner))
+                                                Cow::Owned(format!("&{inner}"))
                                             }
                                         }
                                         _ => extract_kind_string(t),
@@ -94,7 +94,7 @@ fn extract_kind_string(ty: &Type) -> Cow<'_, str> {
                             .collect::<Vec<_>>()
                             .join(", ");
 
-                        Cow::Owned(format!("{}<{}>", name, args_joined))
+                        Cow::Owned(format!("{name}<{args_joined}>"))
                     }
                     _ => Cow::Borrowed(name),
                 }

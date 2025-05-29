@@ -6547,3 +6547,379 @@ fn method_self_receiver() {
     expected_results.sort_unstable();
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn generic_type_param_maybe_sized() {
+    get_test_data!(data, generic_type_param_maybe_sized);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let top_level_query = r#"
+{
+    Crate {
+        item {
+            ... on GenericItem {
+                name @output
+                name @filter(op: "!=", value: ["$method_name"])
+
+                generic_parameter {
+                    ... on GenericTypeParameter {
+                        generic_name: name @output
+                        maybe_sized @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let impl_query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                inherent_impl {
+                    generic_parameter {
+                        ... on GenericTypeParameter {
+                            generic_name: name @output
+                            maybe_sized @output
+                        }
+                    }
+
+                    method {
+                        name @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let impl_owner_methods_query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                inherent_impl {
+                    method {
+                        name @output
+
+                        generic_parameter {
+                            ... on GenericTypeParameter {
+                                generic_name: name @output
+                                maybe_sized @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let trait_methods_query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                method {
+                    name @output
+
+                    generic_parameter {
+                        ... on GenericTypeParameter {
+                            generic_name: name @output
+                            maybe_sized @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, i64> = BTreeMap::default();
+    let mut top_level_variables: BTreeMap<&str, &str> = BTreeMap::default();
+    top_level_variables.insert("method_name", "method");
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        generic_name: String,
+        maybe_sized: bool,
+    }
+
+    let mut results: Vec<Output> = trustfall::execute_query(
+        &schema,
+        adapter.clone(),
+        top_level_query,
+        top_level_variables.clone(),
+    )
+    .expect("failed to run top level query")
+    .chain(
+        trustfall::execute_query(&schema, adapter.clone(), impl_query, variables.clone())
+            .expect("failed to run impl query"),
+    )
+    .chain(
+        trustfall::execute_query(
+            &schema,
+            adapter.clone(),
+            impl_owner_methods_query,
+            variables.clone(),
+        )
+        .expect("failed to run impl owners query"),
+    )
+    .chain(
+        trustfall::execute_query(
+            &schema,
+            adapter.clone(),
+            trait_methods_query,
+            variables.clone(),
+        )
+        .expect("failed to run trait methods query"),
+    )
+    .map(|row| row.try_into_struct().expect("shape mismatch"))
+    .collect();
+
+    // Ensure that the results are in sorted order, and also that the aggregated bounds are sorted.
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "GenericStruct".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+        },
+        Output {
+            name: "GenericStruct".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "GenericStruct".into(),
+            generic_name: "V".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "GenericEnum".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+        },
+        Output {
+            name: "GenericEnum".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "GenericEnum".into(),
+            generic_name: "V".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "GenericUnion".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+        },
+        Output {
+            name: "GenericUnion".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "GenericUnion".into(),
+            generic_name: "V".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "GenericTrait".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+        },
+        Output {
+            name: "GenericTrait".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "GenericTrait".into(),
+            generic_name: "V".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "trait_method".into(),
+            generic_name: "W".into(),
+            maybe_sized: true,
+        },
+        Output {
+            name: "trait_method".into(),
+            generic_name: "X".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "trait_method".into(),
+            generic_name: "Y".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn1".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+        },
+        Output {
+            name: "generic_fn1".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn1".into(),
+            generic_name: "V".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn2".into(),
+            generic_name: "T".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn3".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+        },
+        Output {
+            name: "generic_fn3a".into(),
+            generic_name: "T".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn4".into(),
+            generic_name: "T".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn5".into(),
+            generic_name: "T".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn6".into(),
+            generic_name: "T".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn7".into(),
+            generic_name: "T".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn7a".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+        },
+        Output {
+            name: "generic_fn8".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+        },
+        Output {
+            name: "generic_fn8".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn8".into(),
+            generic_name: "V".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "generic_fn9".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+        },
+        Output {
+            name: "impl_trait".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+        },
+        Output {
+            name: "impl_trait".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "impl_trait".into(),
+            generic_name: "V".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "impl_trait".into(),
+            generic_name: "impl GenericTrait<T, U, V>".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "impl_trait2".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+        },
+        Output {
+            name: "impl_trait2".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "impl_trait2".into(),
+            generic_name: "V".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "impl_trait2".into(),
+            generic_name: "impl GenericTrait<T, U, V> + ?core::marker::Sized".into(),
+            maybe_sized: true,
+        },
+        Output {
+            name: "generic_method".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+        },
+        Output {
+            name: "generic_method".into(),
+            generic_name: "U".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "ImplNarrowing".into(),
+            generic_name: "T".into(),
+            maybe_sized: true,
+        },
+        Output {
+            name: "taking_sized_t".into(),
+            generic_name: "T".into(),
+            maybe_sized: false,
+        },
+        Output {
+            name: "ImplicitlySized".into(),
+            generic_name: "T".into(),
+            // See the note in the test crate.
+            // Our `maybe_sized` analysis is local, which believes this to be `true`.
+            // A smarter, global analysis would actually determine the correct answer is `false`.
+            maybe_sized: true,
+        },
+        Output {
+            name: "ImplicitlySizedFromBuiltInTrait".into(),
+            generic_name: "T".into(),
+            // See the note in the test crate.
+            // Our `maybe_sized` analysis is local, which believes this to be `true`.
+            // A smarter, global analysis would actually determine the correct answer is `false`.
+            maybe_sized: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
