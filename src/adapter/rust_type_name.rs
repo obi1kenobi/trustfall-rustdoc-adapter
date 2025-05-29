@@ -640,13 +640,13 @@ mod tests {
     fn typename() {
         let test_case = "rust_type_name";
 
-        let rustdoc_path = format!("./localdata/test_data/{}/rustdoc.json", test_case);
+        let rustdoc_path = format!("./localdata/test_data/{test_case}/rustdoc.json");
         let content = std::fs::read_to_string(&rustdoc_path)
             .with_context(|| format!("Could not load {rustdoc_path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
             .expect("failed to load rustdoc");
         let crate_ = serde_json::from_str(&content).expect("failed to parse rustdoc");
 
-        let manifest_path = format!("./test_crates/{}/Cargo.toml", test_case);
+        let manifest_path = format!("./test_crates/{test_case}/Cargo.toml");
 
         let mut metadata = cargo_metadata::MetadataCommand::new()
             .manifest_path(&manifest_path)
