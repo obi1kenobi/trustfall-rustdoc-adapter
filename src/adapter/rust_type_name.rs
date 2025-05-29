@@ -372,9 +372,9 @@ fn fmt_generic_bound(this: &GenericBound, f: &mut Formatter<'_>) -> Result {
             write!(f, "use<")?;
             intersperse(f, ", ", vec, |arg, f| match arg {
                 rustdoc_types::PreciseCapturingArg::Lifetime(lifetime) => {
-                    write!(f, "'{}", lifetime)
+                    write!(f, "'{lifetime}")
                 }
-                rustdoc_types::PreciseCapturingArg::Param(p) => write!(f, "{}", p),
+                rustdoc_types::PreciseCapturingArg::Param(p) => write!(f, "{p}"),
             })?;
             write!(f, ">")
         }
@@ -389,7 +389,7 @@ display_wrapper!(GenericBound, fmt_generic_bound, bool);
 
 fn fmt_constant(this: &Constant, f: &mut Formatter<'_>) -> Result {
     if let Some(val) = &this.0.value {
-        write!(f, "{}", val)
+        write!(f, "{val}")
     } else {
         // The stringified form is unstable.  For example, `{ 1 + 2 }` currently
         // becomes `{ _ }`.
