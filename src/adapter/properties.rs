@@ -293,7 +293,7 @@ pub(super) fn resolve_function_like_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     }
 }
 
-pub(super) fn resolve_function_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+pub(super) fn resolve_exportable_function_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
@@ -302,6 +302,19 @@ pub(super) fn resolve_function_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let item = vertex.as_item().expect("not an Item vertex");
             crate::exported_name::item_export_name(item).into()
         }),
+        _ => unreachable!("ExportableFunction property {property_name}"),
+    }
+}
+
+pub(super) fn resolve_function_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    _contexts: ContextIterator<'a, V>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    #[expect(
+        clippy::match_single_binding,
+        reason = "we'll add more properties here eventually"
+    )]
+    match property_name {
         _ => unreachable!("Function property {property_name}"),
     }
 }
