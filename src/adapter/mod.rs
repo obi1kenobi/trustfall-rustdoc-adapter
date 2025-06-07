@@ -110,6 +110,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 | "StructVariant"
                 | "Union"
                 | "Trait"
+                | "ExportableFunction"
                 | "Function"
                 | "Method"
                 | "Impl"
@@ -152,13 +153,18 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 "ImportablePath" => {
                     properties::resolve_importable_path_property(contexts, property_name)
                 }
-                "FunctionLike" | "Function" | "Method"
+                "FunctionLike" | "ExportableFunction" | "Function" | "Method"
                     if matches!(
                         property_name.as_ref(),
                         "const" | "unsafe" | "async" | "has_body" | "signature"
                     ) =>
                 {
                     properties::resolve_function_like_property(contexts, property_name)
+                }
+                "ExportableFunction" | "Function" | "Method"
+                    if matches!(property_name.as_ref(), "export_name") =>
+                {
+                    properties::resolve_exportable_function_property(contexts, property_name)
                 }
                 "Function" => properties::resolve_function_property(contexts, property_name),
                 "FunctionParameter" => {
@@ -275,6 +281,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
             | "Union"
             | "StructVariant"
             | "Trait"
+            | "ExportableFunction"
             | "Function"
             | "Method"
             | "Impl"
@@ -298,7 +305,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
             {
                 edges::resolve_impl_owner_edge(self, contexts, edge_name, resolve_info)
             }
-            "Function" | "Method" | "FunctionLike"
+            "Function" | "Method" | "FunctionLike" | "ExportableFunction"
                 if matches!(edge_name.as_ref(), "parameter" | "abi") =>
             {
                 edges::resolve_function_like_edge(contexts, edge_name)
@@ -381,8 +388,8 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
     ) -> ContextOutcomeIterator<'a, V, bool> {
         let coerce_to_type = coerce_to_type.clone();
         match type_name.as_ref() {
-            "Item" | "GenericItem" | "Variant" | "FunctionLike" | "Importable" | "ImplOwner"
-            | "RawType" | "GlobalValue" | "ProcMacro" => {
+            "Item" | "GenericItem" | "Variant" | "FunctionLike" | "ExportableFunction"
+            | "Importable" | "ImplOwner" | "RawType" | "GlobalValue" | "ProcMacro" => {
                 resolve_coercion_with(contexts, move |vertex| {
                     let actual_type_name = vertex.typename();
 
@@ -401,6 +408,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                             actual_type_name,
                             "FunctionLikeProcMacro" | "AttributeProcMacro" | "DeriveProcMacro"
                         ),
+                        "ExportableFunction" => matches!(actual_type_name, "Function" | "Method"),
                         _ => {
                             // The remaining types are final (don't have any subtypes)
                             // so we can just compare the actual type name to
