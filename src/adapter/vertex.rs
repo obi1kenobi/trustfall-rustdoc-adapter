@@ -395,7 +395,7 @@ impl<'a> Vertex<'a> {
         })
     }
 
-    pub(super) fn as_receiver(&self) -> Option<&Receiver> {
+    pub(super) fn as_receiver(&self) -> Option<&Receiver<'a>> {
         match &self.kind {
             VertexKind::Receiver(receiver) => Some(receiver),
             _ => None,
