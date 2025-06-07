@@ -128,6 +128,41 @@ pub(super) fn resolve_crate_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 )
             })
         }
+        "ffi_exported_function" => {
+            let current_crate = adapter.current_crate;
+            let previous_crate = adapter.previous_crate;
+
+            resolve_neighbors_with(contexts, move |vertex| {
+                let origin = vertex.origin;
+                let export_name_index = match origin {
+                    Origin::CurrentCrate => &current_crate.own_crate.export_name_index,
+                    Origin::PreviousCrate => {
+                        &previous_crate
+                            .expect("no previous crate provided")
+                            .own_crate
+                            .export_name_index
+                    }
+                }
+                .as_ref()
+                .expect("export_name_index was never constructed");
+
+                Box::new(
+                    export_name_index
+                        .values()
+                        .filter_map(move |item| match &item.inner {
+                            ItemEnum::Function(..) => {
+                                debug_assert!(
+                                    crate::exported_name::item_export_name(item).is_some(),
+                                    "item was part of export_name_index but did not have \
+                                an exported name: {item:?}"
+                                );
+                                Some(origin.make_item_vertex(item))
+                            }
+                            _ => None,
+                        }),
+                )
+            })
+        }
         _ => unreachable!("resolve_crate_edge {edge_name}"),
     }
 }
