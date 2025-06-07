@@ -6923,3 +6923,149 @@ fn generic_type_param_maybe_sized() {
 
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn rustdoc_ffi_exported_functions() {
+    get_test_data!(data, ffi_exported_functions);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        ffi_exported_function {
+            name @output
+            export_name @output
+
+            abi {
+                abi: raw_name @output
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        export_name: String,
+        abi: String,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            name: "top_level_no_mangle_fn".into(),
+            export_name: "top_level_no_mangle_fn".into(),
+            abi: "C".into(),
+        },
+        Output {
+            name: "top_level_export_name_fn".into(),
+            export_name: "exported".into(),
+            abi: "C-unwind".into(),
+        },
+        Output {
+            name: "associated_fn".into(),
+            export_name: "associated_fn".into(),
+            abi: "C".into(),
+        },
+        Output {
+            name: "assoc_exported_fn".into(),
+            export_name: "assoc_exported".into(),
+            abi: "C-unwind".into(),
+        },
+        Output {
+            name: "method".into(),
+            export_name: "method".into(),
+            abi: "C".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results,);
+}
+
+#[test]
+fn rustdoc_method_export_name() {
+    get_test_data!(data, ffi_exported_functions);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                owner: name @output
+
+                inherent_impl {
+                    method {
+                        name @output
+                        export_name @filter(op: "is_not_null") @output
+
+                        abi {
+                            abi: raw_name @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        owner: String,
+        name: String,
+        export_name: String,
+        abi: String,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            owner: "Example".into(),
+            name: "associated_fn".into(),
+            export_name: "associated_fn".into(),
+            abi: "C".into(),
+        },
+        Output {
+            owner: "Example".into(),
+            name: "assoc_exported_fn".into(),
+            export_name: "assoc_exported".into(),
+            abi: "C-unwind".into(),
+        },
+        Output {
+            owner: "Example".into(),
+            name: "method".into(),
+            export_name: "method".into(),
+            abi: "C".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results,);
+}

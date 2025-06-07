@@ -35,6 +35,16 @@ type Crate {
   item: [Item!]
 
   """
+  Functions whose symbol names are made available for use via FFI.
+
+  Such functions are marked with `#[no_mangle]` or `#[export_name]`, and may either be
+  top-level ("free") functions or ones associated with a type (i.e. defined within the type's
+  `impl` block). From an FFI perspective, this distinction is not relevant since the function call
+  is made via the exported symbol name.
+  """
+  ffi_exported_function: [ExportableFunction!]
+
+  """
   Features that are present in the crate.
 
   If feature data is not loaded into the adapter, this edge will not have any instances.
@@ -1299,6 +1309,100 @@ interface FunctionLike {
 }
 
 """
+A function that may be exported for FFI use. Either a top-level function or a method.
+
+This is a base interface for the `Function` and `Method` types.
+Not all `ExportableFunction` vertices are exported for FFI: such FFI export is supported
+if the appropriate item attributes are set.
+"""
+interface ExportableFunction implements Item & FunctionLike {
+  # properties from Item
+  id: String!
+  crate_id: Int!
+  name: String
+  docs: String
+  attrs: [String!]!
+
+  """
+  This item is hidden in documentation.
+  """
+  doc_hidden: Boolean!
+
+  """
+  This item is deprecated.
+  """
+  deprecated: Boolean!
+
+  """
+  Whether this item is eligible to be in the public API. This is true if both:
+  - The item is public, either explicitly (`pub`) or implicitly (like enum variants).
+  - The item is visible in documentation, or is not visible but is deprecated,
+    since deprecated items are assumed to have been part of the public API in the past.
+
+  Being eligible to be part of the public API *does not* make an item public API!
+  An item that is not eligible by itself cannot be part of the public API,
+  but eligible items might not be public API -- for example, pub-in-priv items
+  (public items in a private module) are eligible but not public API. Another example
+  would be a public item that is only reachable via modules that are both
+  `#[doc(hidden)]` and not deprecated.
+
+  To check whether an item is part of the public API:
+  - For items that are legal in a `use` import statement, use the `importable_path` edge and the
+    path's `public_api` property.
+  - For all other items (e.g. struct fields), first check whether that parent item is public API
+    as above, and then check whether the item itself is `public_api_eligible`.
+  """
+  public_api_eligible: Boolean!
+
+  visibility_limit: String!
+
+  # properties from FunctionLike
+  const: Boolean!
+  unsafe: Boolean!
+  async: Boolean!
+  has_body: Boolean!
+  """
+  Stringified representation of the function's signature, as close to the
+  original source code as possible.  May not preserve whitespace, constant
+  expressions in types, or path names, but the output will be semantically
+  equivalent to the original.
+  """
+  signature: String!
+
+  # own properties
+  """
+  The unmangled or explicitly-specified export name of this item, if any.
+
+  Export names are defined using the `#[export_name]` or `#[no_mangle]` attributes.
+
+  For example:
+  - The following function has `export_name = "example"`:
+    ```rust
+    #[no_mangle]
+    extern "C" fn example() {}
+    ```
+  - The following function has `export_name = "other"`:
+    ```rust
+    #[export_name = "other"]
+    extern "C" fn example() {}
+    ```
+
+  More info:
+  https://doc.rust-lang.org/reference/abi.html#the-no_mangle-attribute
+  https://doc.rust-lang.org/reference/abi.html#the-export_name-attribute
+  """
+  export_name: String
+
+  # edges from Item
+  span: Span
+  attribute: [Attribute!]
+
+  # edges from FunctionLike
+  parameter: [FunctionParameter!]
+  abi: FunctionAbi!
+}
+
+"""
 A function parameter.
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.FnDecl.html
 """
@@ -1359,7 +1463,7 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Function.html
 """
-type Function implements Item & FunctionLike & Importable & GenericItem {
+type Function implements Item & FunctionLike & Importable & ExportableFunction & GenericItem {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -1413,7 +1517,7 @@ type Function implements Item & FunctionLike & Importable & GenericItem {
   """
   signature: String!
 
-  # own properties
+  # properties from ExportableFunction
   """
   The unmangled or explicitly-specified export name of this item, if any.
 
@@ -1527,6 +1631,30 @@ type Method implements Item & FunctionLike & GenericItem {
   equivalent to the original.
   """
   signature: String!
+
+  # properties from ExportableFunction
+  """
+  The unmangled or explicitly-specified export name of this item, if any.
+
+  Export names are defined using the `#[export_name]` or `#[no_mangle]` attributes.
+
+  For example:
+  - The following function has `export_name = "example"`:
+    ```rust
+    #[no_mangle]
+    extern "C" fn example() {}
+    ```
+  - The following function has `export_name = "other"`:
+    ```rust
+    #[export_name = "other"]
+    extern "C" fn example() {}
+    ```
+
+  More info:
+  https://doc.rust-lang.org/reference/abi.html#the-no_mangle-attribute
+  https://doc.rust-lang.org/reference/abi.html#the-export_name-attribute
+  """
+  export_name: String
 
   # edge from Item
   span: Span
