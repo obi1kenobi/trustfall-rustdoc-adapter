@@ -42,14 +42,14 @@ pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
             resolve_method_from_candidate_value(current_crate, previous_crate, vertex, candidate)
         })
     } else if let Some(candidate) = neighbor_info.statically_required_property("name") {
-        return resolve_neighbors_with(contexts, move |vertex| {
+        resolve_neighbors_with(contexts, move |vertex| {
             resolve_method_from_candidate_value(
                 current_crate,
                 previous_crate,
                 vertex,
                 candidate.clone(),
             )
-        });
+        })
     } else {
         resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
