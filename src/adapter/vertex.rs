@@ -406,7 +406,9 @@ impl<'a> Vertex<'a> {
         }
     }
 
-    pub(super) fn as_required_target_feature(&self) -> Option<(&'a rustdoc_types::TargetFeature, bool)> {
+    pub(super) fn as_required_target_feature(
+        &self,
+    ) -> Option<(&'a rustdoc_types::TargetFeature, bool)> {
         match &self.kind {
             VertexKind::RequiredTargetFeature(feature, explicit) => Some((*feature, *explicit)),
             _ => None,

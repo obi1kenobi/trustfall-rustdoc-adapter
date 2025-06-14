@@ -7268,28 +7268,29 @@ fn target_feature() {
         globally_enabled: bool,
     }
 
-    let mut results: Vec<Output> = trustfall::execute_query(
-        &schema,
-        adapter.clone(),
-        top_level_query,
-        variables.clone(),
-    )
-    .expect("failed to run top level query")
-    .chain(
-        trustfall::execute_query(&schema, adapter.clone(), impl_owner_inherent_methods, variables.clone())
-            .expect("failed to run impl owner inherent methods query"),
-    )
-    .chain(
-        trustfall::execute_query(
-            &schema,
-            adapter.clone(),
-            trait_methods_query,
-            variables.clone(),
-        )
-        .expect("failed to run trait methods query"),
-    )
-    .map(|row| row.try_into_struct().expect("shape mismatch"))
-    .collect();
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), top_level_query, variables.clone())
+            .expect("failed to run top level query")
+            .chain(
+                trustfall::execute_query(
+                    &schema,
+                    adapter.clone(),
+                    impl_owner_inherent_methods,
+                    variables.clone(),
+                )
+                .expect("failed to run impl owner inherent methods query"),
+            )
+            .chain(
+                trustfall::execute_query(
+                    &schema,
+                    adapter.clone(),
+                    trait_methods_query,
+                    variables.clone(),
+                )
+                .expect("failed to run trait methods query"),
+            )
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
 
     // Ensure that the results are in sorted order, and also that the aggregated bounds are sorted.
     results.sort_unstable();

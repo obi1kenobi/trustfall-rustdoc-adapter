@@ -1232,7 +1232,7 @@ where
                         .implies_features
                         .iter()
                         .map(String::as_str)
-                        .filter(|feat| !self.produced_features.contains(feat))
+                        .filter(|feat| !self.produced_features.contains(feat)),
                 );
 
                 return Some((enabled_feature, true));
