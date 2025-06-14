@@ -178,3 +178,6 @@ jobs:
 
       - name: Check semver
         uses: obi1kenobi/cargo-semver-checks-action@v2
+        # Our major versions correspond to rustdoc JSON format versions,
+        # so we sometimes have to publish major breaking changes that only bump the minor number.
+        continue-on-error: true
