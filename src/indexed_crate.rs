@@ -221,6 +221,9 @@ pub struct IndexedCrate<'a> {
     /// The ID of the built-in `core::marker::Sized` trait.
     /// Used for analyzing `?Sized` generic types.
     pub(crate) sized_trait: Id,
+
+    /// Target feature information about our current target triple.
+    pub(crate) target_features: HashMap<&'a str, &'a rustdoc_types::TargetFeature>,
 }
 
 /// Map a Key to a List (Vec) of values
@@ -442,6 +445,13 @@ impl<'a> IndexedCrate<'a> {
         let (manually_inlined_builtin_traits, sized_trait) =
             create_manually_inlined_builtin_traits(crate_);
 
+        let target_features = crate_
+            .target
+            .target_features
+            .iter()
+            .map(|feat| (feat.name.as_str(), feat))
+            .collect();
+
         let mut value = Self {
             inner: crate_,
             visibility_tracker: VisibilityTracker::from_crate(crate_),
@@ -452,6 +462,7 @@ impl<'a> IndexedCrate<'a> {
             impl_method_index: None,
             fn_owner_index: None,
             export_name_index: None,
+            target_features,
         };
 
         debug_assert!(
