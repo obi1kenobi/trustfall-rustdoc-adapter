@@ -154,7 +154,6 @@ fn resolve_impl_method_by_name<'a>(
     method_name: &str,
 ) -> VertexIterator<'a, Vertex<'a>> {
     if let Some(method_ids) = impl_index.get(&(impl_owner_id, method_name)) {
-        dbg!(method_ids);
         Box::new(method_ids.iter().filter_map(move |(impl_item, item)| {
             (&impl_item.id == impl_id).then_some(origin.make_item_vertex(item))
         }))
