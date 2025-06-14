@@ -2637,6 +2637,127 @@ fn trait_associated_items_public_api_eligible() {
 }
 
 #[test]
+fn defaulted_trait_items_overridden_in_impls() {
+    get_test_data!(data, defaulted_trait_items_overridden_in_impls);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                name @output
+
+                impl {
+                    implemented_trait {
+                        bare_name @filter(op: "=", value: ["$trait_name"])
+                    }
+
+                    associated_constant @fold {
+                        consts: name @output
+                    }
+
+                    method @fold {
+                        methods: name @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let mut variables: BTreeMap<&str, &str> = BTreeMap::default();
+    variables.insert("trait_name", "Trait");
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        consts: Vec<String>,
+        methods: Vec<String>,
+    }
+
+    let mut expected_results = vec![Output {
+        name: "Example".into(),
+        consts: vec!["N".into()],
+        methods: vec!["method".into()],
+    }];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results,);
+}
+
+#[test]
+fn defaulted_trait_items_overridden_in_impls_when_looked_up_by_name() {
+    get_test_data!(data, defaulted_trait_items_overridden_in_impls);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                name @output
+
+                impl {
+                    method {
+                        method: name @filter(op: "=", value: ["$method"]) @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let mut variables: BTreeMap<&str, &str> = BTreeMap::default();
+    variables.insert("method", "method");
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        method: String,
+    }
+
+    let mut expected_results = vec![
+        // We *must* only get one result here.
+        //
+        // If we get two, we've erroneously returned both
+        // the trait's provided default impl for the method
+        // and the `impl Trait for Example` override for the method.
+        Output {
+            name: "Example".into(),
+            method: "method".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results,);
+}
+
+#[test]
 fn unions() {
     get_test_data!(data, unions);
     let adapter = RustdocAdapter::new(&data, None);
