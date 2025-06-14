@@ -1129,3 +1129,110 @@ pub(super) fn resolve_feature_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
         _ => unreachable!("resolve_feature_edge {edge_name}"),
     }
 }
+
+pub(super) fn resolve_requires_target_feature_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
+    resolve_neighbors_with(contexts, move |vertex| {
+        let origin = vertex.origin;
+        let item = vertex.as_item().expect("vertex was not an Item");
+
+        let features_lookup = match origin {
+            Origin::CurrentCrate => &current_crate.own_crate.target_features,
+            Origin::PreviousCrate => {
+                &previous_crate.expect("no previous crate provided").own_crate.target_features
+            }
+        };
+
+        let enabled_features =
+            item.attrs
+                .iter()
+                .filter(|&attr| attr.contains("target_feature"))
+                .filter_map(|attr| {
+                    let attr = Attribute::new(attr.as_str());
+                    if attr.content.base != "target_feature" {
+                        return None;
+                    }
+
+                    if let Some(args) = attr.content.arguments.as_ref() {
+                        for arg in args {
+                            if arg.base != "enable" {
+                                continue;
+                            }
+
+                            if let Some(feature_list) = arg.assigned_item {
+                                return Some(feature_list.split(",").map(|feature| feature.trim()));
+                            }
+                        }
+                    }
+                    None
+                })
+                .flatten()
+                .map(|feature_name| &features_lookup[feature_name]);
+
+        let resolver = TargetFeatureResolver::new(enabled_features, features_lookup);
+        Box::new(<TargetFeatureResolver<'_, _> as Iterator>::map(resolver, move |(feature, explicit)| {
+            origin.make_required_target_feature(feature, explicit)
+        }))
+    })
+}
+
+#[cfg(not(feature = "rustc-hash"))]
+use std::collections::{HashMap as ImportedHashMap, HashSet as ImportedHashSet};
+
+#[cfg(feature = "rustc-hash")]
+use rustc_hash::{FxHashMap as ImportedHashMap, FxHashSet as ImportedHashSet};
+
+struct TargetFeatureResolver<'a, T> {
+    enabled_features: T,
+    features_lookup: &'a ImportedHashMap<&'static str, rust_target_feature_data::TargetFeature>,
+    produced_features: ImportedHashSet<&'a str>,
+    implied_features: ImportedHashSet<&'a str>,
+}
+
+impl<'a, T> TargetFeatureResolver<'a, T> {
+    fn new(enabled_features: T, features_lookup: &'a ImportedHashMap<&'static str, rust_target_feature_data::TargetFeature>) -> Self {
+        Self {
+            enabled_features,
+            features_lookup,
+            produced_features: Default::default(),
+            implied_features: Default::default()
+        }
+    }
+}
+
+impl<'a, T> Iterator for TargetFeatureResolver<'a, T>
+where T: Iterator<Item = &'a rust_target_feature_data::TargetFeature>
+{
+    type Item = (&'a rust_target_feature_data::TargetFeature, bool);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(enabled_feature) = self.enabled_features.next() {
+            if self.produced_features.insert(enabled_feature.name) {
+                // We have not already produced this feature.
+                // Record its unproduced implied features and produce it.
+                self.implied_features.extend(enabled_feature.implies_features.iter().filter(|feat| !self.produced_features.contains(*feat)));
+
+                return Some((enabled_feature, true));
+            }
+        }
+
+        // We've run out of explicitly enabled features.
+        // Go through implicitly enabled ones.
+        if let Some(feature_name) = self.implied_features.iter().next().copied() {
+            self.implied_features.remove(feature_name);
+            if self.produced_features.insert(feature_name) {
+                // We have not already produced this feature.
+                // Record its unproduced implied features and produce it.
+                let enabled_feature = &self.features_lookup[feature_name];
+                self.implied_features.extend(enabled_feature.implies_features.iter().filter(|feat| !self.produced_features.contains(*feat)));
+
+                return Some((enabled_feature, false));
+            }
+        }
+
+        None
+    }
+}
