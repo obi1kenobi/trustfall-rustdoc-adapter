@@ -8,7 +8,12 @@ use trustfall::provider::{
     VertexIterator,
 };
 
-use crate::{adapter::supported_item_kind, attributes::Attribute, PackageIndex};
+use crate::{
+    adapter::supported_item_kind,
+    attributes::Attribute,
+    hashtables::{HashMap, HashSet},
+    PackageIndex,
+};
 
 use super::{
     enum_variant::LazyDiscriminants,
@@ -1189,23 +1194,17 @@ pub(super) fn resolve_requires_target_feature_edge<'a, V: AsVertex<Vertex<'a>> +
     })
 }
 
-#[cfg(not(feature = "rustc-hash"))]
-use std::collections::{HashMap as ImportedHashMap, HashSet as ImportedHashSet};
-
-#[cfg(feature = "rustc-hash")]
-use rustc_hash::{FxHashMap as ImportedHashMap, FxHashSet as ImportedHashSet};
-
 struct TargetFeatureResolver<'a, T> {
     enabled_features: T,
-    features_lookup: &'a ImportedHashMap<&'static str, rust_target_feature_data::TargetFeature>,
-    produced_features: ImportedHashSet<&'a str>,
-    implied_features: BTreeSet<&'a str>,  // we return items from this set, we need determinism
+    features_lookup: &'a HashMap<&'static str, rust_target_feature_data::TargetFeature>,
+    produced_features: HashSet<&'a str>,
+    implied_features: BTreeSet<&'a str>, // we return items from this set, we need determinism
 }
 
 impl<'a, T> TargetFeatureResolver<'a, T> {
     fn new(
         enabled_features: T,
-        features_lookup: &'a ImportedHashMap<&'static str, rust_target_feature_data::TargetFeature>,
+        features_lookup: &'a HashMap<&'static str, rust_target_feature_data::TargetFeature>,
     ) -> Self {
         Self {
             enabled_features,
