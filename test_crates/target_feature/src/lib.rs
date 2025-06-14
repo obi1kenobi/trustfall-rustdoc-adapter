@@ -8,6 +8,14 @@
 //! pub fn features_with_spaces() {}
 //! ```
 //!
+//! - `#[target_feature]` featuring unrecognized features
+//! ```compile_fail
+//! pub trait Trait {
+//!     #[target_feature(enable = "unrecognized")]
+//!     fn non_defaulted_method();
+//! }
+//! ```
+//!
 //! - `#[target_feature]` on safe trait associated functions
 //! ```compile_fail
 //! pub trait Trait {
