@@ -2681,13 +2681,11 @@ fn defaulted_trait_items_overridden_in_impls() {
         methods: Vec<String>,
     }
 
-    let mut expected_results = vec![
-        Output {
-            name: "Example".into(),
-            consts: vec!["N".into()],
-            methods: vec!["method".into()],
-        },
-    ];
+    let mut expected_results = vec![Output {
+        name: "Example".into(),
+        consts: vec!["N".into()],
+        methods: vec!["method".into()],
+    }];
     expected_results.sort_unstable();
 
     let mut results: Vec<_> =

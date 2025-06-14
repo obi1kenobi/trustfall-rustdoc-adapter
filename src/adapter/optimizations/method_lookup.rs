@@ -206,27 +206,31 @@ fn resolve_methods_slow_path<'a>(
         // Iterate through explicitly-implemented items first, and trait-provided items next.
         // This ensures we prefer the explicitly-implemented method in cases where
         // the trait also provided a default impl (which is overridden and not used).
-        impl_vertex.items.iter().chain(provided_methods).filter_map(move |item_id| {
-            let next_item = &item_index.get(item_id);
+        impl_vertex
+            .items
+            .iter()
+            .chain(provided_methods)
+            .filter_map(move |item_id| {
+                let next_item = &item_index.get(item_id);
 
-            if let Some(next_item) = next_item {
-                let item_name = next_item.name.as_deref()?;
-                match &next_item.inner {
-                    rustdoc_types::ItemEnum::Function(..) => {
-                        // Ensure our iterator doesn't produce duplicate method names
-                        // in the case where a trait provided a default
-                        // but the impl had an override.
-                        if produced_methods.insert(item_name) {
-                            Some(origin.make_item_vertex(next_item))
-                        } else {
-                            None
+                if let Some(next_item) = next_item {
+                    let item_name = next_item.name.as_deref()?;
+                    match &next_item.inner {
+                        rustdoc_types::ItemEnum::Function(..) => {
+                            // Ensure our iterator doesn't produce duplicate method names
+                            // in the case where a trait provided a default
+                            // but the impl had an override.
+                            if produced_methods.insert(item_name) {
+                                Some(origin.make_item_vertex(next_item))
+                            } else {
+                                None
+                            }
                         }
+                        _ => None,
                     }
-                    _ => None,
+                } else {
+                    None
                 }
-            } else {
-                None
-            }
-        })
+            }),
     )
 }

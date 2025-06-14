@@ -7,7 +7,7 @@ use trustfall::{
     FieldValue,
 };
 
-use crate::{adapter::PackageIndex, indexed_crate::ImplEntry, hashtables::HashMap};
+use crate::{adapter::PackageIndex, hashtables::HashMap, indexed_crate::ImplEntry};
 
 use super::super::{origin::Origin, vertex::Vertex, RustdocAdapter};
 

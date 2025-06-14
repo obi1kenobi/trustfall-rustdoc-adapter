@@ -1,11 +1,11 @@
 mod adapter;
 mod attributes;
 mod exported_name;
+mod hashtables;
 mod indexed_crate;
 mod item_flags;
 mod sealed_trait;
 mod visibility_tracker;
-mod hashtables;
 
 #[cfg(test)]
 pub(crate) mod test_util;

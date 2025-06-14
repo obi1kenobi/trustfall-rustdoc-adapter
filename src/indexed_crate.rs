@@ -354,18 +354,17 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
             #[cfg(not(feature = "rayon"))]
             let impl_items = impl_inner.items.iter();
 
-            let impl_entries = impl_items
-                .filter_map(move |item_id| {
-                    let item = index.get(item_id)?;
-                    let item_name = item.name.as_deref()?;
+            let impl_entries = impl_items.filter_map(move |item_id| {
+                let item = index.get(item_id)?;
+                let item_name = item.name.as_deref()?;
 
-                    // The `impl_index` contains only methods, discard other item types.
-                    if matches!(item.inner, rustdoc_types::ItemEnum::Function { .. }) {
-                        Some((ImplEntry::new(id, item_name), (impl_item, item)))
-                    } else {
-                        None
-                    }
-                });
+                // The `impl_index` contains only methods, discard other item types.
+                if matches!(item.inner, rustdoc_types::ItemEnum::Function { .. }) {
+                    Some((ImplEntry::new(id, item_name), (impl_item, item)))
+                } else {
+                    None
+                }
+            });
 
             #[cfg(feature = "rayon")]
             let impl_items = impl_inner.items.par_iter();
@@ -382,7 +381,8 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
                     } else {
                         None
                     }
-                }).collect();
+                })
+                .collect();
 
             let trait_provided_methods: HashSet<_> = impl_inner
                 .provided_trait_methods
@@ -413,7 +413,9 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
                 .filter(move |item| {
                     item.name
                         .as_deref()
-                        .map(|name| trait_provided_methods.contains(name) && !impl_item_names.contains(name))
+                        .map(|name| {
+                            trait_provided_methods.contains(name) && !impl_item_names.contains(name)
+                        })
                         .unwrap_or_default()
                 })
                 .map(move |provided_item| {
@@ -429,8 +431,7 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
                     )
                 });
 
-            impl_entries
-                .chain(trait_provided_items)
+            impl_entries.chain(trait_provided_items)
         })
     })
     .collect()
