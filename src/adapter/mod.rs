@@ -228,6 +228,9 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                     properties::resolve_generic_const_parameter_property(contexts, property_name)
                 }
                 "Receiver" => properties::resolve_receiver_property(contexts, property_name),
+                "RequiredTargetFeature" => {
+                    properties::resolve_required_target_feature_property(contexts, property_name)
+                }
                 _ => unreachable!("resolve_property {type_name} {property_name}"),
             }
         }
@@ -318,6 +321,13 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
             }
             "Method" if matches!(edge_name.as_ref(), "receiver") => {
                 edges::resolve_receiver_edge(contexts, edge_name)
+            }
+            "Function" | "Method" if matches!(edge_name.as_ref(), "requires_feature") => {
+                edges::resolve_requires_target_feature_edge(
+                    contexts,
+                    self.current_crate,
+                    self.previous_crate,
+                )
             }
             "Module" => edges::resolve_module_edge(
                 contexts,
