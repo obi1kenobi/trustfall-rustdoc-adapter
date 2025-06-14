@@ -1609,7 +1609,7 @@ type Function implements Item & FunctionLike & Importable & ExportableFunction &
   fn example() { }
   ```
   """
-  requires_features: [RequiredTargetFeature!]
+  requires_feature: [RequiredTargetFeature!]
 }
 
 """
@@ -1740,7 +1740,7 @@ type Method implements Item & FunctionLike & GenericItem {
   fn example() { }
   ```
   """
-  requires_features: [RequiredTargetFeature!]
+  requires_feature: [RequiredTargetFeature!]
 }
 
 """

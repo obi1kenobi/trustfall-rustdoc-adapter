@@ -223,7 +223,7 @@ pub struct IndexedCrate<'a> {
     pub(crate) sized_trait: Id,
 
     /// Target feature information about our current target triple.
-    pub(crate) feature_data: HashMap<&'static str, rust_target_feature_data::TargetFeature>,
+    pub(crate) target_features: HashMap<&'static str, rust_target_feature_data::TargetFeature>,
 }
 
 /// Map a Key to a List (Vec) of values
@@ -445,7 +445,7 @@ impl<'a> IndexedCrate<'a> {
         let (manually_inlined_builtin_traits, sized_trait) =
             create_manually_inlined_builtin_traits(crate_);
 
-        let feature_data: HashMap<&'static str, _> =
+        let target_features: HashMap<&'static str, _> =
             rust_target_feature_data::find("1.87.0", target_triple)
                 .map(|iter| iter.map(|feat| (feat.name, feat)).collect())
                 .unwrap_or_default();
@@ -460,7 +460,7 @@ impl<'a> IndexedCrate<'a> {
             impl_method_index: None,
             fn_owner_index: None,
             export_name_index: None,
-            feature_data,
+            target_features,
         };
 
         debug_assert!(
