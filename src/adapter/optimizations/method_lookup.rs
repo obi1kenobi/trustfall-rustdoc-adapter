@@ -1,11 +1,3 @@
-use std::collections::BTreeSet;
-
-#[cfg(not(feature = "rustc-hash"))]
-use std::collections::HashMap;
-
-#[cfg(feature = "rustc-hash")]
-use rustc_hash::FxHashMap as HashMap;
-
 use rustdoc_types::{Id, Impl, Item, ItemEnum, Type};
 use trustfall::{
     provider::{
@@ -17,6 +9,7 @@ use trustfall::{
 
 use crate::{
     adapter::{Origin, PackageIndex, Vertex},
+    hashtables::{HashMap, HashSet},
     indexed_crate::ImplEntry,
     RustdocAdapter,
 };
@@ -161,6 +154,7 @@ fn resolve_impl_method_by_name<'a>(
     method_name: &str,
 ) -> VertexIterator<'a, Vertex<'a>> {
     if let Some(method_ids) = impl_index.get(&(impl_owner_id, method_name)) {
+        dbg!(method_ids);
         Box::new(method_ids.iter().filter_map(move |(impl_item, item)| {
             (&impl_item.id == impl_id).then_some(origin.make_item_vertex(item))
         }))
@@ -178,7 +172,7 @@ fn resolve_methods_slow_path<'a>(
         if impl_vertex.provided_trait_methods.is_empty() {
             Box::new(std::iter::empty())
         } else {
-            let method_names: BTreeSet<&str> = impl_vertex
+            let method_names: HashSet<&str> = impl_vertex
                 .provided_trait_methods
                 .iter()
                 .map(|x| x.as_str())
@@ -208,21 +202,32 @@ fn resolve_methods_slow_path<'a>(
             }
         };
 
+    let mut produced_methods: HashSet<&str> = Default::default();
     Box::new(
-        provided_methods
-            .chain(impl_vertex.items.iter())
-            .filter_map(move |item_id| {
-                let next_item = &item_index.get(item_id);
-                if let Some(next_item) = next_item {
-                    match &next_item.inner {
-                        rustdoc_types::ItemEnum::Function(..) => {
+        // Iterate through explicitly-implemented items first, and trait-provided items next.
+        // This ensures we prefer the explicitly-implemented method in cases where
+        // the trait also provided a default impl (which is overridden and not used).
+        impl_vertex.items.iter().chain(provided_methods).filter_map(move |item_id| {
+            let next_item = &item_index.get(item_id);
+
+            if let Some(next_item) = next_item {
+                let item_name = next_item.name.as_deref()?;
+                match &next_item.inner {
+                    rustdoc_types::ItemEnum::Function(..) => {
+                        // Ensure our iterator doesn't produce duplicate method names
+                        // in the case where a trait provided a default
+                        // but the impl had an override.
+                        if produced_methods.insert(item_name) {
                             Some(origin.make_item_vertex(next_item))
+                        } else {
+                            None
                         }
-                        _ => None,
                     }
-                } else {
-                    None
+                    _ => None,
                 }
-            }),
+            } else {
+                None
+            }
+        })
     )
 }

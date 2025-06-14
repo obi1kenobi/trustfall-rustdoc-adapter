@@ -1,9 +1,3 @@
-#[cfg(not(feature = "rustc-hash"))]
-use std::collections::HashMap;
-
-#[cfg(feature = "rustc-hash")]
-use rustc_hash::FxHashMap as HashMap;
-
 use rustdoc_types::{Id, Item};
 use trustfall::{
     provider::{
@@ -13,7 +7,7 @@ use trustfall::{
     FieldValue,
 };
 
-use crate::{adapter::PackageIndex, indexed_crate::ImplEntry};
+use crate::{adapter::PackageIndex, indexed_crate::ImplEntry, hashtables::HashMap};
 
 use super::super::{origin::Origin, vertex::Vertex, RustdocAdapter};
 
