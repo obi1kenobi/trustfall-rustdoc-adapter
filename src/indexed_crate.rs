@@ -2497,14 +2497,14 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
     mod index_tests {
         use itertools::Itertools;
 
-        use crate::{indexed_crate::ImplEntry, test_util::load_pregenerated_rustdoc, IndexedCrate};
+        use crate::{indexed_crate::ImplEntry, test_util::{load_pregenerated_rustdoc, CURRENT_TARGET_TRIPLE}, IndexedCrate};
 
         #[test]
         fn defaulted_trait_items_overridden_in_impls_have_single_item_in_index() {
             let test_crate = "defaulted_trait_items_overridden_in_impls";
 
             let rustdoc = load_pregenerated_rustdoc(test_crate);
-            let indexed_crate = IndexedCrate::new(&rustdoc);
+            let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
 
             let impl_owner = indexed_crate
                 .inner
