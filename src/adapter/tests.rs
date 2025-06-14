@@ -7540,8 +7540,6 @@ fn target_feature() {
     }
     "#;
 
-    eprintln!("\n\n\n\n\n\n\n\n\n");
-
     let mut trait_impl_variables: BTreeMap<&str, &str> = BTreeMap::default();
     trait_impl_variables.insert("trait_name", "Trait");
 
