@@ -1,17 +1,12 @@
 use std::{borrow::Borrow, collections::hash_map::Entry, sync::Arc};
 
-#[cfg(not(feature = "rustc-hash"))]
-use std::collections::{HashMap, HashSet};
-
-#[cfg(feature = "rustc-hash")]
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
-
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use rustdoc_types::{Crate, Id, Item};
 
 use crate::{
     adapter::supported_item_kind,
+    hashtables::{HashMap, HashSet},
     item_flags::{build_flags_index, ItemFlag},
     visibility_tracker::VisibilityTracker,
 };
@@ -196,8 +191,9 @@ pub struct IndexedCrate<'a> {
     /// index: item ID -> bit flags recording yes-no indicators for various item states
     pub(crate) flags: Option<HashMap<Id, ItemFlag>>,
 
-    /// index: impl owner + impl'd item name -> list of (impl itself, the named item))
-    pub(crate) impl_index: Option<HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>>,
+    /// index: impl owner + impl'd method item name -> list of (impl itself, the named item));
+    /// only holds associated function ("method") items!
+    pub(crate) impl_method_index: Option<HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>>,
 
     /// index: method ("owned function") `Id` -> the struct/enum/union/trait that defines it;
     /// functions at top level will not have an index entry here
@@ -352,6 +348,42 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
                 rustdoc_types::ItemEnum::Impl(impl_inner) => impl_inner,
                 _ => unreachable!("expected impl but got another item type: {impl_item:?}"),
             };
+
+            #[cfg(feature = "rayon")]
+            let impl_items = impl_inner.items.par_iter();
+            #[cfg(not(feature = "rayon"))]
+            let impl_items = impl_inner.items.iter();
+
+            let impl_entries = impl_items.filter_map(move |item_id| {
+                let item = index.get(item_id)?;
+                let item_name = item.name.as_deref()?;
+
+                // The `impl_index` contains only methods, discard other item types.
+                if matches!(item.inner, rustdoc_types::ItemEnum::Function { .. }) {
+                    Some((ImplEntry::new(id, item_name), (impl_item, item)))
+                } else {
+                    None
+                }
+            });
+
+            #[cfg(feature = "rayon")]
+            let impl_items = impl_inner.items.par_iter();
+            #[cfg(not(feature = "rayon"))]
+            let impl_items = impl_inner.items.iter();
+
+            let impl_item_names: HashSet<_> = impl_items
+                .filter_map(move |item_id| {
+                    let item = index.get(item_id)?;
+                    let item_name = item.name.as_deref()?;
+
+                    if matches!(item.inner, rustdoc_types::ItemEnum::Function { .. }) {
+                        Some(item_name)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
             let trait_provided_methods: HashSet<_> = impl_inner
                 .provided_trait_methods
                 .iter()
@@ -381,7 +413,9 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
                 .filter(move |item| {
                     item.name
                         .as_deref()
-                        .map(|name| trait_provided_methods.contains(name))
+                        .map(|name| {
+                            trait_provided_methods.contains(name) && !impl_item_names.contains(name)
+                        })
                         .unwrap_or_default()
                 })
                 .map(move |provided_item| {
@@ -397,18 +431,7 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
                     )
                 });
 
-            #[cfg(feature = "rayon")]
-            let impl_items = impl_inner.items.par_iter();
-            #[cfg(not(feature = "rayon"))]
-            let impl_items = impl_inner.items.iter();
-
-            impl_items
-                .filter_map(move |item_id| {
-                    let item = index.get(item_id)?;
-                    let item_name = item.name.as_deref()?;
-                    Some((ImplEntry::new(id, item_name), (impl_item, item)))
-                })
-                .chain(trait_provided_items)
+            impl_entries.chain(trait_provided_items)
         })
     })
     .collect()
@@ -426,7 +449,7 @@ impl<'a> IndexedCrate<'a> {
             sized_trait,
             flags: None,
             imports_index: None,
-            impl_index: None,
+            impl_method_index: None,
             fn_owner_index: None,
             export_name_index: None,
         };
@@ -467,7 +490,7 @@ impl<'a> IndexedCrate<'a> {
         value.flags = Some(build_flags_index(&crate_.index, &imports_index));
         value.imports_index = Some(imports_index);
 
-        value.impl_index = Some(build_impl_index(&crate_.index).into_inner());
+        value.impl_method_index = Some(build_impl_index(&crate_.index).into_inner());
         value.fn_owner_index = Some(build_fn_owner_index(&crate_.index));
         value.export_name_index = Some(build_export_name_index(&crate_.index));
 
@@ -2454,6 +2477,65 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
             };
 
             assert_exported_items_match(test_crate, &expected_items);
+        }
+    }
+
+    mod index_tests {
+        use itertools::Itertools;
+
+        use crate::{indexed_crate::ImplEntry, test_util::load_pregenerated_rustdoc, IndexedCrate};
+
+        #[test]
+        fn defaulted_trait_items_overridden_in_impls_have_single_item_in_index() {
+            let test_crate = "defaulted_trait_items_overridden_in_impls";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let impl_owner = indexed_crate
+                .inner
+                .index
+                .values()
+                .filter(|item| item.name.as_deref() == Some("Example"))
+                .exactly_one()
+                .expect("failed to find exactly one Example item");
+            let trait_item = indexed_crate
+                .inner
+                .index
+                .values()
+                .filter(|item| item.name.as_deref() == Some("Trait"))
+                .exactly_one()
+                .expect("failed to find exactly one Trait item");
+            let trait_provided_items: Vec<_> = match &trait_item.inner {
+                rustdoc_types::ItemEnum::Trait(t) => t
+                    .items
+                    .iter()
+                    .map(|id| &indexed_crate.inner.index[id])
+                    .collect(),
+                _ => unreachable!(),
+            };
+            let trait_provided_method = trait_provided_items
+                .iter()
+                .copied()
+                .filter(|item| matches!(item.inner, rustdoc_types::ItemEnum::Function { .. }))
+                .exactly_one()
+                .expect("more than one provided method");
+
+            let impl_index = indexed_crate
+                .impl_method_index
+                .as_ref()
+                .expect("no impl index was built");
+            let method_entries = impl_index
+                .get(&ImplEntry::new(&impl_owner.id, "method"))
+                .expect("no method entries found");
+
+            // Associated const items aren't part of the `impl_index` at the moment, it's just methods.
+            let const_entries = impl_index.get(&ImplEntry::new(&impl_owner.id, "N"));
+            assert_eq!(const_entries, None, "{const_entries:#?}");
+
+            // There's exactly one provided method and it isn't the trait's default one.
+            assert_eq!(method_entries.len(), 1, "{method_entries:#?}");
+            assert_ne!(method_entries[0].1, trait_provided_method);
         }
     }
 }
