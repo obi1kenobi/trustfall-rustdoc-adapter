@@ -7190,3 +7190,427 @@ fn rustdoc_method_export_name() {
 
     similar_asserts::assert_eq!(expected_results, results,);
 }
+
+#[test]
+fn target_feature() {
+    get_test_data!(data, target_feature);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let top_level_query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+
+                requires_feature {
+                    feature: name @output
+                    explicit @output
+                    globally_enabled @output
+                }
+            }
+        }
+    }
+}
+"#;
+    let impl_owner_inherent_methods = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                inherent_impl {
+                    method {
+                        name @output
+
+                        requires_feature {
+                            feature: name @output
+                            explicit @output
+                            globally_enabled @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let trait_methods_query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                method {
+                    name @output
+
+                    requires_feature {
+                        feature: name @output
+                        explicit @output
+                        globally_enabled @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, i64> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        feature: String,
+        explicit: bool,
+        globally_enabled: bool,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), top_level_query, variables.clone())
+            .expect("failed to run top level query")
+            .chain(
+                trustfall::execute_query(
+                    &schema,
+                    adapter.clone(),
+                    impl_owner_inherent_methods,
+                    variables.clone(),
+                )
+                .expect("failed to run impl owner inherent methods query"),
+            )
+            .chain(
+                trustfall::execute_query(
+                    &schema,
+                    adapter.clone(),
+                    trait_methods_query,
+                    variables.clone(),
+                )
+                .expect("failed to run trait methods query"),
+            )
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+
+    // Ensure that the results are in sorted order, and also that the aggregated bounds are sorted.
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "top_level_fn".into(),
+            feature: "sse2".into(),
+            explicit: true,
+            globally_enabled: true,
+        },
+        Output {
+            name: "top_level_fn".into(),
+            feature: "avx".into(),
+            explicit: true,
+            globally_enabled: false,
+        },
+        Output {
+            name: "top_level_fn".into(),
+            feature: "sse".into(),
+            explicit: false,
+            globally_enabled: true,
+        },
+        Output {
+            name: "top_level_fn".into(),
+            feature: "sse3".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "top_level_fn".into(),
+            feature: "sse4.1".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "top_level_fn".into(),
+            feature: "sse4.2".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "top_level_fn".into(),
+            feature: "ssse3".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "unsafe_top_level_fn".into(),
+            feature: "sse2".into(),
+            explicit: true,
+            globally_enabled: true,
+        },
+        Output {
+            name: "unsafe_top_level_fn".into(),
+            feature: "avx".into(),
+            explicit: true,
+            globally_enabled: false,
+        },
+        Output {
+            name: "unsafe_top_level_fn".into(),
+            feature: "avx2".into(),
+            explicit: true,
+            globally_enabled: false,
+        },
+        Output {
+            name: "unsafe_top_level_fn".into(),
+            feature: "sse".into(),
+            explicit: false,
+            globally_enabled: true,
+        },
+        Output {
+            name: "unsafe_top_level_fn".into(),
+            feature: "sse3".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "unsafe_top_level_fn".into(),
+            feature: "sse4.1".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "unsafe_top_level_fn".into(),
+            feature: "sse4.2".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "unsafe_top_level_fn".into(),
+            feature: "ssse3".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "implies_avx".into(),
+            feature: "sse2".into(),
+            explicit: true,
+            globally_enabled: true,
+        },
+        Output {
+            name: "implies_avx".into(),
+            feature: "avx2".into(),
+            explicit: true,
+            globally_enabled: false,
+        },
+        Output {
+            name: "implies_avx".into(),
+            feature: "avx".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "implies_avx".into(),
+            feature: "sse".into(),
+            explicit: false,
+            globally_enabled: true,
+        },
+        Output {
+            name: "implies_avx".into(),
+            feature: "sse3".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "implies_avx".into(),
+            feature: "sse4.1".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "implies_avx".into(),
+            feature: "sse4.2".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "implies_avx".into(),
+            feature: "ssse3".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "struct_method".into(),
+            feature: "sse2".into(),
+            explicit: true,
+            globally_enabled: true,
+        },
+        Output {
+            name: "struct_method".into(),
+            feature: "avx".into(),
+            explicit: true,
+            globally_enabled: false,
+        },
+        Output {
+            name: "struct_method".into(),
+            feature: "avx2".into(),
+            explicit: true,
+            globally_enabled: false,
+        },
+        Output {
+            name: "struct_method".into(),
+            feature: "sse".into(),
+            explicit: false,
+            globally_enabled: true,
+        },
+        Output {
+            name: "struct_method".into(),
+            feature: "sse3".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "struct_method".into(),
+            feature: "sse4.1".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "struct_method".into(),
+            feature: "sse4.2".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "struct_method".into(),
+            feature: "ssse3".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "unsafe_struct_method".into(),
+            feature: "sse2".into(),
+            explicit: true,
+            globally_enabled: true,
+        },
+        Output {
+            name: "unsafe_struct_method".into(),
+            feature: "sse".into(),
+            explicit: false,
+            globally_enabled: true,
+        },
+        Output {
+            name: "defaulted_trait_method".into(),
+            feature: "sse".into(),
+            explicit: false,
+            globally_enabled: true,
+        },
+        Output {
+            name: "defaulted_trait_method".into(),
+            feature: "sse2".into(),
+            explicit: true,
+            globally_enabled: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+
+    let impl_owner_impld_methods = r#"
+    {
+        Crate {
+            item {
+                ... on ImplOwner {
+                    impl {
+                        implemented_trait {
+                            bare_name @filter(op: "=", value: ["$trait_name"])
+                        }
+
+                        method {
+                            name @output
+
+                            requires_feature {
+                                feature: name @output
+                                explicit @output
+                                globally_enabled @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let mut trait_impl_variables: BTreeMap<&str, &str> = BTreeMap::default();
+    trait_impl_variables.insert("trait_name", "Trait");
+
+    let mut results: Vec<Output> = trustfall::execute_query(
+        &schema,
+        adapter.clone(),
+        impl_owner_impld_methods,
+        trait_impl_variables,
+    )
+    .expect("failed to run impl owner impld methods query")
+    .map(|row| row.try_into_struct().expect("shape mismatch"))
+    .collect();
+
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        Output {
+            name: "defaulted_trait_method".into(),
+            feature: "sse2".into(),
+            explicit: true,
+            globally_enabled: true,
+        },
+        Output {
+            name: "defaulted_trait_method".into(),
+            feature: "avx".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "defaulted_trait_method".into(),
+            feature: "avx2".into(),
+            explicit: true,
+            globally_enabled: false,
+        },
+        Output {
+            name: "defaulted_trait_method".into(),
+            feature: "sse".into(),
+            explicit: false,
+            globally_enabled: true,
+        },
+        Output {
+            name: "defaulted_trait_method".into(),
+            feature: "sse3".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "defaulted_trait_method".into(),
+            feature: "sse4.1".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "defaulted_trait_method".into(),
+            feature: "sse4.2".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+        Output {
+            name: "defaulted_trait_method".into(),
+            feature: "ssse3".into(),
+            explicit: false,
+            globally_enabled: false,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}

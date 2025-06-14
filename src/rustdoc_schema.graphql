@@ -1459,6 +1459,37 @@ type FunctionAbi {
 }
 
 """
+A feature that must be enabled in order for a function to be valid to use.
+
+For example, the following function explicitly requires the `"sse2"` feature:
+```
+#[target_feature(enable = "sse2")]
+fn example() { }
+```
+
+Different target triples and Rust versions globally enable different combinations of features.
+Target features may be enabled explicitly, or might be implied by another enabled feature.
+"""
+type RequiredTargetFeature {
+  """
+  The feature's name.
+
+  For example, in `#[target_feature(enable = "sse2")]`, this property's value is `"sse2"`.
+  """
+  name: String!
+
+  """
+  Whether the target feature is explicitly enabled, or is implied by another feature.
+  """
+  explicit: Boolean!
+
+  """
+  Whether the feature is already globally enabled on the current target triple.
+  """
+  globally_enabled: Boolean!
+}
+
+"""
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Function.html
@@ -1567,6 +1598,18 @@ type Function implements Item & FunctionLike & Importable & ExportableFunction &
   since its desugaring is different: it's more like an associated type than a generic.
   """
   generic_parameter: [GenericParameter]
+
+  # own edges
+  """
+  The target features this function requires to be enabled in order for calling it to be valid.
+
+  For example, the following function explicitly requires the `"sse2"` feature:
+  ```
+  #[target_feature(enable = "sse2")]
+  fn example() { }
+  ```
+  """
+  requires_feature: [RequiredTargetFeature!]
 }
 
 """
@@ -1687,6 +1730,17 @@ type Method implements Item & FunctionLike & GenericItem {
   The kind of `self` value that the method takes, if any.
   """
   receiver: Receiver
+
+  """
+  The target features this method requires to be enabled in order for calling it to be valid.
+
+  For example, the following function explicitly requires the `"sse2"` feature:
+  ```
+  #[target_feature(enable = "sse2")]
+  fn example() { }
+  ```
+  """
+  requires_feature: [RequiredTargetFeature!]
 }
 
 """

@@ -906,3 +906,30 @@ pub(crate) fn resolve_generic_const_parameter_property<'a, V: AsVertex<Vertex<'a
         _ => unreachable!("GenericConstParameter property {property_name}"),
     }
 }
+
+pub(crate) fn resolve_required_target_feature_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    match property_name {
+        "name" => resolve_property_with(contexts, |vertex| {
+            let (feature, _) = vertex
+                .as_required_target_feature()
+                .expect("vertex was not a RequiredTargetFeature");
+            feature.name.as_str().into()
+        }),
+        "explicit" => resolve_property_with(contexts, |vertex| {
+            let (_, explicit) = vertex
+                .as_required_target_feature()
+                .expect("vertex was not a RequiredTargetFeature");
+            explicit.into()
+        }),
+        "globally_enabled" => resolve_property_with(contexts, |vertex| {
+            let (feature, _) = vertex
+                .as_required_target_feature()
+                .expect("vertex was not a RequiredTargetFeature");
+            feature.globally_enabled.into()
+        }),
+        _ => unreachable!("RequiredTargetFeature property {property_name}"),
+    }
+}
