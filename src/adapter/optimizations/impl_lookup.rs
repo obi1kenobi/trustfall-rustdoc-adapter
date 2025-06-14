@@ -1,9 +1,3 @@
-#[cfg(not(feature = "rustc-hash"))]
-use std::collections::HashMap;
-
-#[cfg(feature = "rustc-hash")]
-use rustc_hash::FxHashMap as HashMap;
-
 use rustdoc_types::{Id, Item};
 use trustfall::{
     provider::{
@@ -13,7 +7,7 @@ use trustfall::{
     FieldValue,
 };
 
-use crate::{adapter::PackageIndex, indexed_crate::ImplEntry};
+use crate::{adapter::PackageIndex, hashtables::HashMap, indexed_crate::ImplEntry};
 
 use super::super::{origin::Origin, vertex::Vertex, RustdocAdapter};
 
@@ -109,13 +103,13 @@ fn resolve_impl_based_on_method_name_candidate<'a>(
     let impl_index = match origin {
         Origin::CurrentCrate => current_crate
             .own_crate
-            .impl_index
+            .impl_method_index
             .as_ref()
             .expect("no impl index present"),
         Origin::PreviousCrate => previous_crate
             .expect("no previous crate provided")
             .own_crate
-            .impl_index
+            .impl_method_index
             .as_ref()
             .expect("no impl index provided"),
     };
