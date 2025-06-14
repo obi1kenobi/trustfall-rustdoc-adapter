@@ -118,23 +118,23 @@ impl<'a> PackageIndex<'a> {
     /// Prefer the [`PackageIndex::from_storage`] function when possible, since it makes features
     /// information available as well. Values constructed with the [`PackageIndex::from_crate`]
     /// function will appear to have no information on features or other manifest data.
-    pub fn from_crate(crate_: &'a Crate, target_triple: &str) -> Self {
+    pub fn from_crate(crate_: &'a Crate) -> Self {
         Self {
-            own_crate: IndexedCrate::new(crate_, target_triple),
+            own_crate: IndexedCrate::new(crate_),
             features: None,
             dependencies: Default::default(),
         }
     }
 
     /// Create a new [`PackageIndex`] for a given crate, in order to query it with Trustfall.
-    pub fn from_storage(storage: &'a PackageStorage, target_triple: &str) -> Self {
+    pub fn from_storage(storage: &'a PackageStorage) -> Self {
         #[cfg(not(feature = "rayon"))]
         let dependencies_iter = storage.dependencies.iter();
         #[cfg(feature = "rayon")]
         let dependencies_iter = storage.dependencies.par_iter();
 
         Self {
-            own_crate: IndexedCrate::new(&storage.own_crate, target_triple),
+            own_crate: IndexedCrate::new(&storage.own_crate),
             features: storage.package_data.as_ref().map(|data| {
                 let resolver = cargo_toml::features::Resolver::new();
 
@@ -167,7 +167,7 @@ impl<'a> PackageIndex<'a> {
             }),
 
             dependencies: dependencies_iter
-                .map(|(k, v)| (k.clone(), IndexedCrate::new(v, target_triple)))
+                .map(|(k, v)| (k.clone(), IndexedCrate::new(v)))
                 .collect(),
         }
     }
@@ -223,7 +223,7 @@ pub struct IndexedCrate<'a> {
     pub(crate) sized_trait: Id,
 
     /// Target feature information about our current target triple.
-    pub(crate) target_features: HashMap<&'static str, rust_target_feature_data::TargetFeature>,
+    pub(crate) target_features: HashMap<&'a str, &'a rustdoc_types::TargetFeature>,
 }
 
 /// Map a Key to a List (Vec) of values
@@ -441,14 +441,16 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
 }
 
 impl<'a> IndexedCrate<'a> {
-    pub fn new(crate_: &'a Crate, target_triple: &str) -> Self {
+    pub fn new(crate_: &'a Crate) -> Self {
         let (manually_inlined_builtin_traits, sized_trait) =
             create_manually_inlined_builtin_traits(crate_);
 
-        let target_features: HashMap<&'static str, _> =
-            rust_target_feature_data::find("1.87.0", target_triple)
-                .map(|iter| iter.map(|feat| (feat.name, feat)).collect())
-                .unwrap_or_default();
+        let target_features = crate_
+            .target
+            .target_features
+            .iter()
+            .map(|feat| (feat.name.as_str(), feat))
+            .collect();
 
         let mut value = Self {
             inner: crate_,
@@ -932,10 +934,7 @@ mod tests {
     use itertools::Itertools;
     use rustdoc_types::{Crate, Id};
 
-    use crate::{
-        test_util::{load_pregenerated_rustdoc, CURRENT_TARGET_TRIPLE},
-        ImportablePath, IndexedCrate,
-    };
+    use crate::{test_util::load_pregenerated_rustdoc, ImportablePath, IndexedCrate};
 
     fn find_item_id<'a>(crate_: &'a Crate, name: &str) -> &'a Id {
         crate_
@@ -950,7 +949,7 @@ mod tests {
     #[test]
     fn structs_are_not_modules() {
         let rustdoc = load_pregenerated_rustdoc("structs_are_not_modules");
-        let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
+        let indexed_crate = IndexedCrate::new(&rustdoc);
 
         let top_level_function = find_item_id(&rustdoc, "top_level_function");
         let method = find_item_id(&rustdoc, "method");
@@ -1012,7 +1011,7 @@ mod tests {
     #[test]
     fn enums_are_not_modules() {
         let rustdoc = load_pregenerated_rustdoc("enums_are_not_modules");
-        let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
+        let indexed_crate = IndexedCrate::new(&rustdoc);
 
         let top_level_function = find_item_id(&rustdoc, "top_level_function");
         let variant = find_item_id(&rustdoc, "Variant");
@@ -1077,7 +1076,7 @@ mod tests {
     #[test]
     fn unions_are_not_modules() {
         let rustdoc = load_pregenerated_rustdoc("unions_are_not_modules");
-        let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
+        let indexed_crate = IndexedCrate::new(&rustdoc);
 
         let top_level_function = find_item_id(&rustdoc, "top_level_function");
         let method = find_item_id(&rustdoc, "method");
@@ -1152,14 +1151,12 @@ mod tests {
 
         use crate::{test_util::load_pregenerated_rustdoc, ImportablePath, IndexedCrate};
 
-        use super::CURRENT_TARGET_TRIPLE;
-
         fn assert_exported_items_match(
             test_crate: &str,
             expected_items: &BTreeMap<&str, BTreeSet<&str>>,
         ) {
             let rustdoc = load_pregenerated_rustdoc(test_crate);
-            let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
 
             for (&expected_item_name, expected_importable_paths) in expected_items {
                 assert!(
@@ -1208,7 +1205,7 @@ mod tests {
             expected_items_and_counts: &BTreeMap<&str, (usize, BTreeSet<&str>)>,
         ) {
             let rustdoc = load_pregenerated_rustdoc(test_crate);
-            let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
 
             for (&expected_item_name, (expected_count, expected_importable_paths)) in
                 expected_items_and_counts
@@ -1867,7 +1864,7 @@ mod tests {
             let test_crate = "overlapping_glob_and_local_item";
 
             let rustdoc = load_pregenerated_rustdoc(test_crate);
-            let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
 
             let foo_ids = rustdoc
                 .index
@@ -1951,7 +1948,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
             let test_crate = "nested_overlapping_glob_and_local_item";
 
             let rustdoc = load_pregenerated_rustdoc(test_crate);
-            let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
 
             let item_id_candidates = rustdoc
                 .index
@@ -2015,7 +2012,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
             let test_crate = "cyclic_overlapping_glob_and_local_item";
 
             let rustdoc = load_pregenerated_rustdoc(test_crate);
-            let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
 
             let item_id_candidates = rustdoc
                 .index
@@ -2097,7 +2094,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
             assert_exported_items_match(test_crate, &easy_expected_items);
 
             let rustdoc = load_pregenerated_rustdoc(test_crate);
-            let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
 
             let items_named_first: Vec<_> = indexed_crate
                 .inner
@@ -2141,7 +2138,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
             let test_crate = "glob_of_enum_does_not_shadow_local_fn";
 
             let rustdoc = load_pregenerated_rustdoc(test_crate);
-            let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
 
             let first_ids = rustdoc
                 .index
@@ -2194,7 +2191,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
             let test_crate = "overlapping_glob_and_private_import";
 
             let rustdoc = load_pregenerated_rustdoc(test_crate);
-            let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
 
             let item_id_candidates = rustdoc
                 .index
@@ -2237,7 +2234,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
             let test_crate = "visibility_modifier_causes_shadowing";
 
             let rustdoc = load_pregenerated_rustdoc(test_crate);
-            let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
 
             let item_id_candidates = rustdoc
                 .index
@@ -2270,7 +2267,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
             let test_crate = "visibility_modifier_avoids_shadowing";
 
             let rustdoc = load_pregenerated_rustdoc(test_crate);
-            let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
 
             let item_id_candidates = rustdoc
                 .index
@@ -2422,7 +2419,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
             let test_crate = "overlapping_reexport_as_underscore";
 
             let rustdoc = load_pregenerated_rustdoc(test_crate);
-            let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
 
             let item_id_candidates = rustdoc
                 .index
@@ -2497,14 +2494,14 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
     mod index_tests {
         use itertools::Itertools;
 
-        use crate::{indexed_crate::ImplEntry, test_util::{load_pregenerated_rustdoc, CURRENT_TARGET_TRIPLE}, IndexedCrate};
+        use crate::{indexed_crate::ImplEntry, test_util::load_pregenerated_rustdoc, IndexedCrate};
 
         #[test]
         fn defaulted_trait_items_overridden_in_impls_have_single_item_in_index() {
             let test_crate = "defaulted_trait_items_overridden_in_impls";
 
             let rustdoc = load_pregenerated_rustdoc(test_crate);
-            let indexed_crate = IndexedCrate::new(&rustdoc, &CURRENT_TARGET_TRIPLE);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
 
             let impl_owner = indexed_crate
                 .inner

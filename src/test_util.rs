@@ -40,17 +40,3 @@ pub(crate) fn load_pregenerated_rustdoc(crate_name: &str) -> Crate {
             }
         }).expect("failed to parse rustdoc JSON")
 }
-
-pub(crate) static CURRENT_TARGET_TRIPLE: std::sync::LazyLock<&str> =
-    std::sync::LazyLock::new(|| {
-        let outcome = std::process::Command::new("rustc")
-            .arg("-vV")
-            .output()
-            .expect("failed to run `rustc -vV`");
-        let stdout = String::from_utf8(outcome.stdout).expect("stdout was not valid utf-8");
-        let target_triple = stdout
-            .lines()
-            .find_map(|line| line.strip_prefix("host: "))
-            .expect("failed to find host line");
-        target_triple.to_string().leak()
-    });

@@ -1183,6 +1183,7 @@ pub(super) fn resolve_requires_target_feature_edge<'a, V: AsVertex<Vertex<'a>> +
             .map(|feature_name| {
                 features_lookup
                     .get(feature_name)
+                    .copied()
                     .unwrap_or_else(|| panic!("unrecognized target feature \"{feature_name}\""))
             });
 
@@ -1196,7 +1197,7 @@ pub(super) fn resolve_requires_target_feature_edge<'a, V: AsVertex<Vertex<'a>> +
 
 struct TargetFeatureResolver<'a, T> {
     enabled_features: T,
-    features_lookup: &'a HashMap<&'static str, rust_target_feature_data::TargetFeature>,
+    features_lookup: &'a HashMap<&'a str, &'a rustdoc_types::TargetFeature>,
     produced_features: HashSet<&'a str>,
     implied_features: BTreeSet<&'a str>, // we return items from this set, we need determinism
 }
@@ -1204,7 +1205,7 @@ struct TargetFeatureResolver<'a, T> {
 impl<'a, T> TargetFeatureResolver<'a, T> {
     fn new(
         enabled_features: T,
-        features_lookup: &'a HashMap<&'static str, rust_target_feature_data::TargetFeature>,
+        features_lookup: &'a HashMap<&'a str, &'a rustdoc_types::TargetFeature>,
     ) -> Self {
         Self {
             enabled_features,
@@ -1217,20 +1218,21 @@ impl<'a, T> TargetFeatureResolver<'a, T> {
 
 impl<'a, T> Iterator for TargetFeatureResolver<'a, T>
 where
-    T: Iterator<Item = &'a rust_target_feature_data::TargetFeature>,
+    T: Iterator<Item = &'a rustdoc_types::TargetFeature>,
 {
-    type Item = (&'a rust_target_feature_data::TargetFeature, bool);
+    type Item = (&'a rustdoc_types::TargetFeature, bool);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(enabled_feature) = self.enabled_features.next() {
-            if self.produced_features.insert(enabled_feature.name) {
+            if self.produced_features.insert(enabled_feature.name.as_str()) {
                 // We have not already produced this feature.
                 // Record its unproduced implied features and produce it.
                 self.implied_features.extend(
                     enabled_feature
                         .implies_features
                         .iter()
-                        .filter(|feat| !self.produced_features.contains(*feat)),
+                        .map(String::as_str)
+                        .filter(|feat| !self.produced_features.contains(feat))
                 );
 
                 return Some((enabled_feature, true));
@@ -1248,7 +1250,8 @@ where
                     enabled_feature
                         .implies_features
                         .iter()
-                        .filter(|feat| !self.produced_features.contains(*feat)),
+                        .map(String::as_str)
+                        .filter(|feat| !self.produced_features.contains(feat)),
                 );
 
                 return Some((enabled_feature, false));

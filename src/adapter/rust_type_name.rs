@@ -632,7 +632,7 @@ mod tests {
     use rustdoc_types::{Item, ItemEnum, StructKind};
     use trustfall::{Schema, TryIntoStruct as _};
 
-    use crate::{test_util::CURRENT_TARGET_TRIPLE, RustdocAdapter};
+    use crate::RustdocAdapter;
 
     use super::rust_type_name;
 
@@ -661,7 +661,7 @@ mod tests {
 
         let storage = crate::PackageStorage::from_rustdoc_and_package(crate_, package);
 
-        let data = crate::PackageIndex::from_storage(&storage, &CURRENT_TARGET_TRIPLE);
+        let data = crate::PackageIndex::from_storage(&storage);
         let adapter = RustdocAdapter::new(&data, None);
 
         let query = r#"

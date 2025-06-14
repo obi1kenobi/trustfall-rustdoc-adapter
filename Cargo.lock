@@ -524,12 +524,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
-name = "rust-target-feature-data"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9474ef003184350eac1b9c8409ff46c7c165b073ed4ba85eec7148057bedf129"
-
-[[package]]
 name = "rustc-hash"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -758,7 +752,6 @@ dependencies = [
  "itertools 0.13.0",
  "maplit",
  "rayon",
- "rust-target-feature-data",
  "rustc-hash",
  "rustdoc-types",
  "serde",

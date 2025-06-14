@@ -52,7 +52,7 @@ macro_rules! get_test_data {
             package,
         );
 
-        let $data = crate::PackageIndex::from_storage(&storage, &crate::test_util::CURRENT_TARGET_TRIPLE);
+        let $data = crate::PackageIndex::from_storage(&storage);
     }
 }
 

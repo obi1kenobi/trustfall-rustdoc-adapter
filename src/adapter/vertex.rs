@@ -85,7 +85,7 @@ pub enum VertexKind<'a> {
     PositionedItem(usize, &'a Item),
 
     #[non_exhaustive]
-    RequiredTargetFeature(&'a rust_target_feature_data::TargetFeature, bool),
+    RequiredTargetFeature(&'a rustdoc_types::TargetFeature, bool),
 }
 
 impl Typename for Vertex<'_> {
@@ -406,7 +406,7 @@ impl<'a> Vertex<'a> {
         }
     }
 
-    pub(super) fn as_required_target_feature(&self) -> Option<(&'a rust_target_feature_data::TargetFeature, bool)> {
+    pub(super) fn as_required_target_feature(&self) -> Option<(&'a rustdoc_types::TargetFeature, bool)> {
         match &self.kind {
             VertexKind::RequiredTargetFeature(feature, explicit) => Some((*feature, *explicit)),
             _ => None,

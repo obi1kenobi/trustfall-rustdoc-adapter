@@ -916,7 +916,7 @@ pub(crate) fn resolve_required_target_feature_property<'a, V: AsVertex<Vertex<'a
             let (feature, _) = vertex
                 .as_required_target_feature()
                 .expect("vertex was not a RequiredTargetFeature");
-            feature.name.into()
+            feature.name.as_str().into()
         }),
         "explicit" => resolve_property_with(contexts, |vertex| {
             let (_, explicit) = vertex
