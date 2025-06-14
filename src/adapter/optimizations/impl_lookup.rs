@@ -103,13 +103,13 @@ fn resolve_impl_based_on_method_name_candidate<'a>(
     let impl_index = match origin {
         Origin::CurrentCrate => current_crate
             .own_crate
-            .impl_index
+            .impl_method_index
             .as_ref()
             .expect("no impl index present"),
         Origin::PreviousCrate => previous_crate
             .expect("no previous crate provided")
             .own_crate
-            .impl_index
+            .impl_method_index
             .as_ref()
             .expect("no impl index provided"),
     };

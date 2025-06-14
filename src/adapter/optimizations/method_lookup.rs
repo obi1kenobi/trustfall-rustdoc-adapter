@@ -103,7 +103,7 @@ fn resolve_method_from_candidate_value<'a>(
             &current_crate.own_crate.inner.index,
             current_crate
                 .own_crate
-                .impl_index
+                .impl_method_index
                 .as_ref()
                 .expect("no impl index present"),
         ),
@@ -113,7 +113,7 @@ fn resolve_method_from_candidate_value<'a>(
                 &previous_crate.own_crate.inner.index,
                 previous_crate
                     .own_crate
-                    .impl_index
+                    .impl_method_index
                     .as_ref()
                     .expect("no impl index provided"),
             )

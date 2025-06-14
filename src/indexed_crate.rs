@@ -191,9 +191,9 @@ pub struct IndexedCrate<'a> {
     /// index: item ID -> bit flags recording yes-no indicators for various item states
     pub(crate) flags: Option<HashMap<Id, ItemFlag>>,
 
-    /// index: impl owner + impl'd item name -> list of (impl itself, the named item));
-    /// only holds associated function items!
-    pub(crate) impl_index: Option<HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>>,
+    /// index: impl owner + impl'd method item name -> list of (impl itself, the named item));
+    /// only holds associated function ("method") items!
+    pub(crate) impl_method_index: Option<HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>>,
 
     /// index: method ("owned function") `Id` -> the struct/enum/union/trait that defines it;
     /// functions at top level will not have an index entry here
@@ -448,7 +448,7 @@ impl<'a> IndexedCrate<'a> {
             sized_trait,
             flags: None,
             imports_index: None,
-            impl_index: None,
+            impl_method_index: None,
             fn_owner_index: None,
             export_name_index: None,
         };
@@ -489,7 +489,7 @@ impl<'a> IndexedCrate<'a> {
         value.flags = Some(build_flags_index(&crate_.index, &imports_index));
         value.imports_index = Some(imports_index);
 
-        value.impl_index = Some(build_impl_index(&crate_.index).into_inner());
+        value.impl_method_index = Some(build_impl_index(&crate_.index).into_inner());
         value.fn_owner_index = Some(build_fn_owner_index(&crate_.index));
         value.export_name_index = Some(build_export_name_index(&crate_.index));
 
@@ -2521,7 +2521,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                 .expect("more than one provided method");
 
             let impl_index = indexed_crate
-                .impl_index
+                .impl_method_index
                 .as_ref()
                 .expect("no impl index was built");
             let method_entries = impl_index
