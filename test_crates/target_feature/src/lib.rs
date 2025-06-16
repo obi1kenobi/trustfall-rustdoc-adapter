@@ -61,3 +61,13 @@ impl Trait for Example {
     #[target_feature(enable = "sse2,avx2")]
     unsafe fn defaulted_trait_method() {}
 }
+
+#[target_feature(enable = "bmi1")]
+#[target_feature(enable = "bmi2")]
+pub fn multiple_attrs() {}
+
+#[target_feature(enable = "bmi1", enable = "bmi2")]
+pub fn multiple_enable_clauses() {}
+
+#[target_feature(enable = "sse")]
+pub fn globally_enabled_features_are_still_listed() {}
