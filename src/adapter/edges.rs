@@ -1164,20 +1164,25 @@ pub(super) fn resolve_requires_target_feature_edge<'a, V: AsVertex<Vertex<'a>> +
                     return None;
                 }
 
-                if let Some(args) = attr.content.arguments.as_ref() {
-                    for arg in args {
-                        if arg.base != "enable" {
-                            continue;
-                        }
+                match attr.content.arguments.as_ref() {
+                    Some(args) => {
+                        // There may be multiple `enable` clauses as separate arguments.
+                        let mut feature_groups = vec![];
+                        for arg in args {
+                            if arg.base != "enable" {
+                                continue;
+                            }
 
-                        if let Some(feature_list) = arg.assigned_item {
-                            let feature_list = feature_list.trim().trim_matches('"').trim();
-                            return Some(feature_list.split(",").map(|feature| feature.trim()));
+                            if let Some(feature_list) = arg.assigned_item {
+                                let feature_list = feature_list.trim().trim_matches('"').trim();
+                                feature_groups
+                                    .push(feature_list.split(",").map(|feature| feature.trim()));
+                            }
                         }
+                        Some(feature_groups.into_iter().flatten())
                     }
+                    None => None,
                 }
-
-                None
             })
             .flatten()
             .map(|feature_name| {
