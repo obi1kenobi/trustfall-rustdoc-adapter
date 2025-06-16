@@ -7510,6 +7510,36 @@ fn target_feature() {
             explicit: true,
             globally_enabled: true,
         },
+        Output {
+            name: "multiple_attrs".into(),
+            feature: "bmi1".into(),
+            explicit: true,
+            globally_enabled: false,
+        },
+        Output {
+            name: "multiple_attrs".into(),
+            feature: "bmi2".into(),
+            explicit: true,
+            globally_enabled: false,
+        },
+        Output {
+            name: "multiple_enable_clauses".into(),
+            feature: "bmi1".into(),
+            explicit: true,
+            globally_enabled: false,
+        },
+        Output {
+            name: "multiple_enable_clauses".into(),
+            feature: "bmi2".into(),
+            explicit: true,
+            globally_enabled: false,
+        },
+        Output {
+            name: "globally_enabled_features_are_still_listed".into(),
+            feature: "sse".into(),
+            explicit: true,
+            globally_enabled: true,
+        },
     ];
     expected_results.sort_unstable();
 
