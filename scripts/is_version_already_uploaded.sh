@@ -24,7 +24,9 @@ echo >&2 "Crate $CRATE_NAME current version: $CURRENT_VERSION"
 # on substrings of versions.
 EXISTING_VERSIONS="
 $( \
-    curl 2>/dev/null "https://crates.io/api/v1/crates/$CRATE_NAME" | \
+    curl \
+        -A "trustfall-rustdoc-adapter is_version_already_uploaded.sh (https://github.com/obi1kenobi/trustfall-rustdoc-adapter/)" \
+        2>/dev/null "https://crates.io/api/v1/crates/$CRATE_NAME" | \
     jq --exit-status -r .versions[].num \
 )"
 echo >&2 -e "Versions on crates.io:$EXISTING_VERSIONS\n"
