@@ -1,0 +1,6 @@
+[package]
+name = "feature_not_on_our_target_triple"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]

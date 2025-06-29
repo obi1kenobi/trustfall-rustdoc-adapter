@@ -1485,8 +1485,18 @@ type RequiredTargetFeature {
 
   """
   Whether the feature is already globally enabled on the current target triple.
+
+  If `valid_for_current_target` is `false` then this property is `false` as well.
   """
   globally_enabled: Boolean!
+
+  """
+  Whether the feature is valid (possible to be supported) on the current target triple.
+
+  For example, this would be `false` for an ARM feature like `neon`
+  when checked on the `x86_64-unknown-linux-gnu` target triple.
+  """
+  valid_for_current_target: Boolean!
 }
 
 """
