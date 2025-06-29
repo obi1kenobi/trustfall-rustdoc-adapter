@@ -1186,15 +1186,16 @@ pub(super) fn resolve_requires_target_feature_edge<'a, V: AsVertex<Vertex<'a>> +
             })
             .flatten()
             .map(|feature_name| {
-                features_lookup
-                    .get(feature_name)
-                    .unwrap_or_else(|| panic!("unrecognized target feature \"{feature_name}\""))
+                let feature_data = features_lookup.get(feature_name);
+                (feature_name, feature_data)
             });
 
         let resolver = TargetFeatureResolver::new(enabled_features, features_lookup);
         Box::new(<TargetFeatureResolver<'_, _> as Iterator>::map(
             resolver,
-            move |(feature, explicit)| origin.make_required_target_feature(feature, explicit),
+            move |(name, feature_data, explicit)| {
+                origin.make_required_target_feature(name, feature_data, explicit)
+            },
         ))
     })
 }
@@ -1222,23 +1223,29 @@ impl<'a, T> TargetFeatureResolver<'a, T> {
 
 impl<'a, T> Iterator for TargetFeatureResolver<'a, T>
 where
-    T: Iterator<Item = &'a rust_target_feature_data::TargetFeature>,
+    T: Iterator<Item = (&'a str, Option<&'a rust_target_feature_data::TargetFeature>)>,
 {
-    type Item = (&'a rust_target_feature_data::TargetFeature, bool);
+    type Item = (
+        &'a str,
+        Option<&'a rust_target_feature_data::TargetFeature>,
+        bool,
+    );
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(enabled_feature) = self.enabled_features.next() {
-            if self.produced_features.insert(enabled_feature.name) {
+        while let Some((feature_name, feature_data)) = self.enabled_features.next() {
+            if self.produced_features.insert(feature_name) {
                 // We have not already produced this feature.
                 // Record its unproduced implied features and produce it.
-                self.implied_features.extend(
-                    enabled_feature
-                        .implies_features
-                        .iter()
-                        .filter(|feat| !self.produced_features.contains(*feat)),
-                );
+                if let Some(feature_data) = feature_data {
+                    self.implied_features.extend(
+                        feature_data
+                            .implies_features
+                            .iter()
+                            .filter(|feat| !self.produced_features.contains(*feat)),
+                    );
+                }
 
-                return Some((enabled_feature, true));
+                return Some((feature_name, feature_data, true));
             }
         }
 
@@ -1248,15 +1255,17 @@ where
             if self.produced_features.insert(feature_name) {
                 // We have not already produced this feature.
                 // Record its unproduced implied features and produce it.
-                let enabled_feature = &self.features_lookup[feature_name];
-                self.implied_features.extend(
-                    enabled_feature
-                        .implies_features
-                        .iter()
-                        .filter(|feat| !self.produced_features.contains(*feat)),
-                );
+                let feature_data = self.features_lookup.get(feature_name);
+                if let Some(feature_data) = feature_data {
+                    self.implied_features.extend(
+                        feature_data
+                            .implies_features
+                            .iter()
+                            .filter(|feat| !self.produced_features.contains(*feat)),
+                    );
+                }
 
-                return Some((enabled_feature, false));
+                return Some((feature_name, feature_data, false));
             }
         }
 
