@@ -7644,3 +7644,80 @@ fn target_feature() {
 
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn feature_not_on_our_target_triple() {
+    get_test_data!(data, feature_not_on_our_target_triple);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+
+                requires_feature {
+                    feature: name @output
+                    explicit @filter(op: "=", value: ["$true"])
+                    globally_enabled @output
+                    valid_for_current_target @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let mut variables: BTreeMap<&str, bool> = BTreeMap::default();
+    variables.insert("true", true);
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        feature: String,
+        globally_enabled: bool,
+        valid_for_current_target: bool,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            name: "safe_fn".into(),
+            feature: "leoncasa".into(),
+            globally_enabled: false,
+            valid_for_current_target: false,
+        },
+        Output {
+            name: "unsafe_fn".into(),
+            feature: "leoncasa".into(),
+            globally_enabled: false,
+            valid_for_current_target: false,
+        },
+        Output {
+            name: "impossible_to_satisfy".into(),
+            feature: "leoncasa".into(),
+            globally_enabled: false,
+            valid_for_current_target: false,
+        },
+        Output {
+            name: "impossible_to_satisfy".into(),
+            feature: "avx2".into(),
+            globally_enabled: false,
+            valid_for_current_target: cfg!(target_arch = "x86_64"),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results,);
+}
