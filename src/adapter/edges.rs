@@ -1225,7 +1225,11 @@ impl<'a, T> Iterator for TargetFeatureResolver<'a, T>
 where
     T: Iterator<Item = (&'a str, Option<&'a rust_target_feature_data::TargetFeature>)>,
 {
-    type Item = (&'a str, Option<&'a rust_target_feature_data::TargetFeature>, bool);
+    type Item = (
+        &'a str,
+        Option<&'a rust_target_feature_data::TargetFeature>,
+        bool,
+    );
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some((feature_name, feature_data)) = self.enabled_features.next() {
