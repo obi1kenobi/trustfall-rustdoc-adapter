@@ -85,7 +85,7 @@ pub enum VertexKind<'a> {
     PositionedItem(usize, &'a Item),
 
     #[non_exhaustive]
-    RequiredTargetFeature(&'a rustdoc_types::TargetFeature, bool),
+    RequiredTargetFeature(TargetFeature<'a>),
 }
 
 impl Typename for Vertex<'_> {
@@ -406,11 +406,9 @@ impl<'a> Vertex<'a> {
         }
     }
 
-    pub(super) fn as_required_target_feature(
-        &self,
-    ) -> Option<(&'a rustdoc_types::TargetFeature, bool)> {
+    pub(super) fn as_required_target_feature(&self) -> Option<&TargetFeature<'a>> {
         match &self.kind {
-            VertexKind::RequiredTargetFeature(feature, explicit) => Some((*feature, *explicit)),
+            VertexKind::RequiredTargetFeature(feature) => Some(feature),
             _ => None,
         }
     }
@@ -456,4 +454,26 @@ pub struct ImplementedTrait<'a> {
 
     /// `None` if not in our crate
     pub(crate) resolved_item: Option<&'a Item>,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub struct TargetFeature<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) feature_data: Option<&'a rustdoc_types::TargetFeature>,
+    pub(crate) explicit: bool,
+}
+
+impl TargetFeature<'_> {
+    #[inline]
+    pub(crate) fn valid_for_current_target(&self) -> bool {
+        self.feature_data.is_some()
+    }
+
+    #[inline]
+    pub(crate) fn globally_enabled(&self) -> bool {
+        self.feature_data
+            .map(|feat| feat.globally_enabled)
+            .unwrap_or(false)
+    }
 }

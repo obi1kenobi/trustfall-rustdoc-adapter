@@ -913,22 +913,28 @@ pub(crate) fn resolve_required_target_feature_property<'a, V: AsVertex<Vertex<'a
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "name" => resolve_property_with(contexts, |vertex| {
-            let (feature, _) = vertex
+            let feature = vertex
                 .as_required_target_feature()
                 .expect("vertex was not a RequiredTargetFeature");
-            feature.name.as_str().into()
+            feature.name.into()
         }),
         "explicit" => resolve_property_with(contexts, |vertex| {
-            let (_, explicit) = vertex
+            let feature = vertex
                 .as_required_target_feature()
                 .expect("vertex was not a RequiredTargetFeature");
-            explicit.into()
+            feature.explicit.into()
         }),
         "globally_enabled" => resolve_property_with(contexts, |vertex| {
-            let (feature, _) = vertex
+            let feature = vertex
                 .as_required_target_feature()
                 .expect("vertex was not a RequiredTargetFeature");
-            feature.globally_enabled.into()
+            feature.globally_enabled().into()
+        }),
+        "valid_for_current_target" => resolve_property_with(contexts, |vertex| {
+            let feature = vertex
+                .as_required_target_feature()
+                .expect("vertex was not a RequiredTargetFeature");
+            feature.valid_for_current_target().into()
         }),
         _ => unreachable!("RequiredTargetFeature property {property_name}"),
     }

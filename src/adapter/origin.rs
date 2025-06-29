@@ -174,12 +174,18 @@ impl Origin {
 
     pub(super) fn make_required_target_feature<'a>(
         &self,
-        feature: &'a rustdoc_types::TargetFeature,
+        name: &'a str,
+        feature_data: Option<&'a rustdoc_types::TargetFeature>,
         explicit: bool,
     ) -> Vertex<'a> {
+        let target_feature = super::vertex::TargetFeature {
+            name,
+            feature_data,
+            explicit,
+        };
         Vertex {
             origin: *self,
-            kind: VertexKind::RequiredTargetFeature(feature, explicit),
+            kind: VertexKind::RequiredTargetFeature(target_feature),
         }
     }
 }
