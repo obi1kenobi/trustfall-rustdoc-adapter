@@ -7,7 +7,7 @@ use rustdoc_types::{Crate, Id, Item};
 use crate::{
     adapter::supported_item_kind,
     hashtables::{HashMap, HashSet},
-    item_flags::{build_flags_index, ItemFlag},
+    item_flags::{ItemFlag, build_flags_index},
     visibility_tracker::VisibilityTracker,
 };
 
@@ -914,7 +914,8 @@ fn create_manually_inlined_builtin_traits(crate_: &Crate) -> (HashMap<Id, Item>,
         .collect();
 
     assert_eq!(
-        manually_inlined_builtin_traits.len(), MANUAL_TRAIT_ITEMS.len(),
+        manually_inlined_builtin_traits.len(),
+        MANUAL_TRAIT_ITEMS.len(),
         "failed to find some expected built-in traits: found only {manually_inlined_builtin_traits:?} and expected {MANUAL_TRAIT_ITEMS:?}",
     );
 
@@ -933,8 +934,8 @@ mod tests {
     use rustdoc_types::{Crate, Id};
 
     use crate::{
-        test_util::{load_pregenerated_rustdoc, CURRENT_TARGET_TRIPLE},
         ImportablePath, IndexedCrate,
+        test_util::{CURRENT_TARGET_TRIPLE, load_pregenerated_rustdoc},
     };
 
     fn find_item_id<'a>(crate_: &'a Crate, name: &str) -> &'a Id {
@@ -959,26 +960,36 @@ mod tests {
         let const_item = find_item_id(&rustdoc, "THE_ANSWER");
 
         // All the items are public.
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&top_level_function.0));
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&method.0));
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&associated_fn.0));
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&field.0));
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&const_item.0));
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&top_level_function.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&method.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&associated_fn.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&field.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&const_item.0)
+        );
 
         // But only `top_level_function` is importable.
         assert_eq!(
@@ -1021,26 +1032,36 @@ mod tests {
         let const_item = find_item_id(&rustdoc, "THE_ANSWER");
 
         // All the items are public.
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&top_level_function.0));
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&variant.0));
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&method.0));
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&associated_fn.0));
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&const_item.0));
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&top_level_function.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&variant.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&method.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&associated_fn.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&const_item.0)
+        );
 
         // But only `top_level_function` and `Foo::variant` is importable.
         assert_eq!(
@@ -1087,30 +1108,42 @@ mod tests {
         let const_item = find_item_id(&rustdoc, "THE_ANSWER");
 
         // All the items are public.
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&top_level_function.0));
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&method.0));
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&associated_fn.0));
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&left_field.0));
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&right_field.0));
-        assert!(indexed_crate
-            .visibility_tracker
-            .visible_parent_ids()
-            .contains_key(&const_item.0));
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&top_level_function.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&method.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&associated_fn.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&left_field.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&right_field.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_ids()
+                .contains_key(&const_item.0)
+        );
 
         // But only `top_level_function` is importable.
         assert_eq!(
@@ -1150,7 +1183,7 @@ mod tests {
         use maplit::{btreemap, btreeset};
         use rustdoc_types::{ItemEnum, Visibility};
 
-        use crate::{test_util::load_pregenerated_rustdoc, ImportablePath, IndexedCrate};
+        use crate::{ImportablePath, IndexedCrate, test_util::load_pregenerated_rustdoc};
 
         use super::CURRENT_TARGET_TRIPLE;
 
@@ -2498,9 +2531,9 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
         use itertools::Itertools;
 
         use crate::{
-            indexed_crate::ImplEntry,
-            test_util::{load_pregenerated_rustdoc, CURRENT_TARGET_TRIPLE},
             IndexedCrate,
+            indexed_crate::ImplEntry,
+            test_util::{CURRENT_TARGET_TRIPLE, load_pregenerated_rustdoc},
         };
 
         #[test]

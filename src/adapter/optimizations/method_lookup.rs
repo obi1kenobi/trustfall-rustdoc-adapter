@@ -1,17 +1,17 @@
 use rustdoc_types::{Id, Impl, Item, ItemEnum, Type};
 use trustfall::{
-    provider::{
-        resolve_neighbors_with, AsVertex, CandidateValue, ContextIterator, ContextOutcomeIterator,
-        ResolveEdgeInfo, VertexInfo, VertexIterator,
-    },
     FieldValue,
+    provider::{
+        AsVertex, CandidateValue, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
+        VertexInfo, VertexIterator, resolve_neighbors_with,
+    },
 };
 
 use crate::{
+    RustdocAdapter,
     adapter::{Origin, PackageIndex, Vertex},
     hashtables::{HashMap, HashSet},
     indexed_crate::ImplEntry,
-    RustdocAdapter,
 };
 
 pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
