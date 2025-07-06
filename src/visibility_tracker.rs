@@ -9,7 +9,7 @@ use rustdoc_types::{Crate, GenericArgs, Id, Item, ItemEnum, TypeAlias, Visibilit
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
-use crate::{attributes::Attribute, ImportablePath};
+use crate::{ImportablePath, attributes::Attribute};
 
 #[derive(Debug, Clone)]
 pub(crate) struct VisibilityTracker<'a> {

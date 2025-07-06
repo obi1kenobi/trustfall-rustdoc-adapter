@@ -1,13 +1,13 @@
 use rustdoc_types::{ItemEnum, Visibility, WherePredicate};
 use trustfall::{
-    provider::{
-        accessor_property, field_property, resolve_property_with, AsVertex, ContextIterator,
-        ContextOutcomeIterator,
-    },
     FieldValue,
+    provider::{
+        AsVertex, ContextIterator, ContextOutcomeIterator, accessor_property, field_property,
+        resolve_property_with,
+    },
 };
 
-use crate::{attributes::Attribute, PackageIndex};
+use crate::{PackageIndex, attributes::Attribute};
 
 use super::{origin::Origin, rust_type_name, vertex::Vertex};
 
