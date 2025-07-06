@@ -1,7 +1,7 @@
 [package]
 name = "trustfall-rustdoc-adapter"
 version = "53.1.0"
-edition = "2021"
+edition = "2024"
 authors = ["Predrag Gruevski <obi1kenobi82@gmail.com>"]
 license = "Apache-2.0 OR MIT"
 description = "Trustfall query adapter for rustdoc JSON data."
@@ -55,3 +55,6 @@ serde = { version = "1.0.210", features = ["derive"] }
 maplit = "1.0.2"
 version_check = "0.9.5"
 similar-asserts = { version = "1.6.0", features = ["serde"] }
+
+[lints.clippy]
+collapsible_if = "allow"
