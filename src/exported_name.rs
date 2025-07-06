@@ -8,19 +8,19 @@ use crate::attributes::Attribute;
 ///
 /// For functions:
 /// ```rust
-/// #[no_mangle]  // visible as `externally_visible`
+/// #[unsafe(no_mangle)]  // visible as `externally_visible`
 /// fn externally_visible() {}
 ///
-/// #[export_name = "also_externally_visible"]
+/// #[unsafe(export_name = "also_externally_visible")]
 /// fn internal_name() {}
 /// ```
 ///
 /// For statics:
 /// ```rust
-/// #[no_mangle]  // visible as `VAR1`
+/// #[unsafe(no_mangle)]  // visible as `VAR1`
 /// static VAR1: i32 = 42;
 ///
-/// #[export_name = "EXTERNALLY_VISIBLE"] // visible as `EXTERNALLY_VISIBLE`
+/// #[unsafe(export_name = "EXTERNALLY_VISIBLE")] // visible as `EXTERNALLY_VISIBLE`
 /// static VAR2: i32 = 42;
 /// ```
 ///

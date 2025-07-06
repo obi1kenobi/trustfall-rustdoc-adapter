@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use rustdoc_types::Item;
 use trustfall::{
-    provider::{
-        resolve_coercion_with, Adapter, AsVertex, ContextIterator, ContextOutcomeIterator,
-        EdgeParameters, ResolveEdgeInfo, ResolveInfo, Typename, VertexIterator,
-    },
     FieldValue, Schema,
+    provider::{
+        Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, EdgeParameters,
+        ResolveEdgeInfo, ResolveInfo, Typename, VertexIterator, resolve_coercion_with,
+    },
 };
 
 use crate::PackageIndex;

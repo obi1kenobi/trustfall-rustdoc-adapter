@@ -1,13 +1,13 @@
 use rustdoc_types::Item;
 use trustfall::{
-    provider::{
-        resolve_neighbors_with, AsVertex, CandidateValue, ContextIterator, ContextOutcomeIterator,
-        ResolveEdgeInfo, VertexInfo, VertexIterator,
-    },
     FieldValue,
+    provider::{
+        AsVertex, CandidateValue, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
+        VertexInfo, VertexIterator, resolve_neighbors_with,
+    },
 };
 
-use super::super::{origin::Origin, vertex::Vertex, RustdocAdapter};
+use super::super::{RustdocAdapter, origin::Origin, vertex::Vertex};
 
 use crate::IndexedCrate;
 
