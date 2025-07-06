@@ -14,6 +14,6 @@ pub trait Bar {
     fn trait_with_body() {}
 }
 
-extern "C" {
+unsafe extern "C" {
     pub fn extern_no_body();
 }

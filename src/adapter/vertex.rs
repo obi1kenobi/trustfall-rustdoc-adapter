@@ -7,8 +7,8 @@ use rustdoc_types::{
 use trustfall::provider::Typename;
 
 use crate::{
-    attributes::{Attribute, AttributeMetaItem},
     ImportablePath, IndexedCrate, PackageIndex,
+    attributes::{Attribute, AttributeMetaItem},
 };
 
 use super::{enum_variant::EnumVariant, origin::Origin, receiver::Receiver};

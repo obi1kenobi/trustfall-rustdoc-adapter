@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use rustdoc_types::Crate;
 use trustfall_rustdoc_adapter::IndexedCrate;
 
