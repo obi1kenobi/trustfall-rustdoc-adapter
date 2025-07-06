@@ -4,24 +4,24 @@ use rustdoc_types::{
     GenericBound::TraitBound, GenericParamDefKind, Id, ItemEnum, VariantKind, WherePredicate,
 };
 use trustfall::provider::{
-    resolve_neighbors_with, AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo,
-    VertexIterator,
+    AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo, VertexIterator,
+    resolve_neighbors_with,
 };
 
 use crate::{
+    PackageIndex,
     adapter::supported_item_kind,
     attributes::Attribute,
     hashtables::{HashMap, HashSet},
-    PackageIndex,
 };
 
 use super::{
+    RustdocAdapter,
     enum_variant::LazyDiscriminants,
     optimizations,
     origin::Origin,
     receiver::Receiver,
     vertex::{Feature, Vertex},
-    RustdocAdapter,
 };
 
 pub(super) fn resolve_crate_diff_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(

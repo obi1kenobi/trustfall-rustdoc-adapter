@@ -108,7 +108,8 @@ fn fmt_generic_param_def(this: &GenericParamDef, f: &mut Formatter<'_>) -> Resul
             is_synthetic,
         } => {
             if *is_synthetic {
-                unreachable!("synthetic generic parameters should not be printed.\n\
+                unreachable!(
+                    "synthetic generic parameters should not be printed.\n\
                     They do not occur in types, and in function definitions they should be filtered out."
                 )
             }
@@ -632,7 +633,7 @@ mod tests {
     use rustdoc_types::{Item, ItemEnum, StructKind};
     use trustfall::{Schema, TryIntoStruct as _};
 
-    use crate::{test_util::CURRENT_TARGET_TRIPLE, RustdocAdapter};
+    use crate::{RustdocAdapter, test_util::CURRENT_TARGET_TRIPLE};
 
     use super::rust_type_name;
 
@@ -931,10 +932,23 @@ mod tests {
                 .collect();
 
             similar_asserts::assert_eq!(
-                vec![("a", "&'a (impl Fn() -> *const fn() -> &'a (dyn Iterator<Item = ()> + Unpin) + Send)"),
-                    ("b", "Box<dyn Fn() -> *const (dyn Unpin + Fn() -> &'static mut (dyn std::any::Any + Sync)) + Sync>"),
-                    ("c", "fn() -> &'a (dyn Send + Fn() -> *const dyn std::any::Any)"),
-                    ("no_parens", "impl for<'x> Fn(&'x ()) -> &'x dyn std::fmt::Debug"),
+                vec![
+                    (
+                        "a",
+                        "&'a (impl Fn() -> *const fn() -> &'a (dyn Iterator<Item = ()> + Unpin) + Send)"
+                    ),
+                    (
+                        "b",
+                        "Box<dyn Fn() -> *const (dyn Unpin + Fn() -> &'static mut (dyn std::any::Any + Sync)) + Sync>"
+                    ),
+                    (
+                        "c",
+                        "fn() -> &'a (dyn Send + Fn() -> *const dyn std::any::Any)"
+                    ),
+                    (
+                        "no_parens",
+                        "impl for<'x> Fn(&'x ()) -> &'x dyn std::fmt::Debug"
+                    ),
                     ("sanity", "&dyn std::fmt::Display"),
                 ],
                 inputs
