@@ -203,7 +203,7 @@ pub struct IndexedCrate<'a> {
     /// -> function item with that export name; exported symbol names must be unique.
     pub(crate) export_name_index: Option<HashMap<&'a str, &'a Item>>,
 
-    /// index: kind of public top-level item -> `Vec<&'a Item>` of that kind
+    /// index: kind of public top-level item -> `HashMap<Id, &'a Item>` of that kind
     pub(crate) pub_item_kind_index: PubItemKindIndex<'a>,
 
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
@@ -229,156 +229,164 @@ pub struct IndexedCrate<'a> {
     pub(crate) target_features: HashMap<&'a str, &'a rustdoc_types::TargetFeature>,
 }
 
+
 #[derive(Debug, Clone)]
 pub(crate) struct PubItemKindIndex<'a> {
-    pub(crate) free_functions: Vec<&'a Item>,
-    pub(crate) structs: Vec<&'a Item>,
-    pub(crate) enums: Vec<&'a Item>,
-    pub(crate) unions: Vec<&'a Item>,
-    pub(crate) traits: Vec<&'a Item>,
-    pub(crate) modules: Vec<&'a Item>,
-    pub(crate) statics: Vec<&'a Item>,
-    pub(crate) free_consts: Vec<&'a Item>,
-    pub(crate) decl_macros: Vec<&'a Item>,
-    pub(crate) proc_macros: Vec<&'a Item>,
+    pub(crate) free_functions: HashMap<Id, &'a Item>,
+    pub(crate) structs: HashMap<Id, &'a Item>,
+    pub(crate) enums: HashMap<Id, &'a Item>,
+    pub(crate) unions: HashMap<Id, &'a Item>,
+    pub(crate) traits: HashMap<Id, &'a Item>,
+    pub(crate) modules: HashMap<Id, &'a Item>,
+    pub(crate) statics: HashMap<Id, &'a Item>,
+    pub(crate) free_consts: HashMap<Id, &'a Item>,
+    pub(crate) decl_macros: HashMap<Id, &'a Item>,
+    pub(crate) proc_macros: HashMap<Id, &'a Item>,
 }
 
+
 impl<'a> PubItemKindIndex<'a> {
+    #[cfg(feature = "rustc-hash")]
     fn with_capacity_hint(hint: usize) -> Self {
         let capacity = if hint < 128 * 128 { 128 } else { hint / 128 };
         Self {
             // Most top-level items in a crate are functions, structs, enums, or traits.
             // We want indexing to be fast, and it's okay if we waste a bit of memory.
-            free_functions: Vec::with_capacity(capacity),
-            structs: Vec::with_capacity(capacity),
-            enums: Vec::with_capacity(capacity),
-            traits: Vec::with_capacity(capacity),
-            unions: Vec::new(),
-            modules: Vec::with_capacity(64),
-            statics: Vec::new(),
-            free_consts: Vec::new(),
-            decl_macros: Vec::new(),
-            proc_macros: Vec::new(),
+            free_functions: HashMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
+            structs: HashMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
+            enums: HashMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
+            traits: HashMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
+            unions: HashMap::with_hasher(rustc_hash::FxBuildHasher),
+            modules: HashMap::with_capacity_and_hasher(64, rustc_hash::FxBuildHasher),
+            statics: HashMap::with_hasher(rustc_hash::FxBuildHasher),
+            free_consts: HashMap::with_hasher(rustc_hash::FxBuildHasher),
+            decl_macros: HashMap::with_hasher(rustc_hash::FxBuildHasher),
+            proc_macros: HashMap::with_hasher(rustc_hash::FxBuildHasher),
+        }
+    }
+
+    #[cfg(not(feature = "rustc-hash"))]
+    fn with_capacity_hint(hint: usize) -> Self {
+        let capacity = if hint < 128 * 128 { 128 } else { hint / 128 };
+        Self {
+            // Most top-level items in a crate are functions, structs, enums, or traits.
+            // We want indexing to be fast, and it's okay if we waste a bit of memory.
+            free_functions: HashMap::with_capacity(capacity),
+            structs: HashMap::with_capacity(capacity),
+            enums: HashMap::with_capacity(capacity),
+            traits: HashMap::with_capacity(capacity),
+            unions: HashMap::new(),
+            modules: HashMap::with_capacity(64),
+            statics: HashMap::new(),
+            free_consts: HashMap::new(),
+            decl_macros: HashMap::new(),
+            proc_macros: HashMap::new(),
         }
     }
 
     fn from_crate(crate_: &'a Crate, fn_owner_index: &HashMap<Id, &'a Item>) -> Self {
-        #[cfg(feature = "rayon")]
-        let iter = crate_.index.par_iter().map(|(_, value)| value);
-        #[cfg(not(feature = "rayon"))]
         let iter = crate_.index.values();
+        let init = PubItemKindIndex::with_capacity_hint(crate_.index.len());        
 
-        #[cfg(feature = "rayon")]
-        let init = || Self::with_capacity_hint(crate_.index.len());
-        #[cfg(not(feature = "rayon"))]
-        let init = Self::with_capacity_hint(crate_.index.len());
-
-        let folded = iter.fold(init, |mut acc, item| {
+        iter.fold(init, |mut acc, item| {
             if item.visibility == rustdoc_types::Visibility::Public {
                 match &item.inner {
                     rustdoc_types::ItemEnum::Module { .. } => {
-                        acc.modules.push(item);
+                        acc.modules.insert(item.id, item);
                     }
                     rustdoc_types::ItemEnum::Union { .. } => {
-                        acc.unions.push(item);
+                        acc.unions.insert(item.id, item);
                     }
                     rustdoc_types::ItemEnum::Struct { .. } => {
-                        acc.structs.push(item);
+                        acc.structs.insert(item.id, item);
                     }
                     rustdoc_types::ItemEnum::Enum { .. } => {
-                        acc.enums.push(item);
+                        acc.enums.insert(item.id, item);
                     }
                     rustdoc_types::ItemEnum::Function { .. } => {
                         if !fn_owner_index.contains_key(&item.id) {
                             // This is a free function.
-                            acc.free_functions.push(item);
+                            acc.free_functions.insert(item.id, item);
                         }
                     }
                     rustdoc_types::ItemEnum::Trait { .. } => {
-                        acc.traits.push(item);
+                        acc.traits.insert(item.id, item);
                     }
                     rustdoc_types::ItemEnum::Constant { .. } => {
-                        acc.free_consts.push(item);
+                        acc.free_consts.insert(item.id, item);
                     }
                     rustdoc_types::ItemEnum::Static { .. } => {
-                        acc.statics.push(item);
+                        acc.statics.insert(item.id, item);
                     }
                     rustdoc_types::ItemEnum::Macro { .. } => {
-                        acc.decl_macros.push(item);
+                        acc.decl_macros.insert(item.id, item);
                     }
                     rustdoc_types::ItemEnum::ProcMacro { .. } => {
-                        acc.proc_macros.push(item);
+                        acc.proc_macros.insert(item.id, item);
                     }
                     _ => {}
                 }
             }
 
             acc
-        });
+        })
+    }
 
-        #[cfg(feature = "rayon")]
-        let folded = {
-            let collected = folded
-                .map(|index| vec![index])
-                .reduce(Vec::new, |mut left, right| {
-                    left.extend(right);
-                    left
-                });
-
-            let mut fns_len = 0;
-            let mut structs_len = 0;
-            let mut enums_len = 0;
-            let mut unions_len = 0;
-            let mut traits_len = 0;
-            let mut modules_len = 0;
-            let mut statics_len = 0;
-            let mut consts_len = 0;
-            let mut decl_macros_len = 0;
-            let mut proc_macros_len = 0;
-
-            for c in &collected {
-                fns_len += c.free_functions.len();
-                structs_len += c.structs.len();
-                enums_len += c.enums.len();
-                unions_len += c.unions.len();
-                traits_len += c.traits.len();
-                modules_len += c.modules.len();
-                statics_len += c.statics.len();
-                consts_len += c.free_consts.len();
-                decl_macros_len += c.decl_macros.len();
-                proc_macros_len += c.proc_macros.len();
+    /// Returns true if the index corresponding to the type given by
+    /// `destination_type` contains an element with the id `item_id`.
+    /// Conservatively, returns true if the destination is None or of a type
+    /// that isn't contained in the indexes.
+    pub fn contains(&self, destination_type: Option<Arc<str>>, item_id: Id) -> bool {
+        if let Some(destination_type) = destination_type {
+            match destination_type.as_ref() {
+                "Function" => {
+                    self.free_functions.contains_key(&item_id)
+                }
+                "Struct" => {
+                    self.structs.contains_key(&item_id)
+                }
+                "Enum" => {
+                    self.enums.contains_key(&item_id)
+                }
+                "Union" => {
+                    self.unions.contains_key(&item_id)
+                }
+                "Trait" => {
+                    self.traits.contains_key(&item_id)
+                }
+                "ImplOwner" => {
+                    self.structs.contains_key(&item_id)
+                        || self.enums.contains_key(&item_id)
+                        || self.unions.contains_key(&item_id)
+                }
+                "Constant" => {
+                    self.free_consts.contains_key(&item_id)
+                }
+                "Static" => {
+                    self.statics.contains_key(&item_id)
+                }
+                "GlobalValue" => {
+                    // const or static
+                    self.free_consts.contains_key(&item_id)
+                        || self.statics.contains_key(&item_id)
+                }
+                "Macro" => {
+                    self.decl_macros.contains_key(&item_id)
+                }
+                "ProcMacro"
+                | "FunctionLikeProcMacro"
+                | "AttributeProcMacro"
+                | "DeriveProcMacro" => {
+                    self.proc_macros.contains_key(&item_id)
+                }
+                "Module" => {
+                    self.modules.contains_key(&item_id)
+                }
+                _ => true,
             }
-
-            let mut value = Self {
-                free_functions: Vec::with_capacity(fns_len),
-                structs: Vec::with_capacity(structs_len),
-                enums: Vec::with_capacity(enums_len),
-                unions: Vec::with_capacity(unions_len),
-                traits: Vec::with_capacity(traits_len),
-                modules: Vec::with_capacity(modules_len),
-                statics: Vec::with_capacity(statics_len),
-                free_consts: Vec::with_capacity(consts_len),
-                decl_macros: Vec::with_capacity(decl_macros_len),
-                proc_macros: Vec::with_capacity(proc_macros_len),
-            };
-
-            for c in collected {
-                value.free_functions.extend(c.free_functions);
-                value.structs.extend(c.structs);
-                value.enums.extend(c.enums);
-                value.unions.extend(c.unions);
-                value.traits.extend(c.traits);
-                value.modules.extend(c.modules);
-                value.statics.extend(c.statics);
-                value.free_consts.extend(c.free_consts);
-                value.decl_macros.extend(c.decl_macros);
-                value.proc_macros.extend(c.proc_macros);
-            }
-
-            value
-        };
-
-        folded
+        } else {
+            true
+        }
     }
 }
 
@@ -598,6 +606,9 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
 
 impl<'a> IndexedCrate<'a> {
     pub fn new(crate_: &'a Crate) -> Self {
+        let fn_owner_index = build_fn_owner_index(&crate_.index);
+        let pub_item_kind_index = PubItemKindIndex::from_crate(crate_, &fn_owner_index);
+
         let (manually_inlined_builtin_traits, sized_trait) =
             create_manually_inlined_builtin_traits(crate_);
 
@@ -659,7 +670,7 @@ impl<'a> IndexedCrate<'a> {
         value.imports_index = Some(imports_index);
 
         value.impl_method_index = Some(build_impl_index(&crate_.index).into_inner());
-        value.fn_owner_index = Some(build_fn_owner_index(&crate_.index));
+        value.fn_owner_index = Some(fn_owner_index);
         value.export_name_index = Some(build_export_name_index(&crate_.index));
 
         value

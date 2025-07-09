@@ -8,6 +8,7 @@ use trustfall::{
 };
 
 use super::super::{RustdocAdapter, origin::Origin, vertex::Vertex};
+use std::sync::Arc;
 
 use crate::IndexedCrate;
 
@@ -31,16 +32,26 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
         // statically vs dynamically, so we check the dynamic case first since
         // it might be more specific.
         if let Some(dynamic_value) = neighbor_info.dynamically_required_property("path") {
-            return dynamic_value.resolve_with(&adapter, contexts, |vertex, candidate| {
+            return dynamic_value.resolve_with(&adapter, contexts, move |vertex, candidate| {
                 let crate_vertex = vertex.as_indexed_crate().expect("vertex was not a Crate");
                 let origin = vertex.origin;
-                resolve_items_by_importable_path(crate_vertex, origin, candidate)
+                resolve_items_by_importable_path(
+                    crate_vertex,
+                    origin,
+                    destination.coerced_to_type().cloned(),
+                    candidate,
+                )
             });
         } else if let Some(path_value) = neighbor_info.statically_required_property("path") {
             return resolve_neighbors_with(contexts, move |vertex| {
                 let crate_vertex = vertex.as_indexed_crate().expect("vertex was not a Crate");
                 let origin = vertex.origin;
-                resolve_items_by_importable_path(crate_vertex, origin, path_value.clone())
+                resolve_items_by_importable_path(
+                    crate_vertex,
+                    origin,
+                    destination.coerced_to_type().cloned(),
+                    path_value.clone(),
+                )
             });
         }
     }
@@ -83,10 +94,10 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
                             crate_vertex
                                 .pub_item_kind_index
                                 .free_functions
-                                .iter()
+                                .values()
                                 .map(move |item| origin.make_item_vertex(item)),
                         )
-                    })
+                    });
                 }
                 "Struct" => {
                     return resolve_neighbors_with(contexts, move |vertex| {
@@ -97,10 +108,10 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
                             crate_vertex
                                 .pub_item_kind_index
                                 .structs
-                                .iter()
+                                .values()
                                 .map(move |item| origin.make_item_vertex(item)),
                         )
-                    })
+                    });
                 }
                 "Enum" => {
                     return resolve_neighbors_with(contexts, move |vertex| {
@@ -111,10 +122,10 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
                             crate_vertex
                                 .pub_item_kind_index
                                 .enums
-                                .iter()
+                                .values()
                                 .map(move |item| origin.make_item_vertex(item)),
                         )
-                    })
+                    });
                 }
                 "Union" => {
                     return resolve_neighbors_with(contexts, move |vertex| {
@@ -125,10 +136,10 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
                             crate_vertex
                                 .pub_item_kind_index
                                 .unions
-                                .iter()
+                                .values()
                                 .map(move |item| origin.make_item_vertex(item)),
                         )
-                    })
+                    });
                 }
                 "Trait" => {
                     return resolve_neighbors_with(contexts, move |vertex| {
@@ -139,10 +150,10 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
                             crate_vertex
                                 .pub_item_kind_index
                                 .traits
-                                .iter()
+                                .values()
                                 .map(move |item| origin.make_item_vertex(item)),
                         )
-                    })
+                    });
                 }
                 "ImplOwner" => {
                     return resolve_neighbors_with(contexts, move |vertex| {
@@ -153,12 +164,12 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
                             crate_vertex
                                 .pub_item_kind_index
                                 .structs
-                                .iter()
-                                .chain(crate_vertex.pub_item_kind_index.enums.iter())
-                                .chain(crate_vertex.pub_item_kind_index.unions.iter())
+                                .values()
+                                .chain(crate_vertex.pub_item_kind_index.enums.values())
+                                .chain(crate_vertex.pub_item_kind_index.unions.values())
                                 .map(move |item| origin.make_item_vertex(item)),
                         )
-                    })
+                    });
                 }
                 "Constant" => {
                     return resolve_neighbors_with(contexts, move |vertex| {
@@ -169,10 +180,10 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
                             crate_vertex
                                 .pub_item_kind_index
                                 .free_consts
-                                .iter()
+                                .values()
                                 .map(move |item| origin.make_item_vertex(item)),
                         )
-                    })
+                    });
                 }
                 "Static" => {
                     return resolve_neighbors_with(contexts, move |vertex| {
@@ -183,10 +194,10 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
                             crate_vertex
                                 .pub_item_kind_index
                                 .statics
-                                .iter()
+                                .values()
                                 .map(move |item| origin.make_item_vertex(item)),
                         )
-                    })
+                    });
                 }
                 "GlobalValue" => {
                     // const or static
@@ -198,8 +209,8 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
                             crate_vertex
                                 .pub_item_kind_index
                                 .free_consts
-                                .iter()
-                                .chain(crate_vertex.pub_item_kind_index.statics.iter())
+                                .values()
+                                .chain(crate_vertex.pub_item_kind_index.statics.values())
                                 .map(move |item| origin.make_item_vertex(item)),
                         )
                     });
@@ -213,10 +224,10 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
                             crate_vertex
                                 .pub_item_kind_index
                                 .decl_macros
-                                .iter()
+                                .values()
                                 .map(move |item| origin.make_item_vertex(item)),
                         )
-                    })
+                    });
                 }
                 "ProcMacro"
                 | "FunctionLikeProcMacro"
@@ -230,10 +241,10 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
                             crate_vertex
                                 .pub_item_kind_index
                                 .proc_macros
-                                .iter()
+                                .values()
                                 .map(move |item| origin.make_item_vertex(item)),
                         )
-                    })
+                    });
                 }
                 "Module" => {
                     return resolve_neighbors_with(contexts, move |vertex| {
@@ -244,10 +255,10 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
                             crate_vertex
                                 .pub_item_kind_index
                                 .modules
-                                .iter()
+                                .values()
                                 .map(move |item| origin.make_item_vertex(item)),
                         )
-                    })
+                    });
                 }
                 _ => {}
             }
@@ -264,15 +275,24 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
 fn resolve_items_by_importable_path<'a>(
     crate_vertex: &'a IndexedCrate,
     origin: Origin,
+    destination_type: Option<Arc<str>>,
     importable_path: CandidateValue<FieldValue>,
 ) -> VertexIterator<'a, Vertex<'a>> {
     match importable_path {
         CandidateValue::Impossible => Box::new(std::iter::empty()),
-        CandidateValue::Single(value) => {
-            resolve_items_by_importable_path_field_value(crate_vertex, origin, &value)
-        }
+        CandidateValue::Single(value) => resolve_items_by_importable_path_field_value(
+            crate_vertex,
+            origin,
+            destination_type,
+            &value,
+        ),
         CandidateValue::Multiple(values) => Box::new(values.into_iter().flat_map(move |value| {
-            resolve_items_by_importable_path_field_value(crate_vertex, origin, &value)
+            resolve_items_by_importable_path_field_value(
+                crate_vertex,
+                origin,
+                destination_type.clone(),
+                &value,
+            )
         })),
         _ => {
             // fall through to slow path
@@ -284,6 +304,7 @@ fn resolve_items_by_importable_path<'a>(
 fn resolve_items_by_importable_path_field_value<'a>(
     crate_vertex: &'a IndexedCrate,
     origin: Origin,
+    destination_type: Option<Arc<str>>,
     value: &FieldValue,
 ) -> VertexIterator<'a, Vertex<'a>> {
     let path_components: Vec<&str> = value
@@ -298,7 +319,18 @@ fn resolve_items_by_importable_path_field_value<'a>(
         .expect("crate's imports_index was never constructed")
         .get(path_components.as_slice())
     {
-        resolve_item_vertices(origin, items.iter().map(|(item, _)| item).copied())
+        resolve_item_vertices(
+            origin,
+            items
+                .iter()
+                .map(|(item, _)| item)
+                .copied()
+                .filter(move |item| {
+                    crate_vertex
+                        .pub_item_kind_index
+                        .contains(destination_type.clone(), item.id)
+                }),
+        )
     } else {
         // No such items found.
         Box::new(std::iter::empty())
