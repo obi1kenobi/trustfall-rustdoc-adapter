@@ -229,7 +229,6 @@ pub struct IndexedCrate<'a> {
     pub(crate) target_features: HashMap<&'a str, &'a rustdoc_types::TargetFeature>,
 }
 
-
 #[derive(Debug, Clone)]
 pub(crate) struct PubItemKindIndex<'a> {
     pub(crate) free_functions: HashMap<Id, &'a Item>,
@@ -243,7 +242,6 @@ pub(crate) struct PubItemKindIndex<'a> {
     pub(crate) decl_macros: HashMap<Id, &'a Item>,
     pub(crate) proc_macros: HashMap<Id, &'a Item>,
 }
-
 
 impl<'a> PubItemKindIndex<'a> {
     #[cfg(feature = "rustc-hash")]
@@ -286,7 +284,7 @@ impl<'a> PubItemKindIndex<'a> {
 
     fn from_crate(crate_: &'a Crate, fn_owner_index: &HashMap<Id, &'a Item>) -> Self {
         let iter = crate_.index.values();
-        let init = PubItemKindIndex::with_capacity_hint(crate_.index.len());        
+        let init = PubItemKindIndex::with_capacity_hint(crate_.index.len());
 
         iter.fold(init, |mut acc, item| {
             if item.visibility == rustdoc_types::Visibility::Public {
@@ -339,49 +337,28 @@ impl<'a> PubItemKindIndex<'a> {
     pub fn contains(&self, destination_type: Option<Arc<str>>, item_id: Id) -> bool {
         if let Some(destination_type) = destination_type {
             match destination_type.as_ref() {
-                "Function" => {
-                    self.free_functions.contains_key(&item_id)
-                }
-                "Struct" => {
-                    self.structs.contains_key(&item_id)
-                }
-                "Enum" => {
-                    self.enums.contains_key(&item_id)
-                }
-                "Union" => {
-                    self.unions.contains_key(&item_id)
-                }
-                "Trait" => {
-                    self.traits.contains_key(&item_id)
-                }
+                "Function" => self.free_functions.contains_key(&item_id),
+                "Struct" => self.structs.contains_key(&item_id),
+                "Enum" => self.enums.contains_key(&item_id),
+                "Union" => self.unions.contains_key(&item_id),
+                "Trait" => self.traits.contains_key(&item_id),
                 "ImplOwner" => {
                     self.structs.contains_key(&item_id)
                         || self.enums.contains_key(&item_id)
                         || self.unions.contains_key(&item_id)
                 }
-                "Constant" => {
-                    self.free_consts.contains_key(&item_id)
-                }
-                "Static" => {
-                    self.statics.contains_key(&item_id)
-                }
+                "Constant" => self.free_consts.contains_key(&item_id),
+                "Static" => self.statics.contains_key(&item_id),
                 "GlobalValue" => {
                     // const or static
-                    self.free_consts.contains_key(&item_id)
-                        || self.statics.contains_key(&item_id)
+                    self.free_consts.contains_key(&item_id) || self.statics.contains_key(&item_id)
                 }
-                "Macro" => {
-                    self.decl_macros.contains_key(&item_id)
-                }
+                "Macro" => self.decl_macros.contains_key(&item_id),
                 "ProcMacro"
                 | "FunctionLikeProcMacro"
                 | "AttributeProcMacro"
-                | "DeriveProcMacro" => {
-                    self.proc_macros.contains_key(&item_id)
-                }
-                "Module" => {
-                    self.modules.contains_key(&item_id)
-                }
+                | "DeriveProcMacro" => self.proc_macros.contains_key(&item_id),
+                "Module" => self.modules.contains_key(&item_id),
                 _ => true,
             }
         } else {
