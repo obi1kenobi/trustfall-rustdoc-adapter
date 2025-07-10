@@ -16,10 +16,10 @@ pub(crate) use indexmap::map::IndexMap;
 /// Allow using new() and with_capacity() regardless of the hash algorithm.
 /// See https://github.com/tkaitchuck/aHash/issues/103 for more information.
 /// ```rust
-/// use hashtables::{HashMap, HashMapExt as _};
+/// use crate::hashtables::{HashMap, HashMapExt as _};
 /// fn foo() {
-/// 	// Will fail to compile if HashMapExt is not imported and rustc-hash is enabled.
-/// 	let bar = HashMap::new();
+///     // Will fail to compile if HashMapExt is not imported and rustc-hash is enabled.
+///     let bar = HashMap::new();
 /// }
 /// ```
 #[allow(dead_code)] // Used when rustc-hash is enabled.
