@@ -318,7 +318,7 @@ impl<'a> PubItemKindIndex<'a> {
     /// Returns true if the index corresponding to the type given by
     /// `destination_type` contains an element with the id `item_id`.
     // Currently unused, but might be used in the future so it stays.
-    #[allow(unused)]  
+    #[allow(unused)]
     pub fn contains(&self, destination_type: &str, item_id: Id) -> bool {
         match destination_type {
             "Function" => self.free_functions.contains_key(&item_id),
