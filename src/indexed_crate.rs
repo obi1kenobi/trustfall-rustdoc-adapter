@@ -254,12 +254,12 @@ impl<'a> PubItemKindIndex<'a> {
             structs: HashMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
             enums: HashMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
             traits: HashMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
-            unions: HashMap::with_hasher(rustc_hash::FxBuildHasher),
+            unions: HashMap::default(),
             modules: HashMap::with_capacity_and_hasher(64, rustc_hash::FxBuildHasher),
-            statics: HashMap::with_hasher(rustc_hash::FxBuildHasher),
-            free_consts: HashMap::with_hasher(rustc_hash::FxBuildHasher),
-            decl_macros: HashMap::with_hasher(rustc_hash::FxBuildHasher),
-            proc_macros: HashMap::with_hasher(rustc_hash::FxBuildHasher),
+            statics: HashMap::default(),
+            free_consts: HashMap::default(),
+            decl_macros: HashMap::default(),
+            proc_macros: HashMap::default(),
         }
     }
 
