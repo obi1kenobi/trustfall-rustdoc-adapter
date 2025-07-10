@@ -321,18 +321,144 @@ fn resolve_items_by_importable_path_field_value<'a>(
         .get(path_components.as_slice())
     {
         if let Some(destination_type) = destination_type {
-            resolve_item_vertices(
-                origin,
-                items
-                    .iter()
-                    .map(|(item, _)| item)
-                    .copied()
-                    .filter(move |item| {
+            let base_iter = items.iter().map(|(item, _)| item).copied();
+            match destination_type.as_ref() {
+                "Function" => resolve_item_vertices(
+                    origin,
+                    base_iter.filter(move |item| {
                         crate_vertex
                             .pub_item_kind_index
-                            .contains(destination_type.as_ref(), item.id)
+                            .free_functions
+                            .contains_key(&item.id)
                     }),
-            )
+                ),
+                "Struct" => resolve_item_vertices(
+                    origin,
+                    base_iter.filter(move |item| {
+                        crate_vertex
+                            .pub_item_kind_index
+                            .structs
+                            .contains_key(&item.id)
+                    }),
+                ),
+                "Enum" => resolve_item_vertices(
+                    origin,
+                    base_iter.filter(move |item| {
+                        crate_vertex
+                            .pub_item_kind_index
+                            .enums
+                            .contains_key(&item.id)
+                    }),
+                ),
+                "Union" => resolve_item_vertices(
+                    origin,
+                    base_iter.filter(move |item| {
+                        crate_vertex
+                            .pub_item_kind_index
+                            .unions
+                            .contains_key(&item.id)
+                    }),
+                ),
+                "Trait" => resolve_item_vertices(
+                    origin,
+                    base_iter.filter(move |item| {
+                        crate_vertex
+                            .pub_item_kind_index
+                            .traits
+                            .contains_key(&item.id)
+                    }),
+                ),
+                "ImplOwner" => resolve_item_vertices(
+                    origin,
+                    base_iter.filter(move |item| {
+                        crate_vertex
+                            .pub_item_kind_index
+                            .structs
+                            .contains_key(&item.id)
+                            || crate_vertex
+                                .pub_item_kind_index
+                                .enums
+                                .contains_key(&item.id)
+                            || crate_vertex
+                                .pub_item_kind_index
+                                .unions
+                                .contains_key(&item.id)
+                    }),
+                ),
+                "Constant" => resolve_item_vertices(
+                    origin,
+                    base_iter.filter(move |item| {
+                        crate_vertex
+                            .pub_item_kind_index
+                            .free_consts
+                            .contains_key(&item.id)
+                    }),
+                ),
+                "Static" => resolve_item_vertices(
+                    origin,
+                    base_iter.filter(move |item| {
+                        crate_vertex
+                            .pub_item_kind_index
+                            .statics
+                            .contains_key(&item.id)
+                    }),
+                ),
+                "GlobalValue" => resolve_item_vertices(
+                    origin,
+                    base_iter.filter(move |item| {
+                        // const or static
+                        crate_vertex
+                            .pub_item_kind_index
+                            .free_consts
+                            .contains_key(&item.id)
+                            || crate_vertex
+                                .pub_item_kind_index
+                                .statics
+                                .contains_key(&item.id)
+                    }),
+                ),
+                "Macro" => resolve_item_vertices(
+                    origin,
+                    base_iter.filter(move |item| {
+                        crate_vertex
+                            .pub_item_kind_index
+                            .decl_macros
+                            .contains_key(&item.id)
+                    }),
+                ),
+                "ProcMacro"
+                | "FunctionLikeProcMacro"
+                | "AttributeProcMacro"
+                | "DeriveProcMacro" => resolve_item_vertices(
+                    origin,
+                    base_iter.filter(move |item| {
+                        crate_vertex
+                            .pub_item_kind_index
+                            .proc_macros
+                            .contains_key(&item.id)
+                    }),
+                ),
+                "Module" => resolve_item_vertices(
+                    origin,
+                    base_iter.filter(move |item| {
+                        crate_vertex
+                            .pub_item_kind_index
+                            .modules
+                            .contains_key(&item.id)
+                    }),
+                ),
+                _ => {
+                    // Currently, this function is only called in the context of resolving
+                    // the coercion of a crate to an item. As there are no lints that coerce
+                    // an item to a type other than the ones listed above, this is unreachable.
+                    // If a lint is added that does coerce to a different type, consider adding
+                    // it to the index instead of making this branch reachable.
+                    unreachable!(
+                        "PubItemKindIndex does not contain type {}",
+                        destination_type
+                    )
+                }
+            }
         } else {
             resolve_item_vertices(origin, items.iter().map(|(item, _)| item).copied())
         }
