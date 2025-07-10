@@ -4,6 +4,8 @@ use std::{borrow::Borrow, collections::hash_map::Entry, sync::Arc};
 use rayon::prelude::*;
 use rustdoc_types::{Crate, Id, Item};
 
+#[allow(unused_imports)]
+use crate::hashtables::HashMapExt as _;
 use crate::{
     adapter::supported_item_kind,
     hashtables::{HashMap, HashSet, IndexMap},
@@ -244,26 +246,6 @@ pub(crate) struct PubItemKindIndex<'a> {
 }
 
 impl<'a> PubItemKindIndex<'a> {
-    #[cfg(feature = "rustc-hash")]
-    fn with_capacity_hint(hint: usize) -> Self {
-        let capacity = if hint < 128 * 128 { 128 } else { hint / 128 };
-        Self {
-            // Most top-level items in a crate are functions, structs, enums, or traits.
-            // We want indexing to be fast, and it's okay if we waste a bit of memory.
-            free_functions: IndexMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
-            structs: IndexMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
-            enums: IndexMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
-            traits: IndexMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
-            unions: IndexMap::default(),
-            modules: IndexMap::with_capacity_and_hasher(64, rustc_hash::FxBuildHasher),
-            statics: IndexMap::default(),
-            free_consts: IndexMap::default(),
-            decl_macros: IndexMap::default(),
-            proc_macros: IndexMap::default(),
-        }
-    }
-
-    #[cfg(not(feature = "rustc-hash"))]
     fn with_capacity_hint(hint: usize) -> Self {
         let capacity = if hint < 128 * 128 { 128 } else { hint / 128 };
         Self {
