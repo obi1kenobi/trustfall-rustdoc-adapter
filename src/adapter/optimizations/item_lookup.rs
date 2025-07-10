@@ -273,6 +273,8 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
     })
 }
 
+/// Resolve items with the given value (ImportablePath), keeping only public
+/// items that match the destination_type.
 fn resolve_items_by_importable_path<'a>(
     crate_vertex: &'a IndexedCrate,
     origin: Origin,
@@ -302,6 +304,8 @@ fn resolve_items_by_importable_path<'a>(
     }
 }
 
+/// Resolve items with the given value (ImportablePath), keeping only public
+/// items that match the destination_type.
 fn resolve_items_by_importable_path_field_value<'a>(
     crate_vertex: &'a IndexedCrate,
     origin: Origin,
@@ -320,8 +324,8 @@ fn resolve_items_by_importable_path_field_value<'a>(
         .expect("crate's imports_index was never constructed")
         .get(path_components.as_slice())
     {
+        let base_iter = items.iter().map(|(item, _)| item).copied();
         if let Some(destination_type) = destination_type {
-            let base_iter = items.iter().map(|(item, _)| item).copied();
             match destination_type.as_ref() {
                 "Function" => resolve_item_vertices(
                     origin,
@@ -448,19 +452,13 @@ fn resolve_items_by_importable_path_field_value<'a>(
                     }),
                 ),
                 _ => {
-                    // Currently, this function is only called in the context of resolving
-                    // the coercion of a crate to an item. As there are no lints that coerce
-                    // an item to a type other than the ones listed above, this is unreachable.
-                    // If a lint is added that does coerce to a different type, consider adding
-                    // it to the index instead of making this branch reachable.
-                    unreachable!(
-                        "PubItemKindIndex does not contain type {}",
-                        destination_type
-                    )
+                    // If this branch is reached inside time sensitive code, consider
+                    // adding the destination type to an index.
+                    resolve_item_vertices(origin, base_iter)
                 }
             }
         } else {
-            resolve_item_vertices(origin, items.iter().map(|(item, _)| item).copied())
+            resolve_item_vertices(origin, base_iter)
         }
     } else {
         // No such items found.

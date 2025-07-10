@@ -4,7 +4,10 @@ use std::{borrow::Borrow, collections::hash_map::Entry, sync::Arc};
 use rayon::prelude::*;
 use rustdoc_types::{Crate, Id, Item};
 
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "used when the `rustc-hash` feature is enabled"
+)]
 use crate::hashtables::HashMapExt as _;
 use crate::{
     adapter::supported_item_kind,
@@ -313,47 +316,6 @@ impl<'a> PubItemKindIndex<'a> {
 
             acc
         })
-    }
-
-    /// Returns true if the index corresponding to the type given by
-    /// `destination_type` contains an element with the id `item_id`.
-    // Currently unused, but might be used in the future so it stays.
-    #[allow(unused)]
-    pub fn contains(&self, destination_type: &str, item_id: Id) -> bool {
-        match destination_type {
-            "Function" => self.free_functions.contains_key(&item_id),
-            "Struct" => self.structs.contains_key(&item_id),
-            "Enum" => self.enums.contains_key(&item_id),
-            "Union" => self.unions.contains_key(&item_id),
-            "Trait" => self.traits.contains_key(&item_id),
-            "ImplOwner" => {
-                self.structs.contains_key(&item_id)
-                    || self.enums.contains_key(&item_id)
-                    || self.unions.contains_key(&item_id)
-            }
-            "Constant" => self.free_consts.contains_key(&item_id),
-            "Static" => self.statics.contains_key(&item_id),
-            "GlobalValue" => {
-                // const or static
-                self.free_consts.contains_key(&item_id) || self.statics.contains_key(&item_id)
-            }
-            "Macro" => self.decl_macros.contains_key(&item_id),
-            "ProcMacro" | "FunctionLikeProcMacro" | "AttributeProcMacro" | "DeriveProcMacro" => {
-                self.proc_macros.contains_key(&item_id)
-            }
-            "Module" => self.modules.contains_key(&item_id),
-            _ => {
-                // Currently, this function is only called in the context of resolving
-                // the coercion of a crate to an item. As there are no lints that coerce
-                // an item to a type other than the ones listed above, this is unreachable.
-                // If a lint is added that does coerce to a different type, consider adding
-                // it to the index instead of making this branch reachable.
-                unreachable!(
-                    "PubItemKindIndex does not contain type {}",
-                    destination_type
-                )
-            }
-        }
     }
 }
 

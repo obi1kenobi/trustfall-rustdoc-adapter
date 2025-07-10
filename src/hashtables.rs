@@ -15,7 +15,7 @@ pub(crate) use indexmap::map::IndexMap;
 
 /// Allow using new() and with_capacity() regardless of the hash algorithm.
 /// See <https://github.com/tkaitchuck/aHash/issues/103> for more information.
-#[allow(dead_code)] // Used when rustc-hash is enabled.
+#[allow(dead_code, reason = "used when the `rustc-hash` feature is enabled")]
 pub(crate) trait HashMapExt {
     fn new() -> Self;
     fn with_capacity(x: usize) -> Self;
