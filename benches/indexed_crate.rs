@@ -8,8 +8,12 @@ use trustfall_rustdoc_adapter::IndexedCrate;
 fn new(c: &mut Criterion) {
     let mut group = c.benchmark_group("IndexedCrate");
     let crate_ = get_aws_sdk_crate();
+    group.sample_size(10);
     group.bench_function("new(aws-sdk-ec2)", |b| {
         b.iter_with_large_drop(|| IndexedCrate::new(crate_))
+    });
+    group.bench_function("new-parallel(aws-sdk-ec2)", |b| {
+        b.iter_with_large_drop(|| IndexedCrate::new_parallel(crate_))
     });
     group.finish();
 }

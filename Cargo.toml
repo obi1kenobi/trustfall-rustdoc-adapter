@@ -39,12 +39,15 @@ rayon = ["dep:rayon"]
 # Use rustc-hash::{FxHashMap, FxHashSet} internally for improved performance
 rustc-hash = ["dep:rustc-hash", "rustdoc-types/rustc-hash"]
 
+
 [[bench]]
 name = "indexed_crate"
 harness = false
 
 [profile.bench]
 debug = 1 # We only need function name information (for flamegraphs)
+lto = "thin"
+codegen-units = 1
 
 [dev-dependencies]
 anyhow = "1.0.89"
