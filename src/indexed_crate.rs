@@ -6,7 +6,7 @@ use rustdoc_types::{Crate, Id, Item};
 
 use crate::{
     adapter::supported_item_kind,
-    hashtables::{HashMap, HashSet},
+    hashtables::{HashMap, HashSet, IndexMap},
     item_flags::{ItemFlag, build_flags_index},
     visibility_tracker::VisibilityTracker,
 };
@@ -203,7 +203,7 @@ pub struct IndexedCrate<'a> {
     /// -> function item with that export name; exported symbol names must be unique.
     pub(crate) export_name_index: Option<HashMap<&'a str, &'a Item>>,
 
-    /// index: kind of public top-level item -> `HashMap<Id, &'a Item>` of that kind
+    /// index: kind of public top-level item -> `IndexMap<Id, &'a Item>` of that kind
     pub(crate) pub_item_kind_index: PubItemKindIndex<'a>,
 
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
@@ -231,16 +231,16 @@ pub struct IndexedCrate<'a> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct PubItemKindIndex<'a> {
-    pub(crate) free_functions: HashMap<Id, &'a Item>,
-    pub(crate) structs: HashMap<Id, &'a Item>,
-    pub(crate) enums: HashMap<Id, &'a Item>,
-    pub(crate) unions: HashMap<Id, &'a Item>,
-    pub(crate) traits: HashMap<Id, &'a Item>,
-    pub(crate) modules: HashMap<Id, &'a Item>,
-    pub(crate) statics: HashMap<Id, &'a Item>,
-    pub(crate) free_consts: HashMap<Id, &'a Item>,
-    pub(crate) decl_macros: HashMap<Id, &'a Item>,
-    pub(crate) proc_macros: HashMap<Id, &'a Item>,
+    pub(crate) free_functions: IndexMap<Id, &'a Item>,
+    pub(crate) structs: IndexMap<Id, &'a Item>,
+    pub(crate) enums: IndexMap<Id, &'a Item>,
+    pub(crate) unions: IndexMap<Id, &'a Item>,
+    pub(crate) traits: IndexMap<Id, &'a Item>,
+    pub(crate) modules: IndexMap<Id, &'a Item>,
+    pub(crate) statics: IndexMap<Id, &'a Item>,
+    pub(crate) free_consts: IndexMap<Id, &'a Item>,
+    pub(crate) decl_macros: IndexMap<Id, &'a Item>,
+    pub(crate) proc_macros: IndexMap<Id, &'a Item>,
 }
 
 impl<'a> PubItemKindIndex<'a> {
@@ -250,16 +250,16 @@ impl<'a> PubItemKindIndex<'a> {
         Self {
             // Most top-level items in a crate are functions, structs, enums, or traits.
             // We want indexing to be fast, and it's okay if we waste a bit of memory.
-            free_functions: HashMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
-            structs: HashMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
-            enums: HashMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
-            traits: HashMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
-            unions: HashMap::default(),
-            modules: HashMap::with_capacity_and_hasher(64, rustc_hash::FxBuildHasher),
-            statics: HashMap::default(),
-            free_consts: HashMap::default(),
-            decl_macros: HashMap::default(),
-            proc_macros: HashMap::default(),
+            free_functions: IndexMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
+            structs: IndexMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
+            enums: IndexMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
+            traits: IndexMap::with_capacity_and_hasher(capacity, rustc_hash::FxBuildHasher),
+            unions: IndexMap::default(),
+            modules: IndexMap::with_capacity_and_hasher(64, rustc_hash::FxBuildHasher),
+            statics: IndexMap::default(),
+            free_consts: IndexMap::default(),
+            decl_macros: IndexMap::default(),
+            proc_macros: IndexMap::default(),
         }
     }
 
@@ -269,16 +269,16 @@ impl<'a> PubItemKindIndex<'a> {
         Self {
             // Most top-level items in a crate are functions, structs, enums, or traits.
             // We want indexing to be fast, and it's okay if we waste a bit of memory.
-            free_functions: HashMap::with_capacity(capacity),
-            structs: HashMap::with_capacity(capacity),
-            enums: HashMap::with_capacity(capacity),
-            traits: HashMap::with_capacity(capacity),
-            unions: HashMap::new(),
-            modules: HashMap::with_capacity(64),
-            statics: HashMap::new(),
-            free_consts: HashMap::new(),
-            decl_macros: HashMap::new(),
-            proc_macros: HashMap::new(),
+            free_functions: IndexMap::with_capacity(capacity),
+            structs: IndexMap::with_capacity(capacity),
+            enums: IndexMap::with_capacity(capacity),
+            traits: IndexMap::with_capacity(capacity),
+            unions: IndexMap::new(),
+            modules: IndexMap::with_capacity(64),
+            statics: IndexMap::new(),
+            free_consts: IndexMap::new(),
+            decl_macros: IndexMap::new(),
+            proc_macros: IndexMap::new(),
         }
     }
 
