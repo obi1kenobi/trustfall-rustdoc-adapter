@@ -335,7 +335,6 @@ impl<'a> PubItemKindIndex<'a> {
 
     /// Returns true if the index corresponding to the type given by
     /// `destination_type` contains an element with the id `item_id`.
-    /// Conservatively, returns true if passed a type that isn't contained in the indexes.
     pub fn contains(&self, destination_type: &str, item_id: Id) -> bool {
         match destination_type {
             "Function" => self.free_functions.contains_key(&item_id),
@@ -359,7 +358,17 @@ impl<'a> PubItemKindIndex<'a> {
                 self.proc_macros.contains_key(&item_id)
             }
             "Module" => self.modules.contains_key(&item_id),
-            _ => true,
+            _ => {
+                // Currently, this function is only called in the context of resolving
+                // the coercion of a crate to an item. As there are no lints that coerce
+                // an item to a type other than the ones listed above, this is unreachable.
+                // If a lint is added that does coerce to a different type, consider adding
+                // it to the index instead of making this branch reachable.
+                unreachable!(
+                    "PubItemKindIndex does not contain type {}",
+                    destination_type
+                )
+            }
         }
     }
 }
