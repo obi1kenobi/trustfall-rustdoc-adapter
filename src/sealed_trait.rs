@@ -1,12 +1,9 @@
-#[cfg(not(feature = "rustc-hash"))]
-use std::collections::{HashMap, HashSet};
-
-#[cfg(feature = "rustc-hash")]
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
-
 use rustdoc_types::{GenericBound, Id, Item, Trait};
 
-use crate::item_flags::ItemFlag;
+use crate::{
+    hashtables::{HashMap, HashSet},
+    item_flags::ItemFlag,
+};
 
 /// Update the `flags` with trait sealing and blanket impls information.
 ///
