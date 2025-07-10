@@ -47,7 +47,6 @@ harness = false
 [profile.bench]
 debug = 1 # We only need function name information (for flamegraphs)
 lto = "thin"
-codegen-units = 1
 
 [dev-dependencies]
 anyhow = "1.0.89"

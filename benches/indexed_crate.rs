@@ -12,9 +12,6 @@ fn new(c: &mut Criterion) {
     group.bench_function("new(aws-sdk-ec2)", |b| {
         b.iter_with_large_drop(|| IndexedCrate::new(crate_))
     });
-    group.bench_function("new-parallel(aws-sdk-ec2)", |b| {
-        b.iter_with_large_drop(|| IndexedCrate::new_parallel(crate_))
-    });
     group.finish();
 }
 
