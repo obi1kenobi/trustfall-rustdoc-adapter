@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use rustdoc_types::Item;
 use trustfall::{
     FieldValue,
@@ -8,7 +10,6 @@ use trustfall::{
 };
 
 use super::super::{RustdocAdapter, origin::Origin, vertex::Vertex};
-use std::sync::Arc;
 
 use crate::IndexedCrate;
 
@@ -319,18 +320,22 @@ fn resolve_items_by_importable_path_field_value<'a>(
         .expect("crate's imports_index was never constructed")
         .get(path_components.as_slice())
     {
-        resolve_item_vertices(
-            origin,
-            items
-                .iter()
-                .map(|(item, _)| item)
-                .copied()
-                .filter(move |item| {
-                    crate_vertex
-                        .pub_item_kind_index
-                        .contains(destination_type.clone(), item.id)
-                }),
-        )
+        if let Some(destination_type) = destination_type {
+            resolve_item_vertices(
+                origin,
+                items
+                    .iter()
+                    .map(|(item, _)| item)
+                    .copied()
+                    .filter(move |item| {
+                        crate_vertex
+                            .pub_item_kind_index
+                            .contains(destination_type.as_ref(), item.id)
+                    }),
+            )
+        } else {
+            resolve_item_vertices(origin, items.iter().map(|(item, _)| item).copied())
+        }
     } else {
         // No such items found.
         Box::new(std::iter::empty())

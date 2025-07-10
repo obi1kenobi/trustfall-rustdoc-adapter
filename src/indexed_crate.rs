@@ -330,7 +330,6 @@ impl<'a> PubItemKindIndex<'a> {
         })
     }
 
-
     // A duplicate of from_crate that generates the index in parallel. It exists
     // only for benchmarking purposes.
     #[cfg(feature = "rustc-hash")]
@@ -423,16 +422,28 @@ impl<'a> PubItemKindIndex<'a> {
 
             // For the purposes of benchmarking.
             let mut value = Self {
-                free_functions: HashMap::with_capacity_and_hasher(fns_len, rustc_hash::FxBuildHasher),
+                free_functions: HashMap::with_capacity_and_hasher(
+                    fns_len,
+                    rustc_hash::FxBuildHasher,
+                ),
                 structs: HashMap::with_capacity_and_hasher(structs_len, rustc_hash::FxBuildHasher),
                 enums: HashMap::with_capacity_and_hasher(enums_len, rustc_hash::FxBuildHasher),
                 unions: HashMap::with_capacity_and_hasher(unions_len, rustc_hash::FxBuildHasher),
                 traits: HashMap::with_capacity_and_hasher(traits_len, rustc_hash::FxBuildHasher),
                 modules: HashMap::with_capacity_and_hasher(modules_len, rustc_hash::FxBuildHasher),
                 statics: HashMap::with_capacity_and_hasher(statics_len, rustc_hash::FxBuildHasher),
-                free_consts: HashMap::with_capacity_and_hasher(consts_len, rustc_hash::FxBuildHasher),
-                decl_macros: HashMap::with_capacity_and_hasher(decl_macros_len, rustc_hash::FxBuildHasher),
-                proc_macros: HashMap::with_capacity_and_hasher(proc_macros_len, rustc_hash::FxBuildHasher),
+                free_consts: HashMap::with_capacity_and_hasher(
+                    consts_len,
+                    rustc_hash::FxBuildHasher,
+                ),
+                decl_macros: HashMap::with_capacity_and_hasher(
+                    decl_macros_len,
+                    rustc_hash::FxBuildHasher,
+                ),
+                proc_macros: HashMap::with_capacity_and_hasher(
+                    proc_macros_len,
+                    rustc_hash::FxBuildHasher,
+                ),
             };
 
             for c in collected {
@@ -458,35 +469,30 @@ impl<'a> PubItemKindIndex<'a> {
     /// `destination_type` contains an element with the id `item_id`.
     /// Conservatively, returns true if the destination is None or of a type
     /// that isn't contained in the indexes.
-    pub fn contains(&self, destination_type: Option<Arc<str>>, item_id: Id) -> bool {
-        if let Some(destination_type) = destination_type {
-            match destination_type.as_ref() {
-                "Function" => self.free_functions.contains_key(&item_id),
-                "Struct" => self.structs.contains_key(&item_id),
-                "Enum" => self.enums.contains_key(&item_id),
-                "Union" => self.unions.contains_key(&item_id),
-                "Trait" => self.traits.contains_key(&item_id),
-                "ImplOwner" => {
-                    self.structs.contains_key(&item_id)
-                        || self.enums.contains_key(&item_id)
-                        || self.unions.contains_key(&item_id)
-                }
-                "Constant" => self.free_consts.contains_key(&item_id),
-                "Static" => self.statics.contains_key(&item_id),
-                "GlobalValue" => {
-                    // const or static
-                    self.free_consts.contains_key(&item_id) || self.statics.contains_key(&item_id)
-                }
-                "Macro" => self.decl_macros.contains_key(&item_id),
-                "ProcMacro"
-                | "FunctionLikeProcMacro"
-                | "AttributeProcMacro"
-                | "DeriveProcMacro" => self.proc_macros.contains_key(&item_id),
-                "Module" => self.modules.contains_key(&item_id),
-                _ => true,
+    pub fn contains(&self, destination_type: &str, item_id: Id) -> bool {
+        match destination_type {
+            "Function" => self.free_functions.contains_key(&item_id),
+            "Struct" => self.structs.contains_key(&item_id),
+            "Enum" => self.enums.contains_key(&item_id),
+            "Union" => self.unions.contains_key(&item_id),
+            "Trait" => self.traits.contains_key(&item_id),
+            "ImplOwner" => {
+                self.structs.contains_key(&item_id)
+                    || self.enums.contains_key(&item_id)
+                    || self.unions.contains_key(&item_id)
             }
-        } else {
-            true
+            "Constant" => self.free_consts.contains_key(&item_id),
+            "Static" => self.statics.contains_key(&item_id),
+            "GlobalValue" => {
+                // const or static
+                self.free_consts.contains_key(&item_id) || self.statics.contains_key(&item_id)
+            }
+            "Macro" => self.decl_macros.contains_key(&item_id),
+            "ProcMacro" | "FunctionLikeProcMacro" | "AttributeProcMacro" | "DeriveProcMacro" => {
+                self.proc_macros.contains_key(&item_id)
+            }
+            "Module" => self.modules.contains_key(&item_id),
+            _ => true,
         }
     }
 }
@@ -849,8 +855,6 @@ impl<'a> IndexedCrate<'a> {
 
         value
     }
-
-
 
     /// Return all the paths with which the given item can be imported from this crate.
     pub fn publicly_importable_names(&self, id: &'a Id) -> Vec<ImportablePath<'a>> {
