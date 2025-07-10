@@ -1,15 +1,13 @@
-#[cfg(not(feature = "rustc-hash"))]
-use std::collections::{HashMap, HashSet};
-
-#[cfg(feature = "rustc-hash")]
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
-
 use rustdoc_types::{Crate, GenericArgs, Id, Item, ItemEnum, TypeAlias, Visibility};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
-use crate::{ImportablePath, attributes::Attribute};
+use crate::{
+    ImportablePath,
+    attributes::Attribute,
+    hashtables::{HashMap, HashSet},
+};
 
 #[derive(Debug, Clone)]
 pub(crate) struct VisibilityTracker<'a> {
