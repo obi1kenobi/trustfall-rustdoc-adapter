@@ -288,14 +288,14 @@ fn resolve_items_by_importable_path<'a>(
         CandidateValue::Single(value) => resolve_items_by_importable_path_field_value(
             crate_vertex,
             origin,
-            destination_type,
+            destination_type.as_deref(),
             &value,
         ),
         CandidateValue::Multiple(values) => Box::new(values.into_iter().flat_map(move |value| {
             resolve_items_by_importable_path_field_value(
                 crate_vertex,
                 origin,
-                destination_type.clone(),
+                destination_type.as_deref(),
                 &value,
             )
         })),
@@ -306,17 +306,20 @@ fn resolve_items_by_importable_path<'a>(
     }
 }
 
-/// Resolve public items with path `importable_path` and type `destination_type`.
+/// Resolve public items with importable path `path`, optionally of vertex type `destination_type`.
 ///
-/// If the destination is None or an unrecognised string, we conservatively return all
-/// paths that match the `value`.
+/// For example, "structs at path `foo::bar`" or "anything at `foo::bar`".
+/// The former has destination type `Some("Struct")`, while the latter has `None`.
+///
+/// When the destination is `None` or the name of a type that we don't have an index for,
+/// we conservatively return all paths that match the `value`.
 fn resolve_items_by_importable_path_field_value<'a>(
     crate_vertex: &'a IndexedCrate,
     origin: Origin,
-    destination_type: Option<Arc<str>>,
-    value: &FieldValue,
+    destination_type: Option<&str>,
+    path: &FieldValue,
 ) -> VertexIterator<'a, Vertex<'a>> {
-    let path_components: Vec<&str> = value
+    let path_components: Vec<&str> = path
         .as_slice()
         .expect("ImportablePath.path was not a list")
         .iter()
@@ -330,7 +333,7 @@ fn resolve_items_by_importable_path_field_value<'a>(
     {
         let base_iter = items.iter().map(|(item, _)| item).copied();
         if let Some(destination_type) = destination_type {
-            match destination_type.as_ref() {
+            match destination_type {
                 "Function" => resolve_item_vertices(
                     origin,
                     base_iter.filter(move |item| {
@@ -456,16 +459,20 @@ fn resolve_items_by_importable_path_field_value<'a>(
                     }),
                 ),
                 _ => {
+                    // No index is available for this type.
+                    //
                     // If this branch is reached inside time sensitive code, consider
                     // adding the destination type to an index.
                     resolve_item_vertices(origin, base_iter)
                 }
             }
         } else {
+            // This query doesn't apply a coercion on the resulting vertex,
+            // so we produce all vertices that matched the path lookup.
             resolve_item_vertices(origin, base_iter)
         }
     } else {
-        // No such items found.
+        // No items at found at the given path.
         Box::new(std::iter::empty())
     }
 }
