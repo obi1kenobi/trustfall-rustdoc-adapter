@@ -307,7 +307,7 @@ fn resolve_items_by_importable_path<'a>(
 }
 
 /// Resolve public items with path `importable_path` and type `destination_type`.
-/// 
+///
 /// If the destination is None or an unrecognised string, we conservatively return all
 /// paths that match the `value`.
 fn resolve_items_by_importable_path_field_value<'a>(
