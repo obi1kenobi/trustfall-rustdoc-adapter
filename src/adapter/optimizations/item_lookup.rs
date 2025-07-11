@@ -273,8 +273,10 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
     })
 }
 
-/// Resolve items with the given value (ImportablePath), keeping only public
-/// items that match the destination_type.
+/// Resolve public items with candidate value `importable_path` and type `destination_type`.
+///
+/// If the destination is None or an unrecognised string, we conservatively return all
+/// paths that match the candidate value.
 fn resolve_items_by_importable_path<'a>(
     crate_vertex: &'a IndexedCrate,
     origin: Origin,
@@ -304,8 +306,10 @@ fn resolve_items_by_importable_path<'a>(
     }
 }
 
-/// Resolve items with the given value (ImportablePath), keeping only public
-/// items that match the destination_type.
+/// Resolve public items with path `importable_path` and type `destination_type`.
+/// 
+/// If the destination is None or an unrecognised string, we conservatively return all
+/// paths that match the `value`.
 fn resolve_items_by_importable_path_field_value<'a>(
     crate_vertex: &'a IndexedCrate,
     origin: Origin,
