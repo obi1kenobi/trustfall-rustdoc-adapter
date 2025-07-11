@@ -4,9 +4,14 @@ use std::{borrow::Borrow, collections::hash_map::Entry, sync::Arc};
 use rayon::prelude::*;
 use rustdoc_types::{Crate, Id, Item};
 
+#[allow(
+    unused_imports,
+    reason = "used when the `rustc-hash` feature is enabled"
+)]
+use crate::hashtables::HashMapExt as _;
 use crate::{
     adapter::supported_item_kind,
-    hashtables::{HashMap, HashSet},
+    hashtables::{HashMap, HashSet, IndexMap},
     item_flags::{ItemFlag, build_flags_index},
     visibility_tracker::VisibilityTracker,
 };
@@ -203,6 +208,9 @@ pub struct IndexedCrate<'a> {
     /// -> function item with that export name; exported symbol names must be unique.
     pub(crate) export_name_index: Option<HashMap<&'a str, &'a Item>>,
 
+    /// index: kind of public top-level item -> `IndexMap<Id, &'a Item>` of that kind
+    pub(crate) pub_item_kind_index: PubItemKindIndex<'a>,
+
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
     /// even if they are implemented by a type in that crate. This also includes
     /// Rust's built-in traits like `Debug, Send, Eq` etc.
@@ -224,6 +232,91 @@ pub struct IndexedCrate<'a> {
 
     /// Target feature information about our current target triple.
     pub(crate) target_features: HashMap<&'a str, &'a rustdoc_types::TargetFeature>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PubItemKindIndex<'a> {
+    pub(crate) free_functions: IndexMap<Id, &'a Item>,
+    pub(crate) structs: IndexMap<Id, &'a Item>,
+    pub(crate) enums: IndexMap<Id, &'a Item>,
+    pub(crate) unions: IndexMap<Id, &'a Item>,
+    pub(crate) traits: IndexMap<Id, &'a Item>,
+    pub(crate) modules: IndexMap<Id, &'a Item>,
+    pub(crate) statics: IndexMap<Id, &'a Item>,
+    pub(crate) free_consts: IndexMap<Id, &'a Item>,
+    pub(crate) decl_macros: IndexMap<Id, &'a Item>,
+    pub(crate) proc_macros: IndexMap<Id, &'a Item>,
+}
+
+impl<'a> PubItemKindIndex<'a> {
+    fn with_capacity_hint(hint: usize) -> Self {
+        let capacity = if hint < 128 * 128 { 128 } else { hint / 128 };
+        Self {
+            // Most top-level items in a crate are functions, structs, enums, or traits.
+            // We want indexing to be fast, and it's okay if we waste a bit of memory.
+            free_functions: IndexMap::with_capacity(capacity),
+            structs: IndexMap::with_capacity(capacity),
+            enums: IndexMap::with_capacity(capacity),
+            traits: IndexMap::with_capacity(capacity),
+            unions: IndexMap::new(),
+            modules: IndexMap::with_capacity(64),
+            statics: IndexMap::new(),
+            free_consts: IndexMap::new(),
+            decl_macros: IndexMap::new(),
+            proc_macros: IndexMap::new(),
+        }
+    }
+
+    fn from_crate(crate_: &'a Crate, fn_owner_index: &HashMap<Id, &'a Item>) -> Self {
+        // Parallel construction takes significantly longer than single-threaded.
+        // See https://github.com/obi1kenobi/trustfall-rustdoc-adapter/pull/902#issuecomment-3054606032
+        // for a comparison of the runtimes.
+        let iter = crate_.index.values();
+        let init = PubItemKindIndex::with_capacity_hint(crate_.index.len());
+
+        iter.fold(init, |mut acc, item| {
+            if item.visibility == rustdoc_types::Visibility::Public {
+                match &item.inner {
+                    rustdoc_types::ItemEnum::Module { .. } => {
+                        acc.modules.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::Union { .. } => {
+                        acc.unions.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::Struct { .. } => {
+                        acc.structs.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::Enum { .. } => {
+                        acc.enums.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::Function { .. } => {
+                        if !fn_owner_index.contains_key(&item.id) {
+                            // This is a free function.
+                            acc.free_functions.insert(item.id, item);
+                        }
+                    }
+                    rustdoc_types::ItemEnum::Trait { .. } => {
+                        acc.traits.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::Constant { .. } => {
+                        acc.free_consts.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::Static { .. } => {
+                        acc.statics.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::Macro { .. } => {
+                        acc.decl_macros.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::ProcMacro { .. } => {
+                        acc.proc_macros.insert(item.id, item);
+                    }
+                    _ => {}
+                }
+            }
+
+            acc
+        })
+    }
 }
 
 /// Map a Key to a List (Vec) of values
@@ -442,6 +535,9 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
 
 impl<'a> IndexedCrate<'a> {
     pub fn new(crate_: &'a Crate) -> Self {
+        let fn_owner_index = build_fn_owner_index(&crate_.index);
+        let pub_item_kind_index = PubItemKindIndex::from_crate(crate_, &fn_owner_index);
+
         let (manually_inlined_builtin_traits, sized_trait) =
             create_manually_inlined_builtin_traits(crate_);
 
@@ -463,6 +559,7 @@ impl<'a> IndexedCrate<'a> {
             fn_owner_index: None,
             export_name_index: None,
             target_features,
+            pub_item_kind_index,
         };
 
         debug_assert!(
@@ -502,7 +599,7 @@ impl<'a> IndexedCrate<'a> {
         value.imports_index = Some(imports_index);
 
         value.impl_method_index = Some(build_impl_index(&crate_.index).into_inner());
-        value.fn_owner_index = Some(build_fn_owner_index(&crate_.index));
+        value.fn_owner_index = Some(fn_owner_index);
         value.export_name_index = Some(build_export_name_index(&crate_.index));
 
         value

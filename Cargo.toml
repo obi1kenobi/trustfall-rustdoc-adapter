@@ -20,6 +20,7 @@ cargo_toml = { version = "0.21.0", features = ["features"] }
 #
 trustfall = "0.8.0"
 cargo_metadata = "0.19.1"
+indexmap = "2.10.0"
 
 #
 # Keep this dependency last, its own block, since we change it often via automated means
@@ -45,6 +46,7 @@ harness = false
 
 [profile.bench]
 debug = 1 # We only need function name information (for flamegraphs)
+lto = "thin"
 
 [dev-dependencies]
 anyhow = "1.0.89"
