@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use rustdoc_types::Item;
 use trustfall::{
@@ -28,6 +28,10 @@ mod vertex;
 #[cfg(test)]
 mod tests;
 
+static SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
+    Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema not valid")
+});
+
 #[non_exhaustive]
 pub struct RustdocAdapter<'a> {
     current_crate: &'a PackageIndex<'a>,
@@ -45,8 +49,8 @@ impl<'a> RustdocAdapter<'a> {
         }
     }
 
-    pub fn schema() -> Schema {
-        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema not valid")
+    pub fn schema() -> &'static Schema {
+        &SCHEMA
     }
 }
 
