@@ -12,14 +12,14 @@ readme = "./README.md"
 
 [dependencies]
 rayon = { version = "1.10.0", optional = true }
-rustc-hash = { version = "2.0.0", optional = true }
-cargo_toml = { version = "0.21.0", features = ["features"] }
+rustc-hash = { version = "2.1.1", optional = true }
+cargo_toml = { version = "0.22.1", features = ["features"] }
 
 # Packages in our public API, where bumping a major version is a breaking change.
 # Extra spacing included to minimize the chance of merge conflicts.
 #
-trustfall = "0.8.0"
-cargo_metadata = "0.19.1"
+trustfall = "0.8.1"
+cargo_metadata = "0.21.0"
 indexmap = "2.10.0"
 
 #
@@ -49,14 +49,13 @@ debug = 1 # We only need function name information (for flamegraphs)
 lto = "thin"
 
 [dev-dependencies]
-anyhow = "1.0.89"
+anyhow = "1.0.98"
 criterion = "0.5.1"
-itertools = "0.13.0"
-serde_json = "1.0.128"
-serde = { version = "1.0.210", features = ["derive"] }
+itertools = "0.14.0"
+serde_json = "1.0.141"
+serde = { version = "1.0.219", features = ["derive"] }
 maplit = "1.0.2"
-version_check = "0.9.5"
-similar-asserts = { version = "1.6.0", features = ["serde"] }
+similar-asserts = { version = "1.7.0", features = ["serde"] }
 
 [lints.clippy]
 collapsible_if = "allow"
