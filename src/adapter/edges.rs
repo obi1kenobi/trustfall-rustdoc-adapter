@@ -51,44 +51,31 @@ pub(super) fn resolve_crate_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "item" => optimizations::item_lookup::resolve_crate_items(adapter, contexts, resolve_info),
-        "root_module" => {
-            let current_crate = adapter.current_crate;
-            let previous_crate = adapter.previous_crate;
+        "root_module" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let crate_ = vertex.as_crate().expect("vertex was not a crate!");
+            let item_index = &adapter
+                .crate_at_origin(&origin)
+                .expect("no crate with given origin")
+                .own_crate
+                .inner
+                .index;
 
-            resolve_neighbors_with(contexts, move |vertex| {
-                let origin = vertex.origin;
-                let crate_ = vertex.as_crate().expect("vertex was not a crate!");
-                let item_index = match origin {
-                    Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-                    Origin::PreviousCrate => {
-                        &previous_crate
-                            .expect("no previous crate provided")
-                            .own_crate
-                            .inner
-                            .index
-                    }
-                };
-
-                let module = item_index
-                    .get(&crate_.root)
-                    .expect("crate had no root module");
-                Box::new(std::iter::once(origin.make_item_vertex(module)))
-            })
-        }
+            let module = item_index
+                .get(&crate_.root)
+                .expect("crate had no root module");
+            Box::new(std::iter::once(origin.make_item_vertex(module)))
+        }),
         "feature" => {
-            let current_crate = adapter.current_crate;
-            let previous_crate = adapter.previous_crate;
-
             resolve_neighbors_with(contexts, move |vertex| {
                 let origin = vertex.origin;
 
-                let Some(features_lookup) = match origin {
-                    Origin::CurrentCrate => &current_crate.features,
-                    Origin::PreviousCrate => {
-                        &previous_crate.expect("no previous crate provided").features
-                    }
-                }
-                .as_ref() else {
+                let Some(features_lookup) = adapter
+                    .crate_at_origin(&origin)
+                    .expect("no crate with given origin")
+                    .features
+                    .as_ref()
+                else {
                     // No feature data was loaded.
                     return Box::new(std::iter::empty());
                 };

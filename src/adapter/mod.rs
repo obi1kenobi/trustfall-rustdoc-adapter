@@ -52,6 +52,13 @@ impl<'a> RustdocAdapter<'a> {
     pub fn schema() -> &'static Schema {
         &SCHEMA
     }
+
+    pub(crate) fn crate_at_origin(&self, origin: &Origin) -> Option<&'a PackageIndex<'a>> {
+        match origin {
+            Origin::CurrentCrate => Some(self.current_crate),
+            Origin::PreviousCrate => self.previous_crate,
+        }
+    }
 }
 
 impl Drop for RustdocAdapter<'_> {
