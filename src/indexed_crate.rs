@@ -236,6 +236,9 @@ pub struct IndexedCrate<'a> {
 
     /// Target feature information about our current target triple.
     pub(crate) target_features: HashMap<&'a str, &'a rustdoc_types::TargetFeature>,
+
+    /// index: item id -> Vector of importable paths.
+    pub(crate) importable_paths_index: Option<HashMap<Id, Vec<ImportablePath<'a>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -565,12 +568,32 @@ impl<'a> IndexedCrate<'a> {
             variant_name_index: None,
             target_features,
             pub_item_kind_index,
+            importable_paths_index: None,
         };
 
         debug_assert!(
             !value.manually_inlined_builtin_traits.is_empty(),
             "failed to find any traits to manually inline",
         );
+
+        value.importable_paths_index = Some({
+            #[cfg(feature = "rayon")]
+            let iter = crate_.index.par_iter();
+            #[cfg(not(feature = "rayon"))]
+            let iter = crate_.index.iter();
+
+            iter.filter_map(|(_id, item)| {
+                if item.visibility == rustdoc_types::Visibility::Public {
+                    let import_paths = value
+                        .visibility_tracker
+                        .collect_publicly_importable_names(_id.0);
+                    Some((*_id, import_paths))
+                } else {
+                    None
+                }
+            })
+            .collect()
+        });
 
         // Build the imports index
         //
@@ -614,8 +637,15 @@ impl<'a> IndexedCrate<'a> {
     /// Return all the paths with which the given item can be imported from this crate.
     pub fn publicly_importable_names(&self, id: &'a Id) -> Vec<ImportablePath<'a>> {
         if self.inner.index.contains_key(id) {
-            self.visibility_tracker
-                .collect_publicly_importable_names(id.0)
+            self.importable_paths_index
+                .as_ref()
+                .expect("importable_paths index was never initialised")
+                .get(id)
+                .map(|x| x.clone())
+                .unwrap_or_else(|| {
+                    self.visibility_tracker
+                        .collect_publicly_importable_names(id.0)
+                })
         } else {
             Default::default()
         }
