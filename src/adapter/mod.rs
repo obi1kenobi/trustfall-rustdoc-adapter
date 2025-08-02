@@ -53,10 +53,16 @@ impl<'a> RustdocAdapter<'a> {
         &SCHEMA
     }
 
-    pub(crate) fn crate_at_origin(&self, origin: &Origin) -> Option<&'a PackageIndex<'a>> {
+    /// Returns the crate at the given origin.
+    ///
+    /// Panics if `Origin::PreviousCrate` is passed and there is no previous crate.
+    #[inline]
+    pub(crate) fn crate_at_origin(&self, origin: Origin) -> &'a PackageIndex<'a> {
         match origin {
-            Origin::CurrentCrate => Some(self.current_crate),
-            Origin::PreviousCrate => self.previous_crate,
+            Origin::CurrentCrate => self.current_crate,
+            Origin::PreviousCrate => self
+                .previous_crate
+                .expect("previous crate was not provided"),
         }
     }
 }

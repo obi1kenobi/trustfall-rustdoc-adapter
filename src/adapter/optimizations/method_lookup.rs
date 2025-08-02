@@ -46,12 +46,7 @@ pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
     } else {
         resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let item_index = &adapter
-                .crate_at_origin(&origin)
-                .expect("no crate with given origin")
-                .own_crate
-                .inner
-                .index;
+            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
             let impl_vertex = vertex.as_impl().expect("not an Impl vertex");
             resolve_methods_slow_path(impl_vertex, origin, item_index)
