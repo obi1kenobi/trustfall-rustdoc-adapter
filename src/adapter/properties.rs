@@ -7,12 +7,9 @@ use trustfall::{
     },
 };
 
-use crate::{
-    PackageIndex,
-    attributes::{Attribute, structured_attr_to_arc_str},
-};
+use crate::attributes::{Attribute, structured_attr_to_arc_str};
 
-use super::{origin::Origin, rust_type_name, vertex::Vertex};
+use super::{RustdocAdapter, rust_type_name, vertex::Vertex};
 
 pub(super) fn resolve_crate_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
@@ -514,8 +511,7 @@ pub(super) fn resolve_raw_type_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "unsafe" => resolve_property_with(contexts, field_property!(as_trait, is_unsafe)),
@@ -526,23 +522,18 @@ pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let trait_item = vertex.as_item().expect("not an Item");
             let origin = vertex.origin;
 
-            let handler = match origin {
-                Origin::CurrentCrate => current_crate,
-                Origin::PreviousCrate => previous_crate.expect("no previous crate provided"),
-            };
-
-            handler.own_crate.is_trait_sealed(&trait_item.id).into()
+            adapter
+                .crate_at_origin(origin)
+                .own_crate
+                .is_trait_sealed(&trait_item.id)
+                .into()
         }),
         "public_api_sealed" => resolve_property_with(contexts, move |vertex| {
             let trait_item = vertex.as_item().expect("not an Item");
             let origin = vertex.origin;
 
-            let handler = match origin {
-                Origin::CurrentCrate => current_crate,
-                Origin::PreviousCrate => previous_crate.expect("no previous crate provided"),
-            };
-
-            handler
+            adapter
+                .crate_at_origin(origin)
                 .own_crate
                 .is_trait_public_api_sealed(&trait_item.id)
                 .into()
@@ -554,17 +545,11 @@ pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_implemented_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "name" | "bare_name" => resolve_property_with(contexts, move |vertex| {
-            let origin_crate = match vertex.origin {
-                Origin::CurrentCrate => current_crate,
-                Origin::PreviousCrate => {
-                    previous_crate.as_ref().expect("no previous crate provided")
-                }
-            };
+            let origin_crate = adapter.crate_at_origin(vertex.origin);
             let impld = vertex
                 .as_implemented_trait()
                 .expect("not an ImplementedTrait");
@@ -781,8 +766,7 @@ pub(crate) fn resolve_generic_parameter_property<'a, V: AsVertex<Vertex<'a>> + '
 pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "has_default" => resolve_property_with(contexts, |vertex| {
@@ -814,12 +798,7 @@ pub(crate) fn resolve_generic_type_parameter_property<'a, V: AsVertex<Vertex<'a>
                 .as_generic_parameter()
                 .expect("vertex was not a GenericTypeParameter");
 
-            let sized_trait_id = match vertex.origin {
-                Origin::CurrentCrate => current_crate,
-                Origin::PreviousCrate => previous_crate.expect("no previous crate provided"),
-            }
-            .own_crate
-            .sized_trait;
+            let sized_trait_id = adapter.crate_at_origin(vertex.origin).own_crate.sized_trait;
 
             let mut maybe_sized = false;
 
