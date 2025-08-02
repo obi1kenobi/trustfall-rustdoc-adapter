@@ -160,13 +160,21 @@ pub(super) fn resolve_importable_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 
             let parent_crate = adapter.crate_at_origin(origin);
 
-            Box::new(
-                parent_crate
-                    .own_crate
-                    .publicly_importable_names(item_id)
-                    .into_iter()
-                    .map(move |x| origin.make_importable_path_vertex(x)),
-            )
+            let importable_paths = parent_crate
+                .own_crate
+                .importable_paths_index
+                .as_ref()
+                .unwrap()
+                .get(item_id);
+
+            match importable_paths {
+                Some(importable_paths) => Box::new(
+                    importable_paths
+                        .into_iter()
+                        .map(move |x| origin.make_importable_path_vertex(x)),
+                ),
+                None => Box::new(std::iter::empty()),
+            }
         }),
         _ => unreachable!("resolve_importable_edge {edge_name}"),
     }

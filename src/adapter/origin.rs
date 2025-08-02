@@ -56,11 +56,11 @@ impl Origin {
 
     pub(super) fn make_importable_path_vertex<'a>(
         &self,
-        importable_path: ImportablePath<'a>,
+        importable_path: &'a ImportablePath<'a>,
     ) -> Vertex<'a> {
         Vertex {
             origin: *self,
-            kind: VertexKind::ImportablePath(Rc::from(importable_path)),
+            kind: VertexKind::ImportablePath(importable_path),
         }
     }
 

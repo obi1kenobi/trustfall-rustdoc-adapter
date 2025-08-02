@@ -584,6 +584,10 @@ impl<'a> IndexedCrate<'a> {
 
             iter.filter_map(|(_id, item)| {
                 if item.visibility == rustdoc_types::Visibility::Public {
+                    if item.name.is_none() {
+                        // Items must have a name in order to be importable.
+                        return None;
+                    }
                     let import_paths = value
                         .visibility_tracker
                         .collect_publicly_importable_names(_id.0);
@@ -609,7 +613,11 @@ impl<'a> IndexedCrate<'a> {
                 if !supported_item_kind(item) {
                     return None;
                 }
-                let importable_paths = value.publicly_importable_names(&item.id);
+                let importable_paths = value.importable_paths_index.as_ref().unwrap().get(&item.id);
+                if importable_paths.is_none() {
+                    return None;
+                }
+                let importable_paths = importable_paths.unwrap();
 
                 #[cfg(feature = "rayon")]
                 let iter = importable_paths.into_par_iter();
@@ -617,7 +625,10 @@ impl<'a> IndexedCrate<'a> {
                 let iter = importable_paths.into_iter();
 
                 Some(iter.map(move |importable_path| {
-                    (importable_path.path, (item, importable_path.modifiers))
+                    (
+                        importable_path.path.clone(),
+                        (item, importable_path.modifiers.clone()),
+                    )
                 }))
             })
             .flatten()
@@ -635,20 +646,12 @@ impl<'a> IndexedCrate<'a> {
     }
 
     /// Return all the paths with which the given item can be imported from this crate.
-    pub fn publicly_importable_names(&self, id: &'a Id) -> Vec<ImportablePath<'a>> {
-        if self.inner.index.contains_key(id) {
-            self.importable_paths_index
-                .as_ref()
-                .expect("importable_paths index was never initialised")
-                .get(id)
-                .map(|x| x.clone())
-                .unwrap_or_else(|| {
-                    self.visibility_tracker
-                        .collect_publicly_importable_names(id.0)
-                })
-        } else {
-            Default::default()
-        }
+    #[inline]
+    pub fn publicly_importable_names(&'a self, id: &'a Id) -> Option<&'a Vec<ImportablePath<'a>>> {
+        self.importable_paths_index
+            .as_ref()
+            .expect("importable_paths index was never initialised")
+            .get(id)
     }
 
     /// Return `true` if our analysis indicates the trait is sealed, and `false` otherwise.

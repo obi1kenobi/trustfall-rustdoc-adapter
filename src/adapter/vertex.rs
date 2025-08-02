@@ -39,7 +39,7 @@ pub enum VertexKind<'a> {
     Path(&'a [String]),
 
     #[non_exhaustive]
-    ImportablePath(Rc<ImportablePath<'a>>),
+    ImportablePath(&'a ImportablePath<'a>),
 
     #[non_exhaustive]
     RawType(&'a Type),
