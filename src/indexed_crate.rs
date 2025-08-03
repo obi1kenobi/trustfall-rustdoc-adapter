@@ -648,10 +648,14 @@ impl<'a> IndexedCrate<'a> {
     /// Return all the paths with which the given item can be imported from this crate.
     #[inline]
     pub fn publicly_importable_names(&'a self, id: &'a Id) -> Option<&'a Vec<ImportablePath<'a>>> {
-        self.importable_paths_index
-            .as_ref()
-            .expect("importable_paths index was never initialised")
-            .get(id)
+        if self.inner.index.contains_key(id) {
+            self.importable_paths_index
+                .as_ref()
+                .expect("importable_paths index was never initialised")
+                .get(id)
+        } else {
+            None
+        }
     }
 
     /// Return `true` if our analysis indicates the trait is sealed, and `false` otherwise.
