@@ -163,8 +163,6 @@ pub(super) fn resolve_importable_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let importable_paths = parent_crate
                 .own_crate
                 .importable_paths_index
-                .as_ref()
-                .unwrap()
                 .get(item_id);
 
             match importable_paths {

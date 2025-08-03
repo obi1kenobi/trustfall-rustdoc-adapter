@@ -12,8 +12,8 @@ use crate::hashtables::HashMapExt as _;
 use crate::{
     adapter::supported_item_kind,
     hashtables::{HashMap, HashSet, IndexMap},
-    item_flags::{ItemFlag, build_flags_index},
-    visibility_tracker::VisibilityTracker,
+    item_flags::{build_flags_index, ItemFlag},
+    visibility_tracker::{self, VisibilityTracker},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -238,7 +238,7 @@ pub struct IndexedCrate<'a> {
     pub(crate) target_features: HashMap<&'a str, &'a rustdoc_types::TargetFeature>,
 
     /// index: item id -> Vector of importable paths.
-    pub(crate) importable_paths_index: Option<HashMap<Id, Vec<ImportablePath<'a>>>>,
+    pub(crate) importable_paths_index: HashMap<Id, Vec<ImportablePath<'a>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -555,28 +555,8 @@ impl<'a> IndexedCrate<'a> {
             .map(|feat| (feat.name.as_str(), feat))
             .collect();
 
-        let mut value = Self {
-            inner: crate_,
-            visibility_tracker: VisibilityTracker::from_crate(crate_),
-            manually_inlined_builtin_traits,
-            sized_trait,
-            flags: None,
-            imports_index: None,
-            impl_method_index: None,
-            fn_owner_index: None,
-            export_name_index: None,
-            variant_name_index: None,
-            target_features,
-            pub_item_kind_index,
-            importable_paths_index: None,
-        };
-
-        debug_assert!(
-            !value.manually_inlined_builtin_traits.is_empty(),
-            "failed to find any traits to manually inline",
-        );
-
-        value.importable_paths_index = Some({
+        let visibility_tracker = VisibilityTracker::from_crate(crate_);
+        let importable_paths_index = {
             #[cfg(feature = "rayon")]
             let iter = crate_.index.par_iter();
             #[cfg(not(feature = "rayon"))]
@@ -588,8 +568,7 @@ impl<'a> IndexedCrate<'a> {
                         // Items must have a name in order to be importable.
                         return None;
                     }
-                    let import_paths = value
-                        .visibility_tracker
+                    let import_paths = visibility_tracker
                         .collect_publicly_importable_names(_id.0);
                     Some((*_id, import_paths))
                 } else {
@@ -597,7 +576,28 @@ impl<'a> IndexedCrate<'a> {
                 }
             })
             .collect()
-        });
+        };
+
+        let mut value = Self {
+            inner: crate_,
+            visibility_tracker: visibility_tracker,
+            manually_inlined_builtin_traits,
+            sized_trait,
+            flags: None,
+            imports_index: None,
+            impl_method_index: None,
+            fn_owner_index: None,
+            export_name_index: None,
+            variant_name_index: None,
+            target_features,
+            pub_item_kind_index,
+            importable_paths_index: importable_paths_index,
+        };
+
+        debug_assert!(
+            !value.manually_inlined_builtin_traits.is_empty(),
+            "failed to find any traits to manually inline",
+        );
 
         // Build the imports index
         //
@@ -613,7 +613,7 @@ impl<'a> IndexedCrate<'a> {
                 if !supported_item_kind(item) {
                     return None;
                 }
-                let importable_paths = value.importable_paths_index.as_ref().unwrap().get(&item.id);
+                let importable_paths = value.importable_paths_index.get(&item.id);
                 if importable_paths.is_none() {
                     return None;
                 }
@@ -648,14 +648,8 @@ impl<'a> IndexedCrate<'a> {
     /// Return all the paths with which the given item can be imported from this crate.
     #[inline]
     pub fn publicly_importable_names(&'a self, id: &'a Id) -> Option<&'a Vec<ImportablePath<'a>>> {
-        if self.inner.index.contains_key(id) {
-            self.importable_paths_index
-                .as_ref()
-                .expect("importable_paths index was never initialised")
-                .get(id)
-        } else {
-            None
-        }
+        self.importable_paths_index
+            .get(id)
     }
 
     /// Return `true` if our analysis indicates the trait is sealed, and `false` otherwise.
