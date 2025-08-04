@@ -9,7 +9,7 @@ use trustfall::{
 
 use crate::{
     RustdocAdapter,
-    adapter::{Origin, PackageIndex, Vertex},
+    adapter::{Origin, Vertex},
     hashtables::{HashMap, HashSet},
     indexed_crate::ImplEntry,
 };
@@ -19,9 +19,6 @@ pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     resolve_info: &ResolveEdgeInfo,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
-    let current_crate = adapter.current_crate;
-    let previous_crate = adapter.previous_crate;
-
     let neighbor_info = resolve_info.destination();
 
     // Is the `name` value within that edge known, either statically or dynamically?
@@ -32,30 +29,16 @@ pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
     // it might be more specific.
     if let Some(resolver) = neighbor_info.dynamically_required_property("name") {
         resolver.resolve_with(&adapter, contexts, move |vertex, candidate| {
-            resolve_method_from_candidate_value(current_crate, previous_crate, vertex, candidate)
+            resolve_method_from_candidate_value(adapter, vertex, candidate)
         })
     } else if let Some(candidate) = neighbor_info.statically_required_property("name") {
         resolve_neighbors_with(contexts, move |vertex| {
-            resolve_method_from_candidate_value(
-                current_crate,
-                previous_crate,
-                vertex,
-                candidate.clone(),
-            )
+            resolve_method_from_candidate_value(adapter, vertex, candidate.clone())
         })
     } else {
         resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let item_index = match origin {
-                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-                Origin::PreviousCrate => {
-                    &previous_crate
-                        .expect("no previous crate provided")
-                        .own_crate
-                        .inner
-                        .index
-                }
-            };
+            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
             let impl_vertex = vertex.as_impl().expect("not an Impl vertex");
             resolve_methods_slow_path(impl_vertex, origin, item_index)
@@ -92,33 +75,18 @@ fn find_impl_owner_id(impl_vertex: &Impl) -> Option<&Id> {
 }
 
 fn resolve_method_from_candidate_value<'a>(
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
     vertex: &Vertex<'a>,
     method_name: CandidateValue<FieldValue>,
 ) -> VertexIterator<'a, Vertex<'a>> {
     let origin = vertex.origin;
-    let (item_index, impl_index) = match origin {
-        Origin::CurrentCrate => (
-            &current_crate.own_crate.inner.index,
-            current_crate
-                .own_crate
-                .impl_method_index
-                .as_ref()
-                .expect("no impl index present"),
-        ),
-        Origin::PreviousCrate => {
-            let previous_crate = previous_crate.expect("no previous crate provided");
-            (
-                &previous_crate.own_crate.inner.index,
-                previous_crate
-                    .own_crate
-                    .impl_method_index
-                    .as_ref()
-                    .expect("no impl index provided"),
-            )
-        }
-    };
+    let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
+    let impl_index = adapter
+        .crate_at_origin(origin)
+        .own_crate
+        .impl_method_index
+        .as_ref()
+        .expect("no impl index provided");
 
     let impl_id = &vertex.as_item().expect("not an Item vertex").id;
     let impl_vertex = vertex.as_impl().expect("not an Impl vertex");
