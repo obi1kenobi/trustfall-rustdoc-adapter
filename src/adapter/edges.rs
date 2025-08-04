@@ -9,7 +9,6 @@ use trustfall::provider::{
 };
 
 use crate::{
-    PackageIndex,
     adapter::supported_item_kind,
     attributes::Attribute,
     hashtables::{HashMap, HashSet},
@@ -51,44 +50,22 @@ pub(super) fn resolve_crate_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "item" => optimizations::item_lookup::resolve_crate_items(adapter, contexts, resolve_info),
-        "root_module" => {
-            let current_crate = adapter.current_crate;
-            let previous_crate = adapter.previous_crate;
+        "root_module" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let crate_ = vertex.as_crate().expect("vertex was not a crate!");
+            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
-            resolve_neighbors_with(contexts, move |vertex| {
-                let origin = vertex.origin;
-                let crate_ = vertex.as_crate().expect("vertex was not a crate!");
-                let item_index = match origin {
-                    Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-                    Origin::PreviousCrate => {
-                        &previous_crate
-                            .expect("no previous crate provided")
-                            .own_crate
-                            .inner
-                            .index
-                    }
-                };
-
-                let module = item_index
-                    .get(&crate_.root)
-                    .expect("crate had no root module");
-                Box::new(std::iter::once(origin.make_item_vertex(module)))
-            })
-        }
+            let module = item_index
+                .get(&crate_.root)
+                .expect("crate had no root module");
+            Box::new(std::iter::once(origin.make_item_vertex(module)))
+        }),
         "feature" => {
-            let current_crate = adapter.current_crate;
-            let previous_crate = adapter.previous_crate;
-
             resolve_neighbors_with(contexts, move |vertex| {
                 let origin = vertex.origin;
 
-                let Some(features_lookup) = match origin {
-                    Origin::CurrentCrate => &current_crate.features,
-                    Origin::PreviousCrate => {
-                        &previous_crate.expect("no previous crate provided").features
-                    }
-                }
-                .as_ref() else {
+                let Some(features_lookup) = adapter.crate_at_origin(origin).features.as_ref()
+                else {
                     // No feature data was loaded.
                     return Box::new(std::iter::empty());
                 };
@@ -102,19 +79,11 @@ pub(super) fn resolve_crate_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             })
         }
         "default_feature" => {
-            let current_crate = adapter.current_crate;
-            let previous_crate = adapter.previous_crate;
-
             resolve_neighbors_with(contexts, move |vertex| {
                 let origin = vertex.origin;
 
-                let Some(features_lookup) = match origin {
-                    Origin::CurrentCrate => &current_crate.features,
-                    Origin::PreviousCrate => {
-                        &previous_crate.expect("no previous crate provided").features
-                    }
-                }
-                .as_ref() else {
+                let Some(features_lookup) = adapter.crate_at_origin(origin).features.as_ref()
+                else {
                     // No feature data was loaded.
                     return Box::new(std::iter::empty());
                 };
@@ -133,41 +102,31 @@ pub(super) fn resolve_crate_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 )
             })
         }
-        "ffi_exported_function" => {
-            let current_crate = adapter.current_crate;
-            let previous_crate = adapter.previous_crate;
-
-            resolve_neighbors_with(contexts, move |vertex| {
-                let origin = vertex.origin;
-                let export_name_index = match origin {
-                    Origin::CurrentCrate => &current_crate.own_crate.export_name_index,
-                    Origin::PreviousCrate => {
-                        &previous_crate
-                            .expect("no previous crate provided")
-                            .own_crate
-                            .export_name_index
-                    }
-                }
+        "ffi_exported_function" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let export_name_index = &adapter
+                .crate_at_origin(origin)
+                .own_crate
+                .export_name_index
                 .as_ref()
                 .expect("export_name_index was never constructed");
 
-                Box::new(
-                    export_name_index
-                        .values()
-                        .filter_map(move |item| match &item.inner {
-                            ItemEnum::Function(..) => {
-                                debug_assert!(
-                                    crate::exported_name::item_export_name(item).is_some(),
-                                    "item was part of export_name_index but did not have \
+            Box::new(
+                export_name_index
+                    .values()
+                    .filter_map(move |item| match &item.inner {
+                        ItemEnum::Function(..) => {
+                            debug_assert!(
+                                crate::exported_name::item_export_name(item).is_some(),
+                                "item was part of export_name_index but did not have \
                                 an exported name: {item:?}"
-                                );
-                                Some(origin.make_item_vertex(item))
-                            }
-                            _ => None,
-                        }),
-                )
-            })
-        }
+                            );
+                            Some(origin.make_item_vertex(item))
+                        }
+                        _ => None,
+                    }),
+            )
+        }),
         _ => unreachable!("resolve_crate_edge {edge_name}"),
     }
 }
@@ -175,8 +134,7 @@ pub(super) fn resolve_crate_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_importable_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "canonical_path" => resolve_neighbors_with(contexts, move |vertex| {
@@ -184,21 +142,14 @@ pub(super) fn resolve_importable_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let item = vertex.as_item().expect("vertex was not an Item");
             let item_id = &item.id;
 
-            if let Some(path) = match origin {
-                Origin::CurrentCrate => current_crate
-                    .own_crate
-                    .inner
-                    .paths
-                    .get(item_id)
-                    .map(|x| &x.path),
-                Origin::PreviousCrate => previous_crate
-                    .expect("no baseline provided")
-                    .own_crate
-                    .inner
-                    .paths
-                    .get(item_id)
-                    .map(|x| &x.path),
-            } {
+            if let Some(path) = adapter
+                .crate_at_origin(origin)
+                .own_crate
+                .inner
+                .paths
+                .get(item_id)
+                .map(|x| &x.path)
+            {
                 Box::new(std::iter::once(origin.make_path_vertex(path)))
             } else {
                 Box::new(std::iter::empty())
@@ -209,10 +160,7 @@ pub(super) fn resolve_importable_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let item = vertex.as_item().expect("vertex was not an Item");
             let item_id = &item.id;
 
-            let parent_crate = match origin {
-                Origin::CurrentCrate => current_crate,
-                Origin::PreviousCrate => previous_crate.expect("no baseline provided"),
-            };
+            let parent_crate = adapter.crate_at_origin(origin);
 
             Box::new(
                 parent_crate
@@ -392,24 +340,14 @@ pub(super) fn resolve_generic_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_module_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "item" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
             let module_item = vertex.as_module().expect("vertex was not a Module");
 
-            let item_index = match origin {
-                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-                Origin::PreviousCrate => {
-                    &previous_crate
-                        .expect("no previous crate provided")
-                        .own_crate
-                        .inner
-                        .index
-                }
-            };
+            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
             Box::new(module_item.items.iter().filter_map(move |item_id| {
                 item_index
@@ -425,24 +363,14 @@ pub(super) fn resolve_module_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_struct_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "field" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
             let struct_item = vertex.as_struct().expect("vertex was not a Struct");
 
-            let item_index = match origin {
-                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-                Origin::PreviousCrate => {
-                    &previous_crate
-                        .expect("no previous crate provided")
-                        .own_crate
-                        .inner
-                        .index
-                }
-            };
+            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
             let field_ids_iter: Box<dyn Iterator<Item = &Id>> = match &struct_item.kind {
                 rustdoc_types::StructKind::Unit => Box::new(std::iter::empty()),
@@ -466,8 +394,7 @@ pub(super) fn resolve_struct_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "field" => resolve_neighbors_with(contexts, move |vertex| {
@@ -476,16 +403,7 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 .as_variant()
                 .expect("vertex was not a Variant")
                 .variant();
-            let item_index = match origin {
-                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-                Origin::PreviousCrate => {
-                    &previous_crate
-                        .expect("no previous crate provided")
-                        .own_crate
-                        .inner
-                        .index
-                }
-            };
+            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
             match &item.kind {
                 VariantKind::Plain => Box::new(std::iter::empty()),
@@ -530,8 +448,7 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_enum_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "variant" => resolve_neighbors_with(contexts, move |vertex| {
@@ -539,16 +456,7 @@ pub(super) fn resolve_enum_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let enum_item = vertex.as_enum().expect("vertex was not an Enum");
             let outer_item = vertex.as_item().expect("enum was not a vertex");
 
-            let item_index = match origin {
-                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-                Origin::PreviousCrate => {
-                    &previous_crate
-                        .expect("no previous crate provided")
-                        .own_crate
-                        .inner
-                        .index
-                }
-            };
+            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
             let discriminants = {
                 // Discriminants are only well-defined if either:
@@ -612,24 +520,14 @@ pub(super) fn resolve_enum_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_union_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "field" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
             let union_item = vertex.as_union().expect("vertex was not an Union");
 
-            let item_index = match origin {
-                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-                Origin::PreviousCrate => {
-                    &previous_crate
-                        .expect("no previous crate provided")
-                        .own_crate
-                        .inner
-                        .index
-                }
-            };
+            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
             Box::new(
                 union_item
@@ -668,24 +566,13 @@ pub(super) fn resolve_impl_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     edge_name: &str,
     resolve_info: &ResolveEdgeInfo,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
-    let current_crate = adapter.current_crate;
-    let previous_crate = adapter.previous_crate;
     match edge_name {
         "method" => {
             optimizations::method_lookup::resolve_impl_methods(adapter, contexts, resolve_info)
         }
         "implemented_trait" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let item_index = match origin {
-                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-                Origin::PreviousCrate => {
-                    &previous_crate
-                        .expect("no previous crate provided")
-                        .own_crate
-                        .inner
-                        .index
-                }
-            };
+            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
             let impl_vertex = vertex.as_impl().expect("not an Impl vertex");
 
@@ -699,18 +586,11 @@ pub(super) fn resolve_impl_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 // Rust built-in traits are manually "inlined"
                 // with items stored in `manually_inlined_builtin_traits`.
                 let found_item = item_index.get(&path.id).or_else(|| {
-                    let manually_inlined_builtin_traits = match origin {
-                        Origin::CurrentCrate => {
-                            &current_crate.own_crate.manually_inlined_builtin_traits
-                        }
-                        Origin::PreviousCrate => {
-                            &previous_crate
-                                .expect("no previous crate provided")
-                                .own_crate
-                                .manually_inlined_builtin_traits
-                        }
-                    };
-                    manually_inlined_builtin_traits.get(&path.id)
+                    adapter
+                        .crate_at_origin(origin)
+                        .own_crate
+                        .manually_inlined_builtin_traits
+                        .get(&path.id)
                 });
 
                 Box::new(std::iter::once(
@@ -722,16 +602,7 @@ pub(super) fn resolve_impl_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
         }),
         "associated_constant" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let item_index = match origin {
-                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-                Origin::PreviousCrate => {
-                    &previous_crate
-                        .expect("no previous crate provided")
-                        .own_crate
-                        .inner
-                        .index
-                }
-            };
+            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
             let impl_vertex = vertex.as_impl().expect("not an Impl vertex");
             Box::new(impl_vertex.items.iter().filter_map(move |item_id| {
@@ -750,22 +621,12 @@ pub(super) fn resolve_impl_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "supertrait" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let item_index = match origin {
-                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-                Origin::PreviousCrate => {
-                    &previous_crate
-                        .expect("no previous crate provided")
-                        .own_crate
-                        .inner
-                        .index
-                }
-            };
+            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
             let trait_vertex = vertex.as_trait().expect("not a Trait vertex");
             Box::new(trait_vertex.bounds.iter().filter_map(move |bound| {
@@ -779,18 +640,11 @@ pub(super) fn resolve_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                     // Rust built-in traits are manually "inlined"
                     // with items stored in `manually_inlined_builtin_traits`.
                     let found_item = item_index.get(&trait_.id).or_else(|| {
-                        let manually_inlined_builtin_traits = match origin {
-                            Origin::CurrentCrate => {
-                                &current_crate.own_crate.manually_inlined_builtin_traits
-                            }
-                            Origin::PreviousCrate => {
-                                &previous_crate
-                                    .expect("no previous crate provided")
-                                    .own_crate
-                                    .manually_inlined_builtin_traits
-                            }
-                        };
-                        manually_inlined_builtin_traits.get(&trait_.id)
+                        adapter
+                            .crate_at_origin(origin)
+                            .own_crate
+                            .manually_inlined_builtin_traits
+                            .get(&trait_.id)
                     });
 
                     // TODO: Remove this once rust-analyzer stops falsely inferring the type of
@@ -807,16 +661,7 @@ pub(super) fn resolve_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
         }),
         "method" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let item_index = match origin {
-                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-                Origin::PreviousCrate => {
-                    &previous_crate
-                        .expect("no previous crate provided")
-                        .own_crate
-                        .inner
-                        .index
-                }
-            };
+            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
             let trait_vertex = vertex.as_trait().expect("not a Trait vertex");
             Box::new(trait_vertex.items.iter().filter_map(move |item_id| {
@@ -835,16 +680,7 @@ pub(super) fn resolve_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
         }),
         "associated_type" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let item_index = match origin {
-                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-                Origin::PreviousCrate => {
-                    &previous_crate
-                        .expect("no previous crate provided")
-                        .own_crate
-                        .inner
-                        .index
-                }
-            };
+            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
             let trait_vertex = vertex.as_trait().expect("not a Trait vertex");
             Box::new(trait_vertex.items.iter().filter_map(move |item_id| {
@@ -863,16 +699,7 @@ pub(super) fn resolve_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
         }),
         "associated_constant" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let item_index = match origin {
-                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-                Origin::PreviousCrate => {
-                    &previous_crate
-                        .expect("no previous crate provided")
-                        .own_crate
-                        .inner
-                        .index
-                }
-            };
+            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
             let trait_vertex = vertex.as_trait().expect("not a Trait vertex");
             Box::new(trait_vertex.items.iter().filter_map(move |item_id| {
@@ -976,22 +803,12 @@ pub(super) fn resolve_derive_proc_macro_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_generic_type_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "type_bound" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let item_index = match origin {
-                Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-                Origin::PreviousCrate => {
-                    &previous_crate
-                        .expect("no previous crate provided")
-                        .own_crate
-                        .inner
-                        .index
-                }
-            };
+            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
             let (generics, param): (
                 &'a rustdoc_types::Generics,
@@ -1051,18 +868,11 @@ pub(super) fn resolve_generic_type_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 
                             // Rust built-in traits are manually "inlined"
                             // with items stored in `manually_inlined_builtin_traits`.
                             let found_item = item_index.get(&trait_.id).or_else(|| {
-                                let manually_inlined_builtin_traits = match origin {
-                                    Origin::CurrentCrate => {
-                                        &current_crate.own_crate.manually_inlined_builtin_traits
-                                    }
-                                    Origin::PreviousCrate => {
-                                        &previous_crate
-                                            .expect("no previous crate provided")
-                                            .own_crate
-                                            .manually_inlined_builtin_traits
-                                    }
-                                };
-                                manually_inlined_builtin_traits.get(&trait_.id)
+                                adapter
+                                    .crate_at_origin(origin)
+                                    .own_crate
+                                    .manually_inlined_builtin_traits
+                                    .get(&trait_.id)
                             });
 
                             Some(origin.make_implemented_trait_vertex(
@@ -1083,22 +893,18 @@ pub(super) fn resolve_generic_type_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 
 pub(super) fn resolve_feature_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     edge_name: &str,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
         "directly_enables" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
             let feature: &Feature<'_> = vertex.as_feature().expect("vertex was not a Feature");
 
-            let features_lookup = match origin {
-                Origin::CurrentCrate => &current_crate.features,
-                Origin::PreviousCrate => {
-                    &previous_crate.expect("no previous crate provided").features
-                }
-            }
-            .as_ref()
-            .expect("no feature data was loaded");
+            let features_lookup = adapter
+                .crate_at_origin(origin)
+                .features
+                .as_ref()
+                .expect("no feature data was loaded");
 
             Box::new(
                 feature
@@ -1120,22 +926,13 @@ pub(super) fn resolve_feature_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 
 pub(super) fn resolve_requires_target_feature_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     resolve_neighbors_with(contexts, move |vertex| {
         let origin = vertex.origin;
         let item = vertex.as_item().expect("vertex was not an Item");
 
-        let features_lookup = match origin {
-            Origin::CurrentCrate => &current_crate.own_crate.target_features,
-            Origin::PreviousCrate => {
-                &previous_crate
-                    .expect("no previous crate provided")
-                    .own_crate
-                    .target_features
-            }
-        };
+        let features_lookup = &adapter.crate_at_origin(origin).own_crate.target_features;
 
         let enabled_features = item
             .attrs
