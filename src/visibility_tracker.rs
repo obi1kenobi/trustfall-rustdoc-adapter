@@ -464,7 +464,7 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
                 if inner_item
                     .attrs
                     .iter()
-                    .any(|attr| matches!(attr, rustdoc_types::Attribute::Other(x) if x == "#[macro_export]"))
+                    .any(|attr| matches!(attr, rustdoc_types::Attribute::MacroExport))
                 {
                     for name in get_names_for_item(crate_, inner_item) {
                         result

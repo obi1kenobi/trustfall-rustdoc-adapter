@@ -97,6 +97,7 @@ static PACKED: LazyLock<Arc<str>> = LazyLock::new(|| "packed".into());
 static ALIGN: LazyLock<Arc<str>> = LazyLock::new(|| "align".into());
 static TARGET_FEATURE: LazyLock<Arc<str>> = LazyLock::new(|| "target_feature".into());
 static ENABLE: LazyLock<Arc<str>> = LazyLock::new(|| "enable".into());
+static MACRO_EXPORT: LazyLock<Arc<str>> = LazyLock::new(|| "macro_export".into());
 
 impl<'a> AttributeMetaItem<'a> {
     const REPR_KIND_INDEX: usize = 0;
@@ -116,7 +117,9 @@ impl<'a> AttributeMetaItem<'a> {
                     // which form was used. Pretend it's the non-unsafe one, for efficiency.
                     rustdoc_types::Attribute::NoMangle |
                     rustdoc_types::Attribute::ExportName(_) |
-                    rustdoc_types::Attribute::LinkSection(_) => Vec::new(),
+                    rustdoc_types::Attribute::LinkSection(_) |
+                    // End of unsafe attributes.
+                    rustdoc_types::Attribute::MacroExport => Vec::new(),
                     rustdoc_types::Attribute::Repr(attribute_repr) => match depth {
                         0 => {
                             let mut output = Vec::with_capacity(3);
@@ -245,6 +248,7 @@ impl<'a> AttributeMetaItem<'a> {
                     1 => format!("enable = \"{}\"", enable.join(",")).into(),
                     _ => unreachable!("invalid attr item: {self:?}"),
                 },
+                rustdoc_types::Attribute::MacroExport => Arc::clone(&MACRO_EXPORT),
                 rustdoc_types::Attribute::Other(_) => {
                     unreachable!("attribute needing parsing found in structured path: {self:?}")
                 }
@@ -339,6 +343,7 @@ impl<'a> AttributeMetaItem<'a> {
                     1 => Arc::clone(&ENABLE),
                     _ => unreachable!("invalid attr item: {self:?}"),
                 },
+                rustdoc_types::Attribute::MacroExport => Arc::clone(&MACRO_EXPORT),
                 rustdoc_types::Attribute::Other(_) => {
                     unreachable!("attribute needing parsing found in structured path: {self:?}")
                 }
@@ -352,7 +357,8 @@ impl<'a> AttributeMetaItem<'a> {
             AttributeMetaItem::Structured(depth, _index, attribute) => match attribute {
                 rustdoc_types::Attribute::NonExhaustive
                 | rustdoc_types::Attribute::AutomaticallyDerived
-                | rustdoc_types::Attribute::NoMangle => {
+                | rustdoc_types::Attribute::NoMangle
+                | rustdoc_types::Attribute::MacroExport => {
                     assert_eq!(*depth, 0, "invalid depth {depth} for attr item {self:?}");
                     None
                 }
@@ -555,6 +561,7 @@ pub(crate) fn structured_attr_to_arc_str(attr: &rustdoc_types::Attribute) -> Arc
         LazyLock::new(|| Arc::from("#[automatically_derived]"));
     static NO_MANGLE_ATTR: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("#[no_mangle]"));
     static MUST_USE_ATTR: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("#[must_use]"));
+    static MACRO_EXPORT_ATTR: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("#[macro_export]"));
 
     match attr {
         rustdoc_types::Attribute::NonExhaustive => Arc::clone(&NON_EXHAUSTIVE_ATTR),
@@ -583,6 +590,7 @@ pub(crate) fn structured_attr_to_arc_str(attr: &rustdoc_types::Attribute) -> Arc
         rustdoc_types::Attribute::TargetFeature { enable } => {
             format!("#[target_feature(enable = \"{}\")]", enable.join(",")).into()
         }
+        rustdoc_types::Attribute::MacroExport => Arc::clone(&MACRO_EXPORT_ATTR),
         rustdoc_types::Attribute::Other(attr) => Arc::from(attr.as_str()),
     }
 }
