@@ -7,7 +7,7 @@ use trustfall::{
     },
 };
 
-use crate::{adapter::PackageIndex, hashtables::HashMap, indexed_crate::ImplEntry};
+use crate::{hashtables::HashMap, indexed_crate::ImplEntry};
 
 use super::super::{RustdocAdapter, origin::Origin, vertex::Vertex};
 
@@ -18,8 +18,6 @@ pub(crate) fn resolve_owner_impl<'a, V: AsVertex<Vertex<'a>> + 'a>(
     edge_name: &str,
     resolve_info: &ResolveEdgeInfo,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
-    let current_crate = adapter.current_crate;
-    let previous_crate = adapter.previous_crate;
     let inherent_impls_only = match edge_name {
         "inherent_impl" => true,
         "impl" => false,
@@ -37,15 +35,13 @@ pub(crate) fn resolve_owner_impl<'a, V: AsVertex<Vertex<'a>> + 'a>(
         resolve_owner_impl_based_on_method_info(
             adapter,
             contexts,
-            current_crate,
-            previous_crate,
             inherent_impls_only,
             method_vertex_info,
         )
     } else {
         // We don't seem to be looking up methods. No fast path available.
         resolve_neighbors_with(contexts, move |vertex| {
-            resolve_owner_impl_slow_path(vertex, current_crate, previous_crate, inherent_impls_only)
+            resolve_owner_impl_slow_path(vertex, adapter, inherent_impls_only)
         })
     }
 }
@@ -53,8 +49,6 @@ pub(crate) fn resolve_owner_impl<'a, V: AsVertex<Vertex<'a>> + 'a>(
 fn resolve_owner_impl_based_on_method_info<'a, V: AsVertex<Vertex<'a>> + 'a>(
     adapter: &'a RustdocAdapter<'a>,
     contexts: ContextIterator<'a, V>,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
     inherent_impls_only: bool,
     method_vertex_info: &impl VertexInfo,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
@@ -68,8 +62,7 @@ fn resolve_owner_impl_based_on_method_info<'a, V: AsVertex<Vertex<'a>> + 'a>(
         resolver.resolve_with(&adapter, contexts, move |vertex, candidate| {
             resolve_impl_based_on_method_name_candidate(
                 vertex,
-                current_crate,
-                previous_crate,
+                adapter,
                 inherent_impls_only,
                 candidate,
             )
@@ -78,8 +71,7 @@ fn resolve_owner_impl_based_on_method_info<'a, V: AsVertex<Vertex<'a>> + 'a>(
         resolve_neighbors_with(contexts, move |vertex| {
             resolve_impl_based_on_method_name_candidate(
                 vertex,
-                current_crate,
-                previous_crate,
+                adapter,
                 inherent_impls_only,
                 candidate.clone(),
             )
@@ -87,32 +79,24 @@ fn resolve_owner_impl_based_on_method_info<'a, V: AsVertex<Vertex<'a>> + 'a>(
     } else {
         // The methods are not looked up by name. None of the fast paths are available.
         resolve_neighbors_with(contexts, move |vertex| {
-            resolve_owner_impl_slow_path(vertex, current_crate, previous_crate, inherent_impls_only)
+            resolve_owner_impl_slow_path(vertex, adapter, inherent_impls_only)
         })
     }
 }
 
 fn resolve_impl_based_on_method_name_candidate<'a>(
     vertex: &Vertex<'a>,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
     inherent_impls_only: bool,
     method_name: CandidateValue<FieldValue>,
 ) -> VertexIterator<'a, Vertex<'a>> {
     let origin = vertex.origin;
-    let impl_index = match origin {
-        Origin::CurrentCrate => current_crate
-            .own_crate
-            .impl_method_index
-            .as_ref()
-            .expect("no impl index present"),
-        Origin::PreviousCrate => previous_crate
-            .expect("no previous crate provided")
-            .own_crate
-            .impl_method_index
-            .as_ref()
-            .expect("no impl index provided"),
-    };
+    let impl_index = adapter
+        .crate_at_origin(origin)
+        .own_crate
+        .impl_method_index
+        .as_ref()
+        .expect("no impl index present");
 
     let item_id = &vertex.as_item().expect("not an item").id;
     match method_name {
@@ -139,7 +123,7 @@ fn resolve_impl_based_on_method_name_candidate<'a>(
         })),
         _ => {
             // fall through to slow path
-            resolve_owner_impl_slow_path(vertex, current_crate, previous_crate, inherent_impls_only)
+            resolve_owner_impl_slow_path(vertex, adapter, inherent_impls_only)
         }
     }
 }
@@ -173,21 +157,11 @@ the `impl_index` returned a value where the `impl_item` was not an impl: {impl_i
 
 fn resolve_owner_impl_slow_path<'a>(
     vertex: &Vertex<'a>,
-    current_crate: &'a PackageIndex<'a>,
-    previous_crate: Option<&'a PackageIndex<'a>>,
+    adapter: &'a RustdocAdapter<'a>,
     inherent_impls_only: bool,
 ) -> VertexIterator<'a, Vertex<'a>> {
     let origin = vertex.origin;
-    let item_index = match origin {
-        Origin::CurrentCrate => &current_crate.own_crate.inner.index,
-        Origin::PreviousCrate => {
-            &previous_crate
-                .expect("no previous crate provided")
-                .own_crate
-                .inner
-                .index
-        }
-    };
+    let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
     // Get the IDs of all the impl blocks.
     // Relies on the fact that only structs, enums, and unions can have impls,
