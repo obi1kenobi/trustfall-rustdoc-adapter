@@ -52,6 +52,19 @@ impl<'a> RustdocAdapter<'a> {
     pub fn schema() -> &'static Schema {
         &SCHEMA
     }
+
+    /// Returns the crate at the given origin.
+    ///
+    /// Panics if `Origin::PreviousCrate` is passed and there is no previous crate.
+    #[inline]
+    pub(crate) fn crate_at_origin(&self, origin: Origin) -> &'a PackageIndex<'a> {
+        match origin {
+            Origin::CurrentCrate => self.current_crate,
+            Origin::PreviousCrate => self
+                .previous_crate
+                .expect("previous crate was not provided"),
+        }
+    }
 }
 
 impl Drop for RustdocAdapter<'_> {
@@ -180,18 +193,10 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 "AttributeMetaItem" => {
                     properties::resolve_attribute_meta_item_property(contexts, property_name)
                 }
-                "Trait" => properties::resolve_trait_property(
-                    contexts,
-                    property_name,
-                    self.current_crate,
-                    self.previous_crate,
-                ),
-                "ImplementedTrait" => properties::resolve_implemented_trait_property(
-                    contexts,
-                    property_name,
-                    self.current_crate,
-                    self.previous_crate,
-                ),
+                "Trait" => properties::resolve_trait_property(contexts, property_name, self),
+                "ImplementedTrait" => {
+                    properties::resolve_implemented_trait_property(contexts, property_name, self)
+                }
                 "Static" => properties::resolve_static_property(contexts, property_name),
                 "RawType" | "ResolvedPathType" if matches!(property_name.as_ref(), "name") => {
                     // fields from "RawType"
@@ -225,8 +230,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 "GenericTypeParameter" => properties::resolve_generic_type_parameter_property(
                     contexts,
                     property_name,
-                    self.current_crate,
-                    self.previous_crate,
+                    self,
                 ),
                 "GenericConstParameter" => {
                     properties::resolve_generic_const_parameter_property(contexts, property_name)
@@ -269,12 +273,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
             | "DeriveProcMacro"
                 if matches!(edge_name.as_ref(), "importable_path" | "canonical_path") =>
             {
-                edges::resolve_importable_edge(
-                    contexts,
-                    edge_name,
-                    self.current_crate,
-                    self.previous_crate,
-                )
+                edges::resolve_importable_edge(contexts, edge_name, self)
             }
             "Item"
             | "GenericItem"
@@ -327,68 +326,26 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 edges::resolve_receiver_edge(contexts, edge_name)
             }
             "Function" | "Method" if matches!(edge_name.as_ref(), "requires_feature") => {
-                edges::resolve_requires_target_feature_edge(
-                    contexts,
-                    self.current_crate,
-                    self.previous_crate,
-                )
+                edges::resolve_requires_target_feature_edge(contexts, self)
             }
-            "Module" => edges::resolve_module_edge(
-                contexts,
-                edge_name,
-                self.current_crate,
-                self.previous_crate,
-            ),
-            "Struct" => edges::resolve_struct_edge(
-                contexts,
-                edge_name,
-                self.current_crate,
-                self.previous_crate,
-            ),
+            "Module" => edges::resolve_module_edge(contexts, edge_name, self),
+            "Struct" => edges::resolve_struct_edge(contexts, edge_name, self),
             "Variant" | "PlainVariant" | "TupleVariant" | "StructVariant" => {
-                edges::resolve_variant_edge(
-                    contexts,
-                    edge_name,
-                    self.current_crate,
-                    self.previous_crate,
-                )
+                edges::resolve_variant_edge(contexts, edge_name, self)
             }
-            "Enum" => edges::resolve_enum_edge(
-                contexts,
-                edge_name,
-                self.current_crate,
-                self.previous_crate,
-            ),
-            "Union" => edges::resolve_union_edge(
-                contexts,
-                edge_name,
-                self.current_crate,
-                self.previous_crate,
-            ),
+            "Enum" => edges::resolve_enum_edge(contexts, edge_name, self),
+            "Union" => edges::resolve_union_edge(contexts, edge_name, self),
             "StructField" => edges::resolve_struct_field_edge(contexts, edge_name),
             "Impl" => edges::resolve_impl_edge(self, contexts, edge_name, resolve_info),
-            "Trait" => edges::resolve_trait_edge(
-                contexts,
-                edge_name,
-                self.current_crate,
-                self.previous_crate,
-            ),
+            "Trait" => edges::resolve_trait_edge(contexts, edge_name, self),
             "ImplementedTrait" => edges::resolve_implemented_trait_edge(contexts, edge_name),
             "Attribute" => edges::resolve_attribute_edge(contexts, edge_name),
             "AttributeMetaItem" => edges::resolve_attribute_meta_item_edge(contexts, edge_name),
-            "Feature" => edges::resolve_feature_edge(
-                contexts,
-                edge_name,
-                self.current_crate,
-                self.previous_crate,
-            ),
+            "Feature" => edges::resolve_feature_edge(contexts, edge_name, self),
             "DeriveProcMacro" => edges::resolve_derive_proc_macro_edge(contexts, edge_name),
-            "GenericTypeParameter" => edges::resolve_generic_type_parameter_edge(
-                contexts,
-                edge_name,
-                self.current_crate,
-                self.previous_crate,
-            ),
+            "GenericTypeParameter" => {
+                edges::resolve_generic_type_parameter_edge(contexts, edge_name, self)
+            }
             _ => unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}"),
         }
     }
