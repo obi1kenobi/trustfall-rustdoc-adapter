@@ -133,7 +133,7 @@ pub(crate) fn resolve_enum_variant<'a, V: AsVertex<Vertex<'a>> + 'a>(
     resolve_info: &ResolveEdgeInfo,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     // If the name of the variant is required to be a particular value, we can
-    // use the variant_name_index find the corresponding variant.
+    // use the variant_name_index to find the corresponding variant.
     //
     // There's no advantage in our implementation between knowing values
     // statically vs dynamically, so we check the dynamic case first since

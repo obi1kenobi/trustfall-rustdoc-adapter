@@ -212,7 +212,7 @@ pub struct IndexedCrate<'a> {
     pub(crate) pub_item_kind_index: PubItemKindIndex<'a>,
 
     /// index: enum id + variant name -> variant, index of variant inside enum.
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     pub(crate) variant_name_index: Option<HashMap<(Id, &'a str), (&'a Item, usize)>>,
 
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
