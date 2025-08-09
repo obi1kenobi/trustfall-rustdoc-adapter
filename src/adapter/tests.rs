@@ -5614,6 +5614,175 @@ fn enum_variant_positions() {
 }
 
 #[test]
+fn enum_variant_name_resolution_dynamic() {
+    get_test_data!(data, enum_variants_position);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Enum {
+                    enum_name: name @output
+
+                    variant {
+                        variant_name: name @tag @output
+                    }
+
+                    variant {
+                        other_name: name @filter(op: "=", value: ["%variant_name"]) @output
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::new();
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        enum_name: String,
+        variant_name: String,
+        other_name: String,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "First".into(),
+            other_name: "First".into(),
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Second".into(),
+            other_name: "Second".into(),
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Third".into(),
+            other_name: "Third".into(),
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Fourth".into(),
+            other_name: "Fourth".into(),
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Fifth".into(),
+            other_name: "Fifth".into(),
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            variant_name: "Sixth".into(),
+            other_name: "Sixth".into(),
+        },
+        Output {
+            enum_name: "WithDiscriminants".into(),
+            variant_name: "A".into(),
+            other_name: "A".into(),
+        },
+        Output {
+            enum_name: "WithDiscriminants".into(),
+            variant_name: "B".into(),
+            other_name: "B".into(),
+        },
+        Output {
+            enum_name: "WithDiscriminants".into(),
+            variant_name: "C".into(),
+            other_name: "C".into(),
+        },
+        Output {
+            enum_name: "WithDiscriminants".into(),
+            variant_name: "D".into(),
+            other_name: "D".into(),
+        },
+        Output {
+            enum_name: "WithDiscriminants".into(),
+            variant_name: "E".into(),
+            other_name: "E".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn enum_variant_name_resolution_static() {
+    get_test_data!(data, enum_variants_position);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Enum {
+                    enum_name: name @output
+
+                    variant {
+                        name: name @filter(op: "one_of", value: ["$name"]) @output
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, Vec<&str>> =
+        BTreeMap::from([("name", ["First", "Second", "Third", "A"].to_vec())]);
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        enum_name: String,
+        name: String,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            name: "First".into(),
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            name: "Second".into(),
+        },
+        Output {
+            enum_name: "AllVariantTypes".into(),
+            name: "Third".into(),
+        },
+        Output {
+            enum_name: "WithDiscriminants".into(),
+            name: "A".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
 fn enum_struct_variant_fields() {
     get_test_data!(data, enum_variants_position);
     let adapter = RustdocAdapter::new(&data, None);
