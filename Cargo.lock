@@ -1026,6 +1026,7 @@ dependencies = [
  "serde_json",
  "similar-asserts",
  "trustfall",
+ "trustfall_core",
 ]
 
 [[package]]

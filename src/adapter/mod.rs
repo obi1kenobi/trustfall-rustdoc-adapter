@@ -23,6 +23,7 @@ mod origin;
 mod properties;
 mod receiver;
 mod rust_type_name;
+mod tracer;
 mod vertex;
 
 #[cfg(test)]
