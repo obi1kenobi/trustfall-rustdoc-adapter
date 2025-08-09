@@ -14,10 +14,8 @@ use trustfall::{
         ResolveEdgeInfo, ResolveInfo, VertexInfo, VertexIterator, Vid,
     },
 };
-// TODO: Include documentation. Include time for operation and thus re-include POutputTrace.
 
-
-pub struct PreActionIter<T, I: Iterator<Item = T>, F: Fn()> {
+struct PreActionIter<T, I: Iterator<Item = T>, F: Fn()> {
     inner: I,
     pre_action: F,
 }
@@ -35,7 +33,7 @@ where
     }
 }
 
-pub struct OnIterEnd<T, I: Iterator<Item = T>, F: FnOnce()> {
+struct OnIterEnd<T, I: Iterator<Item = T>, F: FnOnce()> {
     inner: I,
     on_end_func: Option<F>,
 }
@@ -59,14 +57,14 @@ where
     }
 }
 
-pub fn make_iter_with_pre_action<T, I: Iterator<Item = T>, F: Fn()>(
+fn make_iter_with_pre_action<T, I: Iterator<Item = T>, F: Fn()>(
     inner: I,
     pre_action: F,
 ) -> PreActionIter<T, I, F> {
     PreActionIter { inner, pre_action }
 }
 
-pub fn make_iter_with_end_action<T, I: Iterator<Item = T>, F: FnOnce()>(
+fn make_iter_with_end_action<T, I: Iterator<Item = T>, F: FnOnce()>(
     inner: I,
     on_end: F,
 ) -> OnIterEnd<T, I, F> {
@@ -82,25 +80,17 @@ impl<T: Clone + Debug> VertexT for T {}
 /// The id of an operation.
 // PERF: NonZeroU32 is used instead of NonZeroUsize to reduce the size
 // of TraceOp by 8 bytes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 pub struct Opid(pub NonZeroU32);
 
-/// Reference to the signature of a function call.
-// This is implemented as the index in Tracer's call_signatures + 1. 
-// PERF: NonZeroU32 is used instead of u32 to take advantage of the null 
-// pointer optimization and reduce the size of a TraceOp.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct CallSignatureRef(pub NonZeroU32);
-
-/// Records and stores operations performed by the adapter. 
-/// 
+/// Records and stores operations performed by the adapter.
+///
 /// This struct is intended for use inside of a TracingAdapter.
 /// Operations must be recorded sequentially in chronological order.
 /// Recording out-of-order operations will lead to invalid state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tracer {
-    ops: Vec<TraceOp>,
-    call_signatures: Vec<FunctionCallSignature>,
+    pub ops: Vec<TraceOp>,
 }
 
 impl Tracer {
@@ -108,10 +98,9 @@ impl Tracer {
     pub fn new() -> Self {
         Self {
             ops: Vec::with_capacity(100_000),
-            call_signatures: Vec::with_capacity(1000),
         }
     }
-    
+
     /// Record a non-call operation. For function calls, `record_call` should be
     /// used instead.
     /// See struct documentation for more details.
@@ -134,39 +123,9 @@ impl Tracer {
         self.ops.push(op);
         next_opid
     }
-    
-    /// Record a function call operation.
-    pub fn record_call(
-        &mut self,
-        call_type: FunctionName,
-        call_signature: FunctionCallSignature,
-    ) -> Opid {
-        let size: u32 =
-            u32::try_from(self.ops.len()).expect("operations should be smaller than u32::max") + 1;
-        let next_opid = Opid(NonZeroU32::new(size).unwrap());
-        
-        let signatures: u32 = u32::try_from(self.call_signatures.len()).expect("operations should be smaller than u32::max") + 1;
-        let signature_ref = CallSignatureRef(NonZeroU32::new(signatures).unwrap());
-        let function_call = FunctionCall { call_type, call_signature: signature_ref }; 
-        self.call_signatures.push(call_signature);
-        
-        let op = TraceOp {
-            opid: next_opid,
-            parent_opid: None,
-            duration: None,
-            content: TraceOpType::Call(function_call),
-        };
-        self.ops.push(op);
-        next_opid
-    }
 
     pub fn operations(&self) -> &Vec<TraceOp> {
         &self.ops
-    }
-
-    pub fn lookup_signature(&self, signature_ref: CallSignatureRef) -> &FunctionCallSignature {
-        let index: usize = signature_ref.0.get() as usize - 1;
-        &self.call_signatures.get(index).expect("signature_ref should be between 1 and call_signatures.len()")
     }
 }
 
@@ -175,18 +134,15 @@ impl Tracer {
 /// A TraceOp is only intended to be constructed by a Tracer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraceOp {
-    pub opid: Opid,  // 4 bytes
-    pub parent_opid: Option<Opid>, // 4 bytes
+    pub opid: Opid,                 // 4 bytes
+    pub parent_opid: Option<Opid>,  // 4 bytes
     pub duration: Option<Duration>, // 16 bytes (12 + alignment)
-    pub content: TraceOpType, // 8 bytes
+    pub content: TraceOpType,       // 8 bytes
 }
 
 /// The type of an operation.
 /// Each type corresponds to a particular operation performed by an adaper.
-/// Call: A function is called. Each operation consists of a FunctionName and a 
-///     FunctionCallSignature. However, it is too expensive to store these together
-///     in TraceOpType, so instead the FunctionCallSignature is stored separately
-///     inside Tracer and a replacement struct FunctionCall is stored instead.
+/// Call: A function is called.
 /// AdvanceInputIterator: An iterator input to a function is incremented.
 /// YieldInto: An input function returns a value. Called from the function
 ///     which takes input.
@@ -196,11 +152,12 @@ pub struct TraceOp {
 /// ProduceQueryResult: A result is returned from a query.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TraceOpType {
-    Call(FunctionCall),
+    // FunctionCall is boxed to reduce the size of TraceOpType.
+    Call(Box<FunctionCall>),
 
     AdvanceInputIterator,
     YieldInto,
-    YieldFrom(FunctionName),
+    YieldFrom(YieldValue),
 
     InputIteratorExhausted,
     OutputIteratorExhausted,
@@ -208,31 +165,24 @@ pub enum TraceOpType {
     ProduceQueryResult,
 }
 
-// TODO: One alternative to this structure is to just box the FunctionCallSignature.
-// However, this may have a non-zero performance impact so it will need to be measured.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FunctionCall {
-    pub call_type: FunctionName,
-    pub call_signature: CallSignatureRef,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FunctionName {
+pub enum YieldValue {
     ResolveStartingVertices,
     ResolveProperty,
-    ResolveNeighbors,
+    ResolveNeighborsOuter,
+    ResolveNeighborsInner,
     ResolveCoercion,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FunctionCallSignature {
+pub enum FunctionCall {
     ResolveStartingVertices(Vid),             // vertex ID
     ResolveProperty(Vid, Arc<str>, Arc<str>), // vertex ID + type name + name of the property
     ResolveNeighbors(Vid, Arc<str>, Eid),     // vertex ID + type name + edge ID
     ResolveCoercion(Vid, Arc<str>, Arc<str>), // vertex ID + current type + coerced-to type
 }
 
-pub struct PerfSpanIter<I, T, F>
+struct PerfSpanIter<I, T, F>
 where
     I: Iterator<Item = T>,
     F: Fn(T, Duration) -> T,
@@ -259,7 +209,7 @@ where
     }
 }
 
-pub fn make_iter_with_perf_span<I, T, F>(inner: I, post_action: F) -> PerfSpanIter<I, T, F>
+fn make_iter_with_perf_span<I, T, F>(inner: I, post_action: F) -> PerfSpanIter<I, T, F>
 where
     I: Iterator<Item = T>,
     F: Fn(T, Duration) -> T,
@@ -335,7 +285,9 @@ where
     ) -> VertexIterator<'vertex, Self::Vertex> {
         let mut trace = self.tracer.borrow_mut();
         let call_opid = trace.record(
-            TraceOpType::Call(FunctionCall::ResolveStartingVertices(resolve_info.vid())),
+            TraceOpType::Call(Box::new(FunctionCall::ResolveStartingVertices(
+                resolve_info.vid(),
+            ))),
             None,
             None,
         );
@@ -373,11 +325,11 @@ where
     ) -> ContextOutcomeIterator<'vertex, V, FieldValue> {
         let mut trace = self.tracer.borrow_mut();
         let call_opid = trace.record(
-            TraceOpType::Call(FunctionCall::ResolveProperty(
+            TraceOpType::Call(Box::new(FunctionCall::ResolveProperty(
                 resolve_info.vid(),
                 type_name.clone(),
                 property_name.clone(),
-            )),
+            ))),
             None,
             None,
         );
@@ -446,11 +398,11 @@ where
     ) -> ContextOutcomeIterator<'vertex, V, VertexIterator<'vertex, Self::Vertex>> {
         let mut trace = self.tracer.borrow_mut();
         let call_opid = trace.record(
-            TraceOpType::Call(FunctionCall::ResolveNeighbors(
+            TraceOpType::Call(Box::new(FunctionCall::ResolveNeighbors(
                 resolve_info.origin_vid(),
                 type_name.clone(),
                 resolve_info.eid(),
-            )),
+            ))),
             None,
             None,
         );
@@ -548,11 +500,11 @@ where
     ) -> ContextOutcomeIterator<'vertex, V, bool> {
         let mut trace = self.tracer.borrow_mut();
         let call_opid = trace.record(
-            TraceOpType::Call(FunctionCall::ResolveCoercion(
+            TraceOpType::Call(Box::new(FunctionCall::ResolveCoercion(
                 resolve_info.vid(),
                 type_name.clone(),
                 coerce_to_type.clone(),
-            )),
+            ))),
             None,
             None,
         );

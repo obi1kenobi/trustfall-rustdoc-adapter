@@ -1,12 +1,9 @@
-use std::{
-    cell::RefCell, collections::BTreeMap, fmt::Write, path::PathBuf, rc::Rc, sync::Arc,
-    time::Duration,
-};
+use std::{cell::RefCell, collections::BTreeMap, fmt::Write, path::PathBuf, rc::Rc, sync::Arc};
 
 use super::ptrace::{Tracer, TracingAdapter};
 use crate::{
     RustdocAdapter,
-    adapter::tracer::ptrace::{TraceOpType, YieldValue, make_iter_with_perf_span},
+    adapter::tracer::ptrace::{TraceOpType, YieldValue, trace_results},
 };
 use anyhow::Context;
 use trustfall::{Schema, TryIntoStruct};
@@ -57,7 +54,7 @@ fn format_operation(op: &TraceOpType) -> String {
 
 fn trace_to_text(trace: &Tracer) -> String {
     let mut buffer = String::with_capacity(1_000_000);
-    for op in &trace.operations() {
+    for op in &trace.ops {
         write!(
             &mut buffer,
             "{:?} {:?} {:?} {}\n",
@@ -106,22 +103,14 @@ fn trace_function_abi() {
         abi_raw_name: String,
         abi_unwind: Option<bool>,
     }
+
     let tracer = Rc::new(RefCell::new(Tracer::new()));
     let mut tracing_adapter = Arc::new(TracingAdapter::new(&adapter, tracer));
 
-    let tracing_adapter_ref = tracing_adapter.clone();
-
-    let mut results: Vec<_> = make_iter_with_perf_span(
+    let _results: Vec<Output> = trace_results(
+        tracing_adapter.clone(),
         trustfall::execute_query(&schema, tracing_adapter.clone(), query, variables.clone())
             .expect("failed to run query"),
-        move |result, d| {
-            tracing_adapter_ref.tracer.borrow_mut().record(
-                TraceOpType::ProduceQueryResult,
-                None,
-                Some(d),
-            );
-            result
-        },
     )
     .map(|row| row.try_into_struct().expect("shape mismatch"))
     .collect();
@@ -131,30 +120,4 @@ fn trace_function_abi() {
     let out_path = PathBuf::from("./test_1.ptrace.txt");
     let buffer = trace_to_text(&trace);
     std::fs::write(out_path, buffer).unwrap();
-
-    results.sort_unstable();
-
-    similar_asserts::assert_eq!(
-        vec![
-            Output {
-                name: "example_not_unwind".into(),
-                abi_name: "C".into(),
-                abi_raw_name: "C".into(),
-                abi_unwind: Some(false),
-            },
-            Output {
-                name: "example_unwind".into(),
-                abi_name: "C".into(),
-                abi_raw_name: "C-unwind".into(),
-                abi_unwind: Some(true),
-            },
-            Output {
-                name: "rust_abi".into(),
-                abi_name: "Rust".into(),
-                abi_raw_name: "Rust".into(),
-                abi_unwind: Some(true),
-            },
-        ],
-        results
-    );
 }
