@@ -211,6 +211,10 @@ pub struct IndexedCrate<'a> {
     /// index: kind of public top-level item -> `IndexMap<Id, &'a Item>` of that kind
     pub(crate) pub_item_kind_index: PubItemKindIndex<'a>,
 
+    /// index: enum id + variant name -> variant, index of variant inside enum.
+    #[expect(clippy::type_complexity)]
+    pub(crate) variant_name_index: Option<HashMap<(Id, &'a str), (&'a Item, usize)>>,
+
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
     /// even if they are implemented by a type in that crate. This also includes
     /// Rust's built-in traits like `Debug, Send, Eq` etc.
@@ -558,6 +562,7 @@ impl<'a> IndexedCrate<'a> {
             impl_method_index: None,
             fn_owner_index: None,
             export_name_index: None,
+            variant_name_index: None,
             target_features,
             pub_item_kind_index,
         };
@@ -601,6 +606,7 @@ impl<'a> IndexedCrate<'a> {
         value.impl_method_index = Some(build_impl_index(&crate_.index).into_inner());
         value.fn_owner_index = Some(fn_owner_index);
         value.export_name_index = Some(build_export_name_index(&crate_.index));
+        value.variant_name_index = Some(build_variant_name_index(&crate_.index));
 
         value
     }
@@ -763,6 +769,68 @@ fn build_export_name_index(index: &HashMap<Id, Item>) -> HashMap<&str, &Item> {
         crate::exported_name::item_export_name(item).map(move |name| (name, item))
     })
     .collect()
+}
+
+fn build_variant_name_index(item_index: &HashMap<Id, Item>) -> HashMap<(Id, &str), (&Item, usize)> {
+    #[cfg(feature = "rayon")]
+    let iter = item_index.par_iter().map(|(_, value)| value);
+    #[cfg(not(feature = "rayon"))]
+    let iter = item_index.values();
+
+    let intermediate_iter = iter.filter_map(|item| match &item.inner {
+        rustdoc_types::ItemEnum::Enum(e) => Some((item.id, e)),
+        _ => None,
+    });
+
+    #[cfg(feature = "rayon")]
+    return intermediate_iter
+        .flat_map_iter(|(enum_id, enum_item)| {
+            // Since the variant index order needs to be deterministic, we don't
+            // iterate over variants in parallel.
+            let base_iter = enum_item.variants.iter();
+
+            // Since bugs in rustdoc sometimes result in dangling ids, we filter out any
+            // variants that are not part of the item index.
+            base_iter
+                .copied()
+                .filter_map(|variant_id| item_index.get(&variant_id))
+                .enumerate()
+                .map(move |(variant_index, variant_item)| {
+                    let variant_name = variant_item
+                        .name
+                        .as_ref()
+                        .expect("Variant should have a name.")
+                        .as_str();
+
+                    ((enum_id, variant_name), (variant_item, variant_index))
+                })
+        })
+        .collect();
+
+    #[cfg(not(feature = "rayon"))]
+    return intermediate_iter
+        .flat_map(|(enum_id, enum_item)| {
+            // Since the variant index order needs to be deterministic, we don't
+            // iterate over variants in parallel.
+            let base_iter = enum_item.variants.iter();
+
+            // Since bugs in rustdoc sometimes result in dangling ids, we filter out any
+            // variants that are not part of the item index.
+            base_iter
+                .copied()
+                .filter_map(|variant_id| item_index.get(&variant_id))
+                .enumerate()
+                .map(move |(variant_index, variant_item)| {
+                    let variant_name = variant_item
+                        .name
+                        .as_ref()
+                        .expect("Variant should have a name.")
+                        .as_str();
+
+                    ((enum_id, variant_name), (variant_item, variant_index))
+                })
+        })
+        .collect();
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

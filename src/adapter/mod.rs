@@ -333,7 +333,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
             "Variant" | "PlainVariant" | "TupleVariant" | "StructVariant" => {
                 edges::resolve_variant_edge(contexts, edge_name, self)
             }
-            "Enum" => edges::resolve_enum_edge(contexts, edge_name, self),
+            "Enum" => edges::resolve_enum_edge(contexts, edge_name, self, resolve_info),
             "Union" => edges::resolve_union_edge(contexts, edge_name, self),
             "StructField" => edges::resolve_struct_field_edge(contexts, edge_name),
             "Impl" => edges::resolve_impl_edge(self, contexts, edge_name, resolve_info),
