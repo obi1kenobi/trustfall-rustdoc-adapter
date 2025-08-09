@@ -567,7 +567,7 @@ pub(crate) fn structured_attr_to_arc_str(attr: &rustdoc_types::Attribute) -> Arc
         rustdoc_types::Attribute::NonExhaustive => Arc::clone(&NON_EXHAUSTIVE_ATTR),
         rustdoc_types::Attribute::MustUse { reason } => match reason {
             None => Arc::clone(&MUST_USE_ATTR),
-            Some(x) => format!("#[must_use = \"{}\"", escape_quotes(x)).into(),
+            Some(x) => format!("#[must_use = \"{}\"]", escape_quotes(x)).into(),
         },
         rustdoc_types::Attribute::ExportName(x) => {
             format!("#[export_name = \"{}\"]", escape_quotes(x)).into()
