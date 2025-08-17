@@ -2,7 +2,7 @@ version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
-    target-branch: "rustdoc-v28"
+    target-branch: "rustdoc-v55"
     schedule:
       interval: "weekly"
       day: "saturday"
