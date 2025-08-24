@@ -101,9 +101,7 @@ impl Tracer {
         }
     }
 
-    /// Record a non-call operation. For function calls, `record_call` should be
-    /// used instead.
-    /// See struct documentation for more details.
+    /// Record an operation.
     pub fn record(
         &mut self,
         content: TraceOpType,
