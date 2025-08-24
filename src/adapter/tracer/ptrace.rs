@@ -152,15 +152,7 @@ pub struct TraceOp {
 pub enum TraceOpType {
     // FunctionCall is boxed to reduce the size of TraceOpType.
     Call(Box<FunctionCall>),
-
-    AdvanceInputIterator,
-    YieldInto,
     YieldFrom(YieldValue),
-
-    InputIteratorExhausted,
-    OutputIteratorExhausted,
-
-    ProduceQueryResult,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -251,23 +243,6 @@ where
     }
 }
 
-pub fn trace_results<'vertex, AdapterT>(
-    adapter_tap: Arc<TracingAdapter<'vertex, AdapterT>>,
-    result_iter: impl Iterator<Item = BTreeMap<Arc<str>, FieldValue>> + 'vertex,
-) -> impl Iterator<Item = BTreeMap<Arc<str>, FieldValue>> + 'vertex
-where
-    AdapterT: Adapter<'vertex> + 'vertex,
-    AdapterT::Vertex: VertexT + 'vertex,
-{
-    Box::new(make_iter_with_perf_span(result_iter, move |result, d| {
-        adapter_tap
-            .tracer
-            .borrow_mut()
-            .record(TraceOpType::ProduceQueryResult, None, Some(d));
-        result
-    }))
-}
-
 impl<'vertex, AdapterT> Adapter<'vertex> for TracingAdapter<'vertex, AdapterT>
 where
     AdapterT: Adapter<'vertex> + 'vertex,
@@ -282,6 +257,8 @@ where
         resolve_info: &ResolveInfo,
     ) -> VertexIterator<'vertex, Self::Vertex> {
         let mut trace = self.tracer.borrow_mut();
+        // Even if we don't record the function call, there still needs to be some
+        // way of distinguishing between calls.
         let call_opid = trace.record(
             TraceOpType::Call(Box::new(FunctionCall::ResolveStartingVertices(
                 resolve_info.vid(),
@@ -295,22 +272,13 @@ where
             .inner
             .resolve_starting_vertices(edge_name, parameters, resolve_info);
         let tracer_ref_1 = self.tracer.clone();
-        let tracer_ref_2 = self.tracer.clone();
-        let x = make_iter_with_perf_span(inner_iter, move |v, d| {
+        Box::new(make_iter_with_perf_span(inner_iter, move |v, d| {
             tracer_ref_1.borrow_mut().record(
                 TraceOpType::YieldFrom(YieldValue::ResolveStartingVertices),
                 Some(call_opid),
                 Some(d),
             );
             v
-        });
-
-        Box::new(make_iter_with_end_action(x, move || {
-            tracer_ref_2.borrow_mut().record(
-                TraceOpType::OutputIteratorExhausted,
-                Some(call_opid),
-                None,
-            );
         }))
     }
 
@@ -333,56 +301,19 @@ where
         );
         drop(trace);
 
-        let tracer_ref_1 = self.tracer.clone();
-        let tracer_ref_2 = self.tracer.clone();
-        let tracer_ref_3 = self.tracer.clone();
-
-        let x = make_iter_with_perf_span(contexts, move |context, d| {
-            tracer_ref_3
-                .borrow_mut()
-                .record(TraceOpType::YieldInto, Some(call_opid), Some(d));
-            context
-        });
-
-        let wrapped_contexts = Box::new(make_iter_with_end_action(
-            make_iter_with_pre_action(x, move || {
-                tracer_ref_1.borrow_mut().record(
-                    TraceOpType::AdvanceInputIterator,
-                    Some(call_opid),
-                    None,
-                );
-            }),
-            move || {
-                tracer_ref_2.borrow_mut().record(
-                    TraceOpType::InputIteratorExhausted,
-                    Some(call_opid),
-                    None,
-                );
-            },
-        ));
-
         let inner_iter =
             self.inner
-                .resolve_property(wrapped_contexts, type_name, property_name, resolve_info);
+                .resolve_property(contexts, type_name, property_name, resolve_info);
 
         let tracer_ref_4 = self.tracer.clone();
-        let tracer_ref_5 = self.tracer.clone();
 
-        let x = make_iter_with_perf_span(inner_iter, move |(context, value), d| {
-            tracer_ref_5.borrow_mut().record(
+        Box::new(make_iter_with_perf_span(inner_iter, move |(context, value), d| {
+            tracer_ref_4.borrow_mut().record(
                 TraceOpType::YieldFrom(YieldValue::ResolveProperty),
                 Some(call_opid),
                 Some(d),
             );
             (context, value)
-        });
-
-        Box::new(make_iter_with_end_action(x, move || {
-            tracer_ref_4.borrow_mut().record(
-                TraceOpType::OutputIteratorExhausted,
-                Some(call_opid),
-                None,
-            );
         }))
     }
 
@@ -406,46 +337,13 @@ where
         );
         drop(trace);
 
-        let tracer_ref_1 = self.tracer.clone();
-        let tracer_ref_2 = self.tracer.clone();
-        let tracer_ref_3 = self.tracer.clone();
+        let inner_iter =
+            self.inner
+                .resolve_neighbors(contexts, type_name, edge_name, parameters, resolve_info);
 
-        let x = make_iter_with_perf_span(contexts, move |context, d| {
-            tracer_ref_3
-                .borrow_mut()
-                .record(TraceOpType::YieldInto, Some(call_opid), Some(d));
-            context
-        });
-
-        let wrapped_contexts = Box::new(make_iter_with_end_action(
-            make_iter_with_pre_action(x, move || {
-                tracer_ref_1.borrow_mut().record(
-                    TraceOpType::AdvanceInputIterator,
-                    Some(call_opid),
-                    None,
-                );
-            }),
-            move || {
-                tracer_ref_2.borrow_mut().record(
-                    TraceOpType::InputIteratorExhausted,
-                    Some(call_opid),
-                    None,
-                );
-            },
-        ));
-
-        let inner_iter = self.inner.resolve_neighbors(
-            wrapped_contexts,
-            type_name,
-            edge_name,
-            parameters,
-            resolve_info,
-        );
-
-        let tracer_ref_4 = self.tracer.clone();
         let tracer_ref_5 = self.tracer.clone();
 
-        let x = make_iter_with_perf_span(inner_iter, move |(context, neighbor_iter), d| {
+        Box::new(make_iter_with_perf_span(inner_iter, move |(context, neighbor_iter), d| {
             let mut trace = tracer_ref_5.borrow_mut();
             let outer_iterator_opid = trace.record(
                 TraceOpType::YieldFrom(YieldValue::ResolveNeighborsOuter),
@@ -467,25 +365,7 @@ where
                 .map(move |(_, vertex)| vertex),
             );
 
-            let tracer_ref_7 = tracer_ref_5.clone();
-            let final_neighbor_iter: VertexIterator<'vertex, Self::Vertex> =
-                Box::new(make_iter_with_end_action(tapped_neighbor_iter, move || {
-                    tracer_ref_7.borrow_mut().record(
-                        TraceOpType::OutputIteratorExhausted,
-                        Some(outer_iterator_opid),
-                        None,
-                    );
-                }));
-
-            (context, final_neighbor_iter)
-        });
-
-        Box::new(make_iter_with_end_action(x, move || {
-            tracer_ref_4.borrow_mut().record(
-                TraceOpType::OutputIteratorExhausted,
-                Some(call_opid),
-                None,
-            );
+            (context, tapped_neighbor_iter)
         }))
     }
 
@@ -508,42 +388,13 @@ where
         );
         drop(trace);
 
-        let tracer_ref_1 = self.tracer.clone();
-        let tracer_ref_2 = self.tracer.clone();
-        let tracer_ref_3 = self.tracer.clone();
-
-        let x = Box::new(make_iter_with_perf_span(contexts, move |context, d| {
-            tracer_ref_3
-                .borrow_mut()
-                .record(TraceOpType::YieldInto, Some(call_opid), Some(d));
-            context
-        }));
-
-        let wrapped_contexts = Box::new(make_iter_with_end_action(
-            make_iter_with_pre_action(x, move || {
-                tracer_ref_1.borrow_mut().record(
-                    TraceOpType::AdvanceInputIterator,
-                    Some(call_opid),
-                    None,
-                );
-            }),
-            move || {
-                tracer_ref_2.borrow_mut().record(
-                    TraceOpType::InputIteratorExhausted,
-                    Some(call_opid),
-                    None,
-                );
-            },
-        ));
-
         let inner_iter =
             self.inner
-                .resolve_coercion(wrapped_contexts, type_name, coerce_to_type, resolve_info);
+                .resolve_coercion(contexts, type_name, coerce_to_type, resolve_info);
 
-        let tracer_ref_4 = self.tracer.clone();
         let tracer_ref_5 = self.tracer.clone();
 
-        let x = Box::new(make_iter_with_perf_span(
+        Box::new(make_iter_with_perf_span(
             inner_iter,
             move |(context, can_coerce), d| {
                 tracer_ref_5.borrow_mut().record(
@@ -553,14 +404,6 @@ where
                 );
                 (context, can_coerce)
             },
-        ));
-
-        Box::new(make_iter_with_end_action(x, move || {
-            tracer_ref_4.borrow_mut().record(
-                TraceOpType::OutputIteratorExhausted,
-                Some(call_opid),
-                None,
-            );
-        }))
+        ))
     }
 }
