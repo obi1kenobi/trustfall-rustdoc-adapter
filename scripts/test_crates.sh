@@ -14,9 +14,9 @@ CRATES=$(find "$TOPLEVEL/test_crates" -maxdepth 1 -mindepth 1 -type d -exec base
 # compile on x86_64 and aarch64 targets, so skip it here.
 CRATES_TO_TEST=()
 for crate in $CRATES; do
-    if [[ "$crate" == "feature_not_on_our_target_triple" ]]; then
-        continue
-    fi
+    # if [[ "$crate" == "feature_not_on_our_target_triple" ]]; then
+    #     continue
+    # fi
     CRATES_TO_TEST+=("$crate")
 done
 
@@ -32,9 +32,9 @@ test_crate() {
         cd "$TOPLEVEL/test_crates/$crate"
         {
             echo "== $crate: cargo test --no-run =="
-            CARGO_TARGET_DIR="$crate_target_dir" cargo test --no-run
+            CARGO_TARGET_DIR="$crate_target_dir" RUSTFLAGS="-A dead_code -A unused_variables" cargo test --no-run
             echo "== $crate: cargo test =="
-            CARGO_TARGET_DIR="$crate_target_dir" cargo test
+            CARGO_TARGET_DIR="$crate_target_dir" RUSTFLAGS="-A dead_code -A unused_variables" cargo test
         } &>"$log"
     ) || echo "$crate" >>"$FAILED_CRATES_FILE"
 }

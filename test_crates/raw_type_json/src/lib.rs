@@ -2,6 +2,8 @@
 //! using parts of the rustdoc output (e.g. function parameters) that
 //! are not currently exposed by `trustfall-rustdoc-adapter`.
 
+#![allow(dead_code, unused_variables)]
+
 pub trait GAT<T> {
     type Type<'a, U>
     where
@@ -66,20 +68,21 @@ pub fn dyn_ambiguity<'a>(
 }
 
 pub fn my_generic_function<'a, T, U: GAT<T>>(
-    _a: &'a &'static mut *const T,
-    _b: &(dyn Iterator<Item = T> + Unpin + Send),
-    _c: Constant<25>,
-    _d: impl for<'x> FnMut(
-        &'a unsafe extern "C" fn(
-            *const [u8],
-            &'x mut *mut (),
-            ...
-        ) -> std::borrow::Cow<'static, [u8]>,
-    ) -> &'x (dyn std::fmt::Display)
-    + Send
-    + 'static,
-    _e: <U as GAT<T>>::Type<'a, &'static *const ()>,
-) -> impl std::future::Future<Output = core::iter::Empty<&'a ()>> {
+    a: &'a &'static mut *const T,
+    b: &(dyn Iterator<Item = T> + Unpin + Send),
+    c: Constant<25>,
+    d: impl for<'x> FnMut(
+            &'a unsafe extern "C" fn(
+                *const [u8],
+                &'x mut *mut (),
+                ...
+            ) -> std::borrow::Cow<'static, [u8]>,
+        ) -> &'x (dyn std::fmt::Display)
+        + Send
+        + 'static,
+    e: <U as GAT<T>>::Type<'a, &'static *const ()>,
+) -> impl std::future::Future<Output: Iterator<Item: 'a + Send> + for<'z> FnMut(&'z ()) -> &'z &'a ()>
+{
     core::future::ready(core::iter::empty())
 }
 
