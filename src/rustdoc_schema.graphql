@@ -2692,9 +2692,14 @@ interface GenericParameter {
   For example, in `struct Generic<'a, 'b>`,
   parameter `'a` has position `1` while `'b` has position `2`.
 
-  The position considers parameters of each kind (lifetime, type, and const) separately.
-  For example: in `struct Generic<'a, T, U>`, both the `'a` lifetime parameter and
-  the `T` type parameter have position `1`, while the `U` generic parameter has position `2`.
+  Rust requires that all lifetime parameters appear before any type or const parameters.
+  The position is considered separately for lifetime parameters and for type / const parameters.
+  Consider `struct Generic<'a, T, const N: usize, U>` for example:
+  - The `'a` lifetime parameter has `position` equal to `1`.
+  - The `T` generic type parameter has `position` equal to `1`, since lifetime parameters
+    are not considered when counting the positions of type or const parameters.
+  - The `N` const generic has `position` equal to `2`, after `T`.
+  - The `U` generic type parameter has `position` equal to `3`, after `N`.
 
   The position only considers generic parameters belonging *directly* to
   the item in question. It ignores generic parameters originally declared by a parent item.
@@ -2747,9 +2752,11 @@ type GenericTypeParameter implements GenericParameter {
 
   For example, in `struct Generic<A, B>`, parameter `A` has position `1` while `B` has position `2`.
 
-  The position only considers type parameters. For example: in `struct Generic<'a, 'b, T>`,
-  the `T` type parameter has position `1`. The other generic parameters are ignored
-  when computing `T`'s position.
+  Rust requires that all lifetime parameters appear before any type or const parameters.
+  Here, the position only considers type and const generic parameters.
+  For example: in `struct Generic<'a, 'b, const N: usize, T>`,
+  the `N` parameter has position `1` and the `T` type parameter has position `2`.
+  The lifetime parameters are ignored when computing `T`'s position.
 
   The position only considers generic type parameters belonging *directly* to
   the item in question. It ignores generic parameters originally declared by a parent item.
@@ -2815,7 +2822,8 @@ type GenericLifetimeParameter implements GenericParameter {
   For example, in `struct Generic<'a, 'b>`,
   parameter `'a` has position `1` while `'b` has position `2`.
 
-  The position only considers lifetime parameters. For example: in `struct Generic<'a, T, U>`,
+  Rust requires that all lifetime parameters appear before any type or const parameters.
+  Here, the position only considers lifetime parameters. For example: in `struct Generic<'a, T, U>`,
   the `'a` lifetime parameter has position `1`. The other generic parameters are ignored
   when computing `'a`'s position.
 
@@ -2855,10 +2863,11 @@ type GenericConstParameter implements GenericParameter {
   For example, in `struct Generic<const N: usize, const M: usize>`,
   parameter `N` has position `1` while `M` has position `2`.
 
-  The position only considers const parameters.
+  Rust requires that all lifetime parameters appear before any type or const parameters.
+  Here, the position only considers tyep and const generic parameters.
   For example: in `struct Generic<'a, T, const N: usize>`,
-  the `N` const parameter has position `1`. The other generic parameters are ignored
-  when computing `N`'s position.
+  the `T` parameter has position `1` and the `N` const parameter has position `2`.
+  The generic lifetime parameters are ignored when computing `N`'s position.
 
   The position only considers const generics belonging *directly* to
   the item in question. It ignores generic parameters originally declared by a parent item.
