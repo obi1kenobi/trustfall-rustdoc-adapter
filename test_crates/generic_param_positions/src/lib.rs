@@ -4,11 +4,27 @@
 
 pub fn function<'a, 'b, T, U, const N: usize, const M: usize>(left: &'a [T; N], right: &'b [U; M]) {}
 
+/// Mix the order of type and const generics, because we can.
+///
+/// Lifetime arguments always have to appear first.
+/// Proof that `'b` cannot appear after `T`:
+/// ```compile_fail
+/// fn witness<'a, T, 'b>(&'a &'b T) {}
+/// ```
+///
+/// Proof that `'b` cannot appear after `const N`:
+/// ```compile_fail
+/// fn witness<'a, const N: usize, 'b>(&'a &'b [i64; N]) {}
+/// ```
+pub fn mixed_order<'a, 'b, T, const N: usize, U, const M: usize>(left: &'a [T; N], right: &'b [U; M]) {}
+
 pub trait Trait<'a, T, const N: usize> {
     fn method<'b, U, V, const M: usize>(&self, value: &'b U) -> [V; M];
 }
 
-pub fn impl_trait<T, U>(first: T, impld: impl Into<U>) -> impl Iterator<Item = T> {}
+pub fn impl_trait<T, U>(first: T, impld: impl Into<U>) -> impl Iterator<Item = T> {
+    core::iter::empty()
+}
 
 pub struct Example<'a, 'b> {
     _marker: core::marker::PhantomData<&'a &'b ()>,
