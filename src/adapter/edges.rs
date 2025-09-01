@@ -282,8 +282,7 @@ pub(super) fn resolve_generic_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     struct GenericParamCounter {
         lifetimes: NonZeroUsize,
-        types: NonZeroUsize,
-        consts: NonZeroUsize,
+        types_and_consts: NonZeroUsize,
     }
 
     match edge_name {
@@ -291,8 +290,7 @@ pub(super) fn resolve_generic_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let origin = vertex.origin;
             let mut counter = GenericParamCounter {
                 lifetimes: NonZeroUsize::new(1).unwrap(),
-                types: NonZeroUsize::new(1).unwrap(),
-                consts: NonZeroUsize::new(1).unwrap(),
+                types_and_consts: NonZeroUsize::new(1).unwrap(),
             };
             Box::new(
                 vertex
@@ -310,16 +308,16 @@ pub(super) fn resolve_generic_parameter_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                                     if is_synthetic {
                                         None
                                     } else {
-                                        let position = counter.types;
-                                        counter.types = position
+                                        let position = counter.types_and_consts;
+                                        counter.types_and_consts = position
                                             .checked_add(1)
                                             .expect("param position overflow");
                                         Some(position)
                                     }
                                 }
                                 GenericParamDefKind::Const { .. } => {
-                                    let position = counter.consts;
-                                    counter.consts =
+                                    let position = counter.types_and_consts;
+                                    counter.types_and_consts =
                                         position.checked_add(1).expect("param position overflow");
                                     Some(position)
                                 }
