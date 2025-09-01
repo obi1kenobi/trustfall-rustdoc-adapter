@@ -3,8 +3,7 @@
 # Fail on first error, on undefined variables, and on failures in pipelines.
 set -euo pipefail
 
-export CARGO_TARGET_DIR=/tmp/test_crates
-RUSTDOC_OUTPUT_DIR="$CARGO_TARGET_DIR/doc"
+BASE_CARGO_TARGET_DIR=/tmp/test_crates
 TOPLEVEL="$(git rev-parse --show-toplevel)"
 TARGET_DIR="$TOPLEVEL/localdata/test_data"
 
@@ -42,25 +41,36 @@ else
     ALWAYS_UPDATE=1
 fi
 
-for crate_path in $CRATES; do
-    # Removing path prefix, leaving only the directory name without forward slashes
-    crate=${crate_path#"$TOPLEVEL/test_crates/"}
+JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)}
 
+CRATES_TO_BUILD=()
+for crate_path in $CRATES; do
+    crate=${crate_path#"$TOPLEVEL/test_crates/"}
     if [[ -f "$TOPLEVEL/test_crates/$crate/Cargo.toml" ]]; then
         target="$TARGET_DIR/$crate/rustdoc.json"
-        echo "Generating: $crate"
-
         if [[ -z "$ALWAYS_UPDATE" ]] && ! dir_is_newer_than_file "$crate_path" "$target"; then
             printf 'No updates needed for %s.\n' "$crate"
             continue
         fi
-
-        pushd "$TOPLEVEL/test_crates/$crate"
-        RUSTC_BOOTSTRAP=1 $RUSTDOC_CMD -- -Zunstable-options --document-private-items --document-hidden-items --output-format=json
-        mkdir -p "$TARGET_DIR/$crate"
-        mv "$RUSTDOC_OUTPUT_DIR/$crate.json" "$target"
-        popd
+        CRATES_TO_BUILD+=("$crate")
     fi
 done
 
-unset CARGO_TARGET_DIR
+generate() {
+    local crate="$1"
+    local crate_target_dir="$BASE_CARGO_TARGET_DIR/$crate"
+    local target="$TARGET_DIR/$crate/rustdoc.json"
+    echo "Generating: $crate"
+    (
+        cd "$TOPLEVEL/test_crates/$crate"
+        RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR="$crate_target_dir" $RUSTDOC_CMD -- -Zunstable-options --document-private-items --document-hidden-items --output-format=json
+    )
+    mkdir -p "$TARGET_DIR/$crate"
+    mv "$crate_target_dir/doc/$crate.json" "$target"
+}
+export -f generate
+export RUSTDOC_CMD TARGET_DIR TOPLEVEL BASE_CARGO_TARGET_DIR
+
+if ((${#CRATES_TO_BUILD[@]})); then
+    printf '%s\n' "${CRATES_TO_BUILD[@]}" | xargs -I{} -P "$JOBS" bash -c 'generate "$@"' _ {}
+fi
