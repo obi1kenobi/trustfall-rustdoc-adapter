@@ -66,22 +66,21 @@ pub fn dyn_ambiguity<'a>(
 }
 
 pub fn my_generic_function<'a, T, U: GAT<T>>(
-    a: &'a &'static mut *const T,
-    b: &(dyn Iterator<Item = T> + Unpin + Send),
-    c: Constant<25>,
-    d: impl for<'x> FnMut(
-            &'a unsafe extern "C" fn(
-                *const [u8],
-                &'x mut *mut (),
-                ...
-            ) -> std::borrow::Cow<'static, [u8]>,
-        ) -> &'x (dyn std::fmt::Display)
-        + Send
-        + 'static,
-    e: <U as GAT<T>>::Type<'a, &'static *const ()>,
-) -> impl std::future::Future<Output: Iterator<Item: 'a + Send> + for<'z> FnMut(&'z ()) -> &'z &'a ()>
-{
-    unimplemented!()
+    _a: &'a &'static mut *const T,
+    _b: &(dyn Iterator<Item = T> + Unpin + Send),
+    _c: Constant<25>,
+    _d: impl for<'x> FnMut(
+        &'a unsafe extern "C" fn(
+            *const [u8],
+            &'x mut *mut (),
+            ...
+        ) -> std::borrow::Cow<'static, [u8]>,
+    ) -> &'x (dyn std::fmt::Display)
+    + Send
+    + 'static,
+    _e: <U as GAT<T>>::Type<'a, &'static *const ()>,
+) -> impl std::future::Future<Output = core::iter::Empty<&'a ()>> {
+    core::future::ready(core::iter::empty())
 }
 
 pub fn awesome_function<'a, const N: usize>(a: &'a Constant<N>, b: &impl Clone) -> impl Send {
