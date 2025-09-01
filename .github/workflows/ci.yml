@@ -22,12 +22,14 @@ jobs:
     needs:
       - lint
       - rust-tests
+      - test-crates
     if: ${{ success() || failure() }}  # Run this job even if a dependency has failed.
     steps:
       - name: Job outcomes
         run: |
           echo "lint: ${{ needs.lint.result }}"
           echo "rust-tests: ${{ needs.rust-tests.result }}"
+          echo "test-crates: ${{ needs.test-crates.result }}"
 
       # Fail this required job if any of its dependent jobs have failed.
       #
@@ -37,6 +39,8 @@ jobs:
       - if: ${{ needs.lint.result != 'success' }}
         run: exit 1
       - if: ${{ needs.rust-tests.result != 'success' }}
+        run: exit 1
+      - if: ${{ needs.test-crates.result != 'success' }}
         run: exit 1
 
   lint:
@@ -103,6 +107,24 @@ jobs:
 
       - name: test with rayon and rustc-hash
         run: cargo test --features rayon,rustc-hash
+
+  test-crates:
+    name: Run test crate tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Install rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
+          rustflags: ""
+
+      - name: Run test crate tests
+        run: ./scripts/test_crates.sh
 
   publish:
     name: Publish to crates.io
