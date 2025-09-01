@@ -83,7 +83,8 @@ pub fn my_generic_function<'a, T, U: GAT<T>>(
     e: <U as GAT<T>>::Type<'a, &'static *const ()>,
 ) -> impl std::future::Future<Output: Iterator<Item: 'a + Send> + for<'z> FnMut(&'z ()) -> &'z &'a ()>
 {
-    core::future::ready(core::iter::empty())
+    // This doesn't quite compile, unfortunately.
+    core::future::ready(unimplemented!())
 }
 
 pub fn awesome_function<'a, const N: usize>(a: &'a Constant<N>, b: &impl Clone) -> impl Send {
