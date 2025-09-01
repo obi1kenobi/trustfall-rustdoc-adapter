@@ -2,6 +2,8 @@
 //! using parts of the rustdoc output (e.g. function parameters) that
 //! are not currently exposed by `trustfall-rustdoc-adapter`.
 
+#![allow(dead_code, unused_variables)]
+
 pub trait GAT<T> {
     type Type<'a, U>
     where
@@ -81,7 +83,8 @@ pub fn my_generic_function<'a, T, U: GAT<T>>(
     e: <U as GAT<T>>::Type<'a, &'static *const ()>,
 ) -> impl std::future::Future<Output: Iterator<Item: 'a + Send> + for<'z> FnMut(&'z ()) -> &'z &'a ()>
 {
-    unimplemented!()
+    // This doesn't quite compile, unfortunately.
+    core::future::ready(unimplemented!())
 }
 
 pub fn awesome_function<'a, const N: usize>(a: &'a Constant<N>, b: &impl Clone) -> impl Send {
