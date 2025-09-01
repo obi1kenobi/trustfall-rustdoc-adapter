@@ -62,9 +62,12 @@ for crate_path in $CRATES; do
 done
 
 generate() {
+    set -euo pipefail
+
     local crate="$1"
     local crate_target_dir="$BASE_CARGO_TARGET_DIR/$crate"
     local target="$TARGET_DIR/$crate/rustdoc.json"
+
     echo "Generating: $crate"
     (
         cd "$TOPLEVEL/test_crates/$crate"
@@ -77,5 +80,5 @@ export -f generate
 export RUSTDOC_CMD TARGET_DIR TOPLEVEL BASE_CARGO_TARGET_DIR
 
 if ((${#CRATES_TO_BUILD[@]})); then
-    printf '%s\n' "${CRATES_TO_BUILD[@]}" | xargs -I{} -P "$JOBS" bash -c 'generate "$@"' _ {}
+    printf '%s\n' "${CRATES_TO_BUILD[@]}" | xargs --no-run-if-empty -I{} -P "$JOBS" bash -c 'generate "$@"' _ {}
 fi

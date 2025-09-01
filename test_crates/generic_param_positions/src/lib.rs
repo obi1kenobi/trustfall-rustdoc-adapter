@@ -1,8 +1,8 @@
 #![no_std]
-
 #![allow(unused_variables)]
 
-pub fn function<'a, 'b, T, U, const N: usize, const M: usize>(left: &'a [T; N], right: &'b [U; M]) {}
+pub fn function<'a, 'b, T, U, const N: usize, const M: usize>(left: &'a [T; N], right: &'b [U; M]) {
+}
 
 /// Mix the order of type and const generics, because we can.
 ///
