@@ -41,6 +41,11 @@ else
     ALWAYS_UPDATE=1
 fi
 
+# If a toolchain was explicitly requested, always regenerate.
+if [[ -n "$TOOLCHAIN" ]]; then
+    ALWAYS_UPDATE=1
+fi
+
 JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)}
 
 CRATES_TO_BUILD=()
