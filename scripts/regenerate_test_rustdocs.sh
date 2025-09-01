@@ -41,7 +41,7 @@ else
     ALWAYS_UPDATE=1
 fi
 
-JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || getconf NPROCESSORS_ONLN 2>/dev/null || echo 1)}
+JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)}
 
 CRATES_TO_BUILD=()
 for crate_path in $CRATES; do
@@ -74,4 +74,3 @@ export RUSTDOC_CMD TARGET_DIR TOPLEVEL BASE_CARGO_TARGET_DIR
 if ((${#CRATES_TO_BUILD[@]})); then
     printf '%s\n' "${CRATES_TO_BUILD[@]}" | xargs -I{} -P "$JOBS" bash -c 'generate "$@"' _ {}
 fi
-
