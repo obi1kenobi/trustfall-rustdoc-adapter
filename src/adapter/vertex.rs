@@ -86,6 +86,9 @@ pub enum VertexKind<'a> {
 
     #[non_exhaustive]
     RequiredTargetFeature(TargetFeature<'a>),
+
+    #[non_exhaustive]
+    ReturnValue(ReturnValue<'a>),
 }
 
 impl Typename for Vertex<'_> {
@@ -132,6 +135,7 @@ impl Typename for Vertex<'_> {
                 _ => "RawType",
             },
             VertexKind::FunctionParameter(..) => "FunctionParameter",
+            VertexKind::ReturnValue(..) => "ReturnValue",
             VertexKind::Receiver(..) => "Receiver",
             VertexKind::FunctionAbi(..) => "FunctionAbi",
             VertexKind::Discriminant(..) => "Discriminant",
@@ -283,6 +287,13 @@ impl<'a> Vertex<'a> {
     pub(super) fn as_function_parameter(&self) -> Option<&'a str> {
         match &self.kind {
             VertexKind::FunctionParameter(name) => Some(name),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_return_value(&self) -> Option<&ReturnValue<'a>> {
+        match &self.kind {
+            VertexKind::ReturnValue(value) => Some(value),
             _ => None,
         }
     }
@@ -476,4 +487,10 @@ impl TargetFeature<'_> {
             .map(|feat| feat.globally_enabled)
             .unwrap_or(false)
     }
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub struct ReturnValue<'a> {
+    pub(crate) type_: Option<&'a rustdoc_types::Type>,
 }
