@@ -1291,10 +1291,29 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Header.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.FnDecl.html
 """
 interface FunctionLike {
+  """
+  Whether this function can be evaluated at compile-time.
+
+  For example, this is `true` for `const fn example() -> i64 { 0 }`.
+  """
   const: Boolean!
+
+  """
+  Whether the function is `unsafe` to call, requiring the caller to discharge safety invariants.
+  """
   unsafe: Boolean!
+
   async: Boolean!
+
+  """
+  Whether the function includes an implementation ("body") or is just a declaration.
+
+  For example, `fn example() {}` has a body (an empty one), whereas a trait function that
+  does not supply a default implementation does not have a body. If the trait function includes
+  a default implementation, that implementation is the body.
+  """
   has_body: Boolean!
+
   """
   Stringified representation of the function's signature, as close to the
   original source code as possible.  May not preserve whitespace, constant
@@ -1304,7 +1323,32 @@ interface FunctionLike {
   signature: String!
 
   # own edges
+  """
+  A parameter to this function.
+
+  There can be zero or more parameters. Any `self` receiver parameter is also included here,
+  if one is present on the function (i.e. the method).
+  """
   parameter: [FunctionParameter!]
+
+  """
+  The value this function returns when called.
+
+  Even functions that "don't return anything" technically have a return value in Rust:
+  they return `()` i.e. the "unit" value.
+  """
+  return_value: ReturnValue!
+
+  """
+  The ABI (application binary interface) that this function adheres to.
+
+  For example, in the following code `as_rust()` has ABI `"Rust"` and `as_c()` has ABI `"C-unwind"`:
+  ```
+  pub fn as_rust() {}
+
+  pub extern "C-unwind" fn as_c() {}
+  ```
+  """
   abi: FunctionAbi!
 }
 
@@ -1357,10 +1401,29 @@ interface ExportableFunction implements Item & FunctionLike {
   visibility_limit: String!
 
   # properties from FunctionLike
+  """
+  Whether this function can be evaluated at compile-time.
+
+  For example, this is `true` for `const fn example() -> i64 { 0 }`.
+  """
   const: Boolean!
+
+  """
+  Whether the function is `unsafe` to call, requiring the caller to discharge safety invariants.
+  """
   unsafe: Boolean!
+
   async: Boolean!
+
+  """
+  Whether the function includes an implementation ("body") or is just a declaration.
+
+  For example, `fn example() {}` has a body (an empty one), whereas a trait function that
+  does not supply a default implementation does not have a body. If the trait function includes
+  a default implementation, that implementation is the body.
+  """
   has_body: Boolean!
+
   """
   Stringified representation of the function's signature, as close to the
   original source code as possible.  May not preserve whitespace, constant
@@ -1398,7 +1461,32 @@ interface ExportableFunction implements Item & FunctionLike {
   attribute: [Attribute!]
 
   # edges from FunctionLike
+  """
+  A parameter to this function.
+
+  There can be zero or more parameters. Any `self` receiver parameter is also included here,
+  if one is present on the function (i.e. the method).
+  """
   parameter: [FunctionParameter!]
+
+  """
+  The value this function returns when called.
+
+  Even functions that "don't return anything" technically have a return value in Rust:
+  they return `()` i.e. the "unit" value.
+  """
+  return_value: ReturnValue!
+
+  """
+  The ABI (application binary interface) that this function adheres to.
+
+  For example, in the following code `as_rust()` has ABI `"Rust"` and `as_c()` has ABI `"C-unwind"`:
+  ```
+  pub fn as_rust() {}
+
+  pub extern "C-unwind" fn as_c() {}
+  ```
+  """
   abi: FunctionAbi!
 }
 
@@ -1423,39 +1511,39 @@ Backed by:
 https://docs.rs/rustdoc-types/latest/rustdoc_types/enum.Abi.html
 """
 type FunctionAbi {
-    """
-    The name of the ABI, with any `"-unwind"` modifier stripped.
+  """
+  The name of the ABI, with any `"-unwind"` modifier stripped.
 
-    To get the ABI name directly as it would appear in a Rust source file,
-    use the `raw_name` property instead.
+  To get the ABI name directly as it would appear in a Rust source file,
+  use the `raw_name` property instead.
 
-    For example, a function defined as `extern "C-unwind" fn example()` would
-    have `name = "C"` and `raw_name = "C-unwind"`.
+  For example, a function defined as `extern "C-unwind" fn example()` would
+  have `name = "C"` and `raw_name = "C-unwind"`.
 
-    Functions with no specified ABI by default have an ABI named `"Rust"`.
-    """
-    name: String!
+  Functions with no specified ABI by default have an ABI named `"Rust"`.
+  """
+  name: String!
 
-    """
-    The raw name of the ABI, as it would appear in a Rust source file.
+  """
+  The raw name of the ABI, as it would appear in a Rust source file.
 
-    For example: "C-unwind" or "thiscall-unwind"
+  For example: "C-unwind" or "thiscall-unwind"
 
-    Functions with no specified ABI by default have an ABI named `"Rust"`.
-    """
-    raw_name: String!
+  Functions with no specified ABI by default have an ABI named `"Rust"`.
+  """
+  raw_name: String!
 
-    """
-    Whether unwinding across this call is supported.
+  """
+  Whether unwinding across this call is supported.
 
-    If encountering an unknown ABI, this value will be `null` due to unknown unwind semantics.
+  If encountering an unknown ABI, this value will be `null` due to unknown unwind semantics.
 
-    Unwind ability is specified in rustc here:
-    https://github.com/rust-lang/rust/blob/557359f92512ca88b62a602ebda291f17a953002/compiler/rustc_middle/src/ty/layout.rs#L1422-L1488
+  Unwind ability is specified in rustc here:
+  https://github.com/rust-lang/rust/blob/557359f92512ca88b62a602ebda291f17a953002/compiler/rustc_middle/src/ty/layout.rs#L1422-L1488
 
-    More info: https://rust-lang.github.io/rfcs/2945-c-unwind-abi.html
-    """
-    unwind: Boolean
+  More info: https://rust-lang.github.io/rfcs/2945-c-unwind-abi.html
+  """
+  unwind: Boolean
 }
 
 """
@@ -1546,10 +1634,29 @@ type Function implements Item & FunctionLike & Importable & ExportableFunction &
   visibility_limit: String!
 
   # properties from FunctionLike
+  """
+  Whether this function can be evaluated at compile-time.
+
+  For example, this is `true` for `const fn example() -> i64 { 0 }`.
+  """
   const: Boolean!
+
+  """
+  Whether the function is `unsafe` to call, requiring the caller to discharge safety invariants.
+  """
   unsafe: Boolean!
+
   async: Boolean!
+
+  """
+  Whether the function includes an implementation ("body") or is just a declaration.
+
+  For example, `fn example() {}` has a body (an empty one), whereas a trait function that
+  does not supply a default implementation does not have a body. If the trait function includes
+  a default implementation, that implementation is the body.
+  """
   has_body: Boolean!
+
   """
   Stringified representation of the function's signature, as close to the
   original source code as possible.  May not preserve whitespace, constant
@@ -1587,7 +1694,29 @@ type Function implements Item & FunctionLike & Importable & ExportableFunction &
   attribute: [Attribute!]
 
   # edges from FunctionLike
+  """
+  A parameter to this function. There can be zero or more parameters.
+  """
   parameter: [FunctionParameter!]
+
+  """
+  The value this function returns when called.
+
+  Even functions that "don't return anything" technically have a return value in Rust:
+  they return `()` i.e. the "unit" value.
+  """
+  return_value: ReturnValue!
+
+  """
+  The ABI (application binary interface) that this function adheres to.
+
+  For example, in the following code `as_rust()` has ABI `"Rust"` and `as_c()` has ABI `"C-unwind"`:
+  ```
+  pub fn as_rust() {}
+
+  pub extern "C-unwind" fn as_c() {}
+  ```
+  """
   abi: FunctionAbi!
 
   # edges from Importable
@@ -1673,10 +1802,29 @@ type Method implements Item & FunctionLike & GenericItem {
   visibility_limit: String!
 
   # properties from FunctionLike
+  """
+  Whether this function can be evaluated at compile-time.
+
+  For example, this is `true` for `const fn example() -> i64 { 0 }`.
+  """
   const: Boolean!
+
+  """
+  Whether the function is `unsafe` to call, requiring the caller to discharge safety invariants.
+  """
   unsafe: Boolean!
+
   async: Boolean!
+
+  """
+  Whether the function includes an implementation ("body") or is just a declaration.
+
+  For example, `fn example() {}` has a body (an empty one), whereas a trait function that
+  does not supply a default implementation does not have a body. If the trait function includes
+  a default implementation, that implementation is the body.
+  """
   has_body: Boolean!
+
   """
   Stringified representation of the function's signature, as close to the
   original source code as possible.  May not preserve whitespace, constant
@@ -1714,7 +1862,32 @@ type Method implements Item & FunctionLike & GenericItem {
   attribute: [Attribute!]
 
   # edges from FunctionLike
+  """
+  A parameter to this function.
+
+  There can be zero or more parameters. Any `self` receiver parameter is also included here,
+  if one is present on the function (i.e. the method).
+  """
   parameter: [FunctionParameter!]
+
+  """
+  The value this function returns when called.
+
+  Even functions that "don't return anything" technically have a return value in Rust:
+  they return `()` i.e. the "unit" value.
+  """
+  return_value: ReturnValue!
+
+  """
+  The ABI (application binary interface) that this function adheres to.
+
+  For example, in the following code `as_rust()` has ABI `"Rust"` and `as_c()` has ABI `"C-unwind"`:
+  ```
+  pub fn as_rust() {}
+
+  pub extern "C-unwind" fn as_c() {}
+  ```
+  """
   abi: FunctionAbi!
 
   # edges from GenericItem
@@ -1814,6 +1987,26 @@ type Receiver {
     publicly re-exported under a different name and/or path.
   """
   kind: String!
+}
+
+"""
+A function's return value.
+"""
+type ReturnValue {
+  """
+  Whether the return value is `()` i.e. the function "doesn't return anything."
+
+  In Rust, functions that do not specify a return value are actually
+  implicitly returning the "unit" value, denoted `()`.
+
+  For example, the following function has `is_unit` equal to `true`:
+  ```
+  fn example() {
+      println!("hello world!");
+  }
+  ```
+  """
+  is_unit: Boolean!
 }
 
 """
