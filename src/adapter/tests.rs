@@ -7932,3 +7932,253 @@ fn feature_not_on_our_target_triple() {
 
     similar_asserts::assert_eq!(expected_results, results,);
 }
+
+#[test]
+fn function_parameters() {
+    get_test_data!(data, function_params_and_return_value);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let functions_query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+
+                parameter @fold {
+                    params: name @output
+                }
+            }
+        }
+    }
+}
+"#;
+    let methods_query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                inherent_impl {
+                    method {
+                        name @output
+
+                        parameter @fold {
+                            params: name @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let trait_methods_query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                method {
+                    name @output
+
+                    parameter @fold {
+                        params: name @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables: BTreeMap<&str, bool> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        params: Vec<String>,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            name: "add".into(),
+            params: vec!["left".into(), "right".into()],
+        },
+        Output {
+            name: "fn_returns_nothing".into(),
+            params: vec![],
+        },
+        Output {
+            name: "add_method".into(),
+            params: vec!["self".into(), "left".into(), "right".into()],
+        },
+        Output {
+            name: "method_returns_nothing".into(),
+            params: vec!["self".into()],
+        },
+        Output {
+            name: "add_trait_fn".into(),
+            params: vec!["self".into(), "value".into()],
+        },
+        Output {
+            name: "trait_fn_returns_nothing".into(),
+            params: vec!["self".into()],
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), functions_query, variables.clone())
+            .expect("failed to run top level query")
+            .chain(
+                trustfall::execute_query(
+                    &schema,
+                    adapter.clone(),
+                    methods_query,
+                    variables.clone(),
+                )
+                .expect("failed to run impl owner inherent methods query"),
+            )
+            .chain(
+                trustfall::execute_query(
+                    &schema,
+                    adapter.clone(),
+                    trait_methods_query,
+                    variables.clone(),
+                )
+                .expect("failed to run trait methods query"),
+            )
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn function_return_value() {
+    get_test_data!(data, function_params_and_return_value);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let functions_query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+
+                return_value {
+                    is_unit @output
+                }
+            }
+        }
+    }
+}
+"#;
+    let methods_query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                inherent_impl {
+                    method {
+                        name @output
+
+                        return_value {
+                            is_unit @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let trait_methods_query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                method {
+                    name @output
+
+                    return_value {
+                        is_unit @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables: BTreeMap<&str, bool> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        is_unit: bool,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            name: "add".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "fn_returns_nothing".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "add_method".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "method_returns_nothing".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "add_trait_fn".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "trait_fn_returns_nothing".into(),
+            is_unit: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), functions_query, variables.clone())
+            .expect("failed to run top level query")
+            .chain(
+                trustfall::execute_query(
+                    &schema,
+                    adapter.clone(),
+                    methods_query,
+                    variables.clone(),
+                )
+                .expect("failed to run impl owner inherent methods query"),
+            )
+            .chain(
+                trustfall::execute_query(
+                    &schema,
+                    adapter.clone(),
+                    trait_methods_query,
+                    variables.clone(),
+                )
+                .expect("failed to run trait methods query"),
+            )
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
