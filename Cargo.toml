@@ -11,16 +11,16 @@ readme = "./README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rayon = { version = "1.10.0", optional = true }
+rayon = { version = "1.11.0", optional = true }
 rustc-hash = { version = "2.1.1", optional = true }
-cargo_toml = { version = "0.22.1", features = ["features"] }
+cargo_toml = { version = "0.22.3", features = ["features"] }
 
 # Packages in our public API, where bumping a major version is a breaking change.
 # Extra spacing included to minimize the chance of merge conflicts.
 #
 trustfall = "0.8.1"
-cargo_metadata = "0.21.0"
-indexmap = "2.10.0"
+cargo_metadata = "0.22.0"
+indexmap = "2.11.0"
 
 #
 # Keep this dependency last, its own block, since we change it often via automated means
@@ -49,10 +49,10 @@ debug = 1 # We only need function name information (for flamegraphs)
 lto = "thin"
 
 [dev-dependencies]
-anyhow = "1.0.98"
-criterion = "0.5.1"
+anyhow = "1.0.99"
+criterion = "0.7.0"
 itertools = "0.14.0"
-serde_json = "1.0.141"
+serde_json = "1.0.143"
 serde = { version = "1.0.219", features = ["derive"] }
 maplit = "1.0.2"
 similar-asserts = { version = "1.7.0", features = ["serde"] }
