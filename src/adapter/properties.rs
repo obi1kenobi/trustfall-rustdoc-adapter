@@ -364,6 +364,23 @@ pub(super) fn resolve_function_parameter_property<'a, V: AsVertex<Vertex<'a>> + 
     }
 }
 
+pub(super) fn resolve_return_value_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    property_name: &str,
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    match property_name {
+        "is_unit" => resolve_property_with(contexts, |vertex| {
+            vertex
+                .as_return_value()
+                .expect("not a return value")
+                .type_
+                .is_none()
+                .into()
+        }),
+        _ => unreachable!("ReturnValue property {property_name}"),
+    }
+}
+
 pub(super) fn resolve_function_abi_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,

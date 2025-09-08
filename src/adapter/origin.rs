@@ -3,6 +3,7 @@ use std::{borrow::Cow, num::NonZeroUsize, rc::Rc};
 use rustdoc_types::{Abi, Item, Span};
 
 use crate::{
+    adapter::vertex::ReturnValue,
     attributes::{Attribute, AttributeMetaItem},
     indexed_crate::ImportablePath,
 };
@@ -107,6 +108,16 @@ impl Origin {
         Vertex {
             origin: *self,
             kind: VertexKind::FunctionParameter(name),
+        }
+    }
+
+    pub(super) fn make_return_value_vertex<'a>(
+        &self,
+        return_type: Option<&'a rustdoc_types::Type>,
+    ) -> Vertex<'a> {
+        Vertex {
+            origin: *self,
+            kind: VertexKind::ReturnValue(ReturnValue { type_: return_type }),
         }
     }
 

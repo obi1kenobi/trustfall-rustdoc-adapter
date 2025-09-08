@@ -234,6 +234,19 @@ pub(super) fn resolve_function_like_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                     .map(move |(name, _type_)| origin.make_function_parameter_vertex(name)),
             )
         }),
+        "return_value" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let return_value = origin.make_return_value_vertex(
+                vertex
+                    .as_function()
+                    .expect("vertex was not a Function")
+                    .sig
+                    .output
+                    .as_ref(),
+            );
+
+            Box::new(std::iter::once(return_value))
+        }),
         "abi" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
             let abi = &vertex
