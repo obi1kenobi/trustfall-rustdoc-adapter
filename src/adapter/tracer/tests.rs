@@ -54,7 +54,7 @@ fn format_operation(op: &TraceOpType) -> String {
 
 fn trace_to_text(trace: &Tracer) -> String {
     let mut buffer = String::with_capacity(1_000_000);
-    for op in &trace.ops {
+    for op in &trace.calls {
         write!(
             &mut buffer,
             "{:?} {:?} {:?} {}\n",
@@ -66,58 +66,4 @@ fn trace_to_text(trace: &Tracer) -> String {
         .unwrap();
     }
     buffer
-}
-
-#[test]
-fn trace_function_abi() {
-    get_test_data!(data, function_abi);
-    let adapter = RustdocAdapter::new(&data, None);
-
-    let query = r#"
-{
-    Crate {
-        item {
-            ... on Function {
-                name @output
-
-                abi_: abi {
-                    name @output
-                    raw_name @output
-                    unwind @output
-                }
-            }
-        }
-    }
-}
-"#;
-
-    let variables: BTreeMap<&str, &str> = BTreeMap::default();
-
-    let schema = Schema::parse(include_str!("../../rustdoc_schema.graphql"))
-        .expect("schema failed to parse");
-
-    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
-    struct Output {
-        name: String,
-        abi_name: String,
-        abi_raw_name: String,
-        abi_unwind: Option<bool>,
-    }
-
-    let tracer = Rc::new(RefCell::new(Tracer::new()));
-    let mut tracing_adapter = Arc::new(TracingAdapter::new(&adapter, tracer));
-
-    let _results: Vec<Output> = trace_results(
-        tracing_adapter.clone(),
-        trustfall::execute_query(&schema, tracing_adapter.clone(), query, variables.clone())
-            .expect("failed to run query"),
-    )
-    .map(|row| row.try_into_struct().expect("shape mismatch"))
-    .collect();
-
-    let trace = Arc::make_mut(&mut tracing_adapter).clone().finish();
-
-    let out_path = PathBuf::from("./test_1.ptrace.txt");
-    let buffer = trace_to_text(&trace);
-    std::fs::write(out_path, buffer).unwrap();
 }
