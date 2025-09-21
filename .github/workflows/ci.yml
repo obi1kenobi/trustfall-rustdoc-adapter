@@ -148,11 +148,6 @@ jobs:
           cache: false
           rustflags: ""
 
-      # For Trusted Publishing:
-      # https://crates.io/docs/trusted-publishing
-      - uses: rust-lang/crates-io-auth-action@v1
-        id: auth
-
       - name: Tag the version
         run: |
           set -euxo pipefail
@@ -160,6 +155,11 @@ jobs:
           export CURRENT_VERSION
           git tag "v$CURRENT_VERSION"
           git push origin "v$CURRENT_VERSION"
+
+      # For Trusted Publishing:
+      # https://crates.io/docs/trusted-publishing
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
 
       - name: Publish
         env:
