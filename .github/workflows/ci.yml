@@ -134,6 +134,8 @@ jobs:
       - ci-everything
       - pre-publish-checks
     if: needs.should-publish.outputs.is_new_version == 'yes' && startsWith(github.ref, 'refs/heads/rustdoc-v')
+    permissions:
+      id-token: write     # Required for OIDC token exchange (Trusted Publishing)
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -146,6 +148,11 @@ jobs:
           cache: false
           rustflags: ""
 
+      # For Trusted Publishing:
+      # https://crates.io/docs/trusted-publishing
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
       - name: Tag the version
         run: |
           set -euxo pipefail
@@ -156,7 +163,7 @@ jobs:
 
       - name: Publish
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: cargo publish
 
   should-publish:
