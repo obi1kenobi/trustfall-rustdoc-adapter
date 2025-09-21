@@ -134,6 +134,8 @@ jobs:
       - ci-everything
       - pre-publish-checks
     if: needs.should-publish.outputs.is_new_version == 'yes' && startsWith(github.ref, 'refs/heads/rustdoc-v')
+    permissions:
+      id-token: write     # Required for OIDC token exchange (Trusted Publishing)
     steps:
       - name: Checkout
         uses: actions/checkout@v5
