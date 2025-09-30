@@ -3,21 +3,14 @@
 // but there's currently nothing we can do about this lint.
 #![allow(clippy::arc_with_non_send_sync)]
 
-use std::cell::RefCell;
-use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::{collections::BTreeMap, rc::Rc};
 
 use anyhow::Context;
 use maplit::btreemap;
-use trustfall::provider::Adapter;
 use trustfall::{FieldValue, Schema, TryIntoStruct};
 
 use crate::RustdocAdapter;
-use crate::adapter::tracer::ptrace::{Tracer, TracingAdapter, YieldValue, trace_results};
-
-use super::tracer::ptrace::{TraceOpType, VertexT};
 
 #[allow(dead_code)]
 mod type_level_invariants {
@@ -92,43 +85,6 @@ fn adapter_invariants() {
     trustfall::provider::check_adapter_invariants(&schema, &adapter)
 }
 
-fn format_operation(op: &TraceOpType) -> String {
-    match op {
-        TraceOpType::Call(x) => format!("Call({:?})", x),
-        TraceOpType::AdvanceInputIterator => format!("AdvanceInputIterator"),
-        TraceOpType::YieldInto => format!("YieldInto"),
-        TraceOpType::YieldFrom(val) => {
-            let x = match val {
-                YieldValue::ResolveStartingVertices => format!("ResolveStartingVertices"),
-                YieldValue::ResolveProperty => format!("ResolveProperty"),
-                YieldValue::ResolveNeighborsOuter => format!("ResolveNeighborsOuter"),
-                YieldValue::ResolveNeighborsInner => format!("ResolveNeighborsInner"),
-                YieldValue::ResolveCoercion => format!("ResolveCoercion"),
-            };
-            format!("YieldFrom({})", x)
-        }
-        TraceOpType::InputIteratorExhausted => format!("InputIteratorExhausted"),
-        TraceOpType::OutputIteratorExhausted => format!("OutputIteratorExhausted"),
-        TraceOpType::ProduceQueryResult => format!("ProduceQueryResult"),
-    }
-}
-
-fn trace_to_text(trace: &Tracer) -> String {
-    let mut buffer = String::with_capacity(1_000_000);
-    for op in &trace.calls {
-        write!(
-            &mut buffer,
-            "{:?} {:?} {:?} {}\n",
-            op.opid,
-            op.parent_opid,
-            op.duration,
-            format_operation(&op.content)
-        )
-        .unwrap();
-    }
-    buffer
-}
-
 /// Ensure that methods implemented on references (like `&Foo`) show up in queries.
 #[test]
 fn impl_for_ref() {
@@ -166,7 +122,10 @@ fn impl_for_ref() {
     }
 
     let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "impl_for_ref", &schema, &query, &variables);
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(
@@ -175,35 +134,6 @@ fn impl_for_ref() {
         }],
         results
     );
-}
-
-fn trace_results_to_file<T: serde::de::DeserializeOwned>(
-    adapter: &RustdocAdapter<'_>,
-    file_name: &str,
-    schema: &Schema,
-    query: &str,
-    variables: &BTreeMap<impl Into<Arc<str>> + Clone, impl Into<FieldValue> + Clone>,
-) -> Vec<T> {
-    let tracer = Rc::new(RefCell::new(Tracer::new()));
-    let mut tracing_adapter = Arc::new(TracingAdapter::new(adapter, tracer));
-
-    let results: Vec<_> = trace_results(
-        tracing_adapter.clone(),
-        trustfall::execute_query(&schema, tracing_adapter.clone(), query, variables.clone())
-            .expect("failed to run query"),
-    )
-    .map(|row| row.try_into_struct().expect("shape mismatch"))
-    .collect();
-
-    let trace = Arc::make_mut(&mut tracing_adapter).clone().finish();
-
-    let mut out_path: PathBuf = ["./", "test_outputs/", file_name].iter().collect();
-    out_path.set_extension("ptrace.txt");
-
-    let buffer = trace_to_text(&trace);
-    std::fs::write(out_path, buffer).unwrap();
-
-    results
 }
 
 #[test]
@@ -238,13 +168,11 @@ fn rustdoc_finds_supertrait() {
         supertrait: String,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "rustdoc_finds_supertrait",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(
@@ -309,13 +237,11 @@ fn rustdoc_sealed_traits() {
         public_api_sealed: bool,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "rustdoc_sealed_traits",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -1392,13 +1318,11 @@ fn rustdoc_finds_consts() {
         path: Vec<String>,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        adapter.as_ref(),
-        "rustdoc_finds_consts",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct::<Output>().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
     // to compare to GlobalValue that doesn't Constant-specific properties
     let mut results_simple: Vec<_> =
@@ -1491,13 +1415,11 @@ fn rustdoc_trait_has_associated_types() {
         has_default: bool,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "rustdoc_trait_has_associated_types",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(
@@ -1552,13 +1474,11 @@ fn rustdoc_finds_statics() {
         is_unsafe: bool,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "rustdoc_finds_statics",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(
@@ -1686,19 +1606,20 @@ fn static_export_name() {
         },
     ];
 
-    let mut results2021: Vec<_> = trace_results_to_file(
-        &adapter,
-        "static_export_name_2021",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results2021: Vec<Output> =
+        trustfall::execute_query(&schema, adapter2021.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results2021.sort_unstable();
 
     similar_asserts::assert_eq!(expected_results, results2021,);
 
-    let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "static_export_name", &schema, &query, &variables);
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(expected_results, results);
@@ -1747,7 +1668,10 @@ fn rustdoc_modules() {
     }
 
     let mut results: Vec<Output> =
-        trace_results_to_file(&adapter, "rustdoc_modules", &schema, &mod_query, &variables);
+        trustfall::execute_query(&schema, adapter.clone(), mod_query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
 
     // Ensure both the rows and the folded paths within each row come
     // in a consistent, deterministic order.
@@ -1821,13 +1745,11 @@ fn rustdoc_modules() {
 }
 "#;
 
-    let mut results: Vec<Output> = trace_results_to_file(
-        &adapter,
-        "rustdoc_modules_root_module",
-        &schema,
-        &root_query,
-        &variables,
-    );
+    let results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), root_query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
 
     similar_asserts::assert_eq!(
         vec![Output {
@@ -1889,13 +1811,15 @@ fn rustdoc_associated_consts() {
         default: Option<String>,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "rustdoc_associated_consts_impl_owner",
+    let mut results: Vec<_> = trustfall::execute_query(
         &schema,
-        &impl_owner_query,
-        &variables,
-    );
+        adapter.clone(),
+        impl_owner_query,
+        variables.clone(),
+    )
+    .expect("failed to run query")
+    .map(|row| row.try_into_struct().expect("shape mismatch"))
+    .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(
@@ -1906,13 +1830,11 @@ fn rustdoc_associated_consts() {
         results
     );
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "rustdoc_associated_consts_traits",
-        &schema,
-        &trait_query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), trait_query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(
@@ -1980,7 +1902,10 @@ fn function_abi() {
     }
 
     let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "function_abi", &schema, &query, &variables);
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(
@@ -2084,13 +2009,11 @@ fn function_export_name() {
     ];
     expected_results.sort_unstable();
 
-    let mut results2021: Vec<_> = trace_results_to_file(
-        &adapter,
-        "function_export_name_2021",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results2021: Vec<_> =
+        trustfall::execute_query(&schema, adapter2021.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results2021.sort_unstable();
 
     similar_asserts::assert_eq!(expected_results, results2021,);
@@ -2132,13 +2055,11 @@ fn function_export_name() {
         similar_asserts::assert_eq!(vec![row], results2021);
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "function_export_name",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(expected_results, results);
@@ -2207,7 +2128,10 @@ fn importable_paths() {
     }
 
     let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "importable_paths", &schema, &query, &variables);
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We write the results in the order the items appear in the test file,
@@ -2411,13 +2335,11 @@ fn item_own_public_api_properties() {
         public_api_eligible: bool,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "item_own_public_api_properties",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We are checking whether the *items themselves* are deprecated / hidden.
@@ -2537,13 +2459,11 @@ fn enum_variant_public_api_eligible() {
         public_api_eligible: bool,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "enum_variant_public_api_eligible",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We are checking whether the *items themselves* are deprecated / hidden.
@@ -2626,13 +2546,11 @@ fn trait_associated_items_public_api_eligible() {
         public_api_eligible: bool,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "trait_associated_items_public_api_eligible_associated_type",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(
@@ -2664,13 +2582,11 @@ fn trait_associated_items_public_api_eligible() {
 }
 "#;
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "trait_associated_items_public_api_eligible_associated_constant",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(
@@ -2702,13 +2618,11 @@ fn trait_associated_items_public_api_eligible() {
 }
 "#;
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "trait_associated_items_public_api_eligible_method",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(
@@ -2774,13 +2688,11 @@ fn defaulted_trait_items_overridden_in_impls() {
     }];
     expected_results.sort_unstable();
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "defaulted_trait_items_overridden_in_impls",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(expected_results, results,);
@@ -2835,13 +2747,11 @@ fn defaulted_trait_items_overridden_in_impls_when_looked_up_by_name() {
     ];
     expected_results.sort_unstable();
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "defaulted_trait_items_overridden_in_impls_when_looked_up_by_name",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(expected_results, results,);
@@ -2889,7 +2799,10 @@ fn unions() {
     }
 
     let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "unions_visibility", &schema, &query, &variables);
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We write the results in the order the items appear in the test file,
@@ -3072,7 +2985,10 @@ fn unions() {
     }
 
     let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "unions_query", &schema, &query, &variables);
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct::<FieldInfo>().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We write the results in the order the items appear in the test file,
@@ -3133,7 +3049,10 @@ fn function_has_body() {
     }
 
     let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "function_has_body", &schema, &query, &variables);
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We write the results in the order the items appear in the test file,
@@ -3176,13 +3095,11 @@ fn function_has_body() {
         name: String,
         has_body: bool,
     }
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "function_has_body_method",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We write the results in the order the items appear in the test file,
@@ -3223,13 +3140,11 @@ fn function_has_body() {
     }
 }
 "#;
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "function_has_body_inherent_impl_method",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We write the results in the order the items appear in the test file,
@@ -3280,8 +3195,11 @@ fn enum_discriminants() {
         value: Option<String>,
     }
 
-    let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "enum_discriminants", &schema, &query, &variables);
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(
@@ -3438,7 +3356,10 @@ fn declarative_macros() {
     }
 
     let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "declarative_macros", &schema, &query, &variables);
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We write the results in the order the items appear in the test file,
@@ -3536,7 +3457,10 @@ fn proc_macros() {
     }
 
     let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "proc_macros", &schema, &query, &variables);
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We write the results in the order the items appear in the test file,
@@ -3612,13 +3536,11 @@ fn proc_macros() {
         attr: String,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "proc_macros_helper_attributes",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We write the results in the order the items appear in the test file,
@@ -4435,13 +4357,11 @@ fn implemented_trait_instantiated_name() {
         instantiated_name: String,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "implemented_trait_instantiated_name",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We write the results in the order the items appear in the test file,
@@ -4551,13 +4471,11 @@ fn parenthesized_type_bounds_on_type_and_impl() {
         bound_instantiated_name: String,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "parenthesized_type_bounds_on_type_and_impl_struct_name",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We write the results in the order the items appear in the test file,
@@ -4613,13 +4531,11 @@ fn parenthesized_type_bounds_on_type_and_impl() {
         impl_bound_instantiated_name: String,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "parenthesized_type_bounds_on_type_and_impl_generic_name",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<LatterOutput> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We write the results in the order the items appear in the test file,
@@ -4669,7 +4585,10 @@ fn features() {
     }
 
     let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "features", &schema, &query, &variables);
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We write the results in the order the items appear in the test file,
@@ -4738,7 +4657,10 @@ fn features() {
     }
 
     let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "features_default", &schema, &query, &variables);
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We write the results in the order the items appear in the test file,
@@ -4800,7 +4722,10 @@ fn type_generic_bounds() {
     }
 
     let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "type_generic_bounds", &schema, &query, &variables);
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     // We write the results in the order the items appear in the test file,
@@ -4907,7 +4832,10 @@ fn function_signatures() {
     }
 
     let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "function_signatures", &schema, &query, &variables);
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -4954,7 +4882,10 @@ fn method_signature() {
     }
 
     let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "method_signature", &schema, &query, &variables);
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -5009,13 +4940,11 @@ fn trait_method_nested_generics() {
         signature: String,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "trait_method_nested_generics",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![Output {
@@ -5066,7 +4995,10 @@ fn extern_fn() {
     }
 
     let mut results: Vec<_> =
-        trace_results_to_file(&adapter, "extern_fn", &schema, &query, &variables);
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -5147,13 +5079,11 @@ fn item_lookup_by_path_optimization() {
         path: Option<Vec<String>>,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "item_lookup_by_path_optimization",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![Output {
@@ -5209,13 +5139,11 @@ fn impl_lookup_by_method_name_optimization() {
         method: Option<String>,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "test_lookup_by_mthod_name_optimization",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![Output {
@@ -5265,13 +5193,11 @@ fn generic_param_positions() {
         position: Option<i64>,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "generic_param_positions_generic_item",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -5447,13 +5373,11 @@ fn generic_param_positions() {
 }
     "#;
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "generic_param_positions_impl_owner_inherent_impl",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -5512,13 +5436,11 @@ fn generic_param_positions() {
         position: Option<i64>,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "generic_param_positions_impl_owner_inherent_impl_method",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -5573,13 +5495,11 @@ fn generic_param_positions() {
 }
     "#;
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "generic_param_positions_trait_method",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -5655,13 +5575,11 @@ fn enum_variant_positions() {
         variant_typename: String,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "enum_variants_positionn",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -5774,13 +5692,11 @@ fn enum_variant_name_resolution_dynamic() {
         other_name: String,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "enum_variant_name_resolution_dynamic",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -5878,13 +5794,11 @@ fn enum_variant_name_resolution_static() {
         name: String,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "enum_variant_name_resolution_static",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -5949,13 +5863,11 @@ fn enum_struct_variant_fields() {
         struct_field_position: i64,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "enum_struct_variant_fields",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -6023,13 +5935,11 @@ fn enum_tuple_variant_fields() {
         tuple_field_position: i64,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "enum_tuple_variant_fields",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -6093,13 +6003,11 @@ fn struct_field_positions() {
         field_position: i64,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "struct_field_positions",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -6256,13 +6164,11 @@ fn union_field_positions() {
         field_position: i64,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "union_field_positions",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -6366,13 +6272,11 @@ fn non_exhaustive_attribute() {
         variant_attr_base: Option<String>,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "non_exhaustive_attribute_enum",
-        &schema,
-        &enum_query,
-        &variables,
-    );
+    let mut results: Vec<EnumOutput> =
+        trustfall::execute_query(&schema, adapter.clone(), enum_query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -6431,13 +6335,11 @@ fn non_exhaustive_attribute() {
         attr_base: Option<String>,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "non_exhaustive_attribute_struct",
-        &schema,
-        &struct_query,
-        &variables,
-    );
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), struct_query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![Output {
@@ -6497,13 +6399,11 @@ fn automatically_derived() {
         canonical_path: Vec<String>,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "automatically_derived",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -6591,13 +6491,11 @@ fn struct_repr_attributes() {
         attr_repr_kind: String,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "struct_repr_attributes",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -6680,13 +6578,11 @@ fn enum_repr_attributes() {
         attr_repr_kind: String,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "enum_repr_attributes",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -6771,13 +6667,11 @@ fn method_self_receiver() {
         kind: String,
     }
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "method_self_receiver",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     let mut expected_results = vec![
@@ -7424,13 +7318,11 @@ fn rustdoc_ffi_exported_functions() {
     ];
     expected_results.sort_unstable();
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "rustdoc_ffi_exported_functions",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(expected_results, results,);
@@ -7500,13 +7392,11 @@ fn rustdoc_method_export_name() {
     ];
     expected_results.sort_unstable();
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "rustdoc_method_export_name",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(expected_results, results,);
@@ -8033,13 +7923,11 @@ fn feature_not_on_our_target_triple() {
     ];
     expected_results.sort_unstable();
 
-    let mut results: Vec<_> = trace_results_to_file(
-        &adapter,
-        "feature_not_on_our_target_triple",
-        &schema,
-        &query,
-        &variables,
-    );
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(expected_results, results,);
