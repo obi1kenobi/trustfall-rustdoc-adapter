@@ -1,10 +1,9 @@
 use std::{
-    cell::RefCell, collections::BTreeMap, fmt::Debug, marker::PhantomData, num::NonZeroU32, rc::Rc,
-    sync::Arc, time::Duration,
+    cell::RefCell, collections::BTreeMap, fmt::Debug, marker::PhantomData, rc::Rc, sync::Arc,
+    time::Duration,
 };
 
 use kll_rs::KllDoubleSketch;
-use serde::{Deserialize, Serialize};
 
 use std::time::Instant;
 
@@ -33,7 +32,7 @@ impl Summary {
         sketch.update(duration.as_nanos() as f64);
 
         Summary {
-            sketch: sketch,
+            sketch,
             min: duration,
             max: duration,
             sum: duration,
@@ -102,7 +101,7 @@ impl Tracer {
 
     /// Record an operation.
     pub fn record_time(&mut self, call_id: &FunctionCall, duration: Duration) {
-        if let Some(summary) = self.calls.get_mut(&call_id) {
+        if let Some(summary) = self.calls.get_mut(call_id) {
             summary.update(duration);
         } else {
             self.calls.insert(call_id.clone(), Summary::new(duration));
@@ -121,6 +120,7 @@ impl Tracer {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(clippy::enum_variant_names)] // Names match the adapter functions 
 pub enum FunctionCall {
     ResolveProperty(Vid, Arc<str>, Arc<str>), // vertex ID + type name + name of the property
     ResolveNeighbors(Vid, Arc<str>, Eid),     // vertex ID + type name + edge ID

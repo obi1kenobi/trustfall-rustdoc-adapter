@@ -1,4 +1,4 @@
-pub mod ptrace;
+mod ptrace;
 
 #[cfg(test)]
 mod tests;
