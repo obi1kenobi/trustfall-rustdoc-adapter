@@ -3,6 +3,7 @@ use std::{
     sync::Arc, time::Duration,
 };
 
+use kll_rs::KllDoubleSketch;
 use serde::{Deserialize, Serialize};
 
 use std::time::Instant;
@@ -15,14 +16,79 @@ use trustfall::{
     },
 };
 
+#[derive(Debug)]
+pub struct Summary {
+    sketch: KllDoubleSketch,
+    min: Duration,
+    max: Duration,
+    sum: Duration,
+}
+
+impl Summary {
+    // By initialising with a duration, we don't require min/max to be options.
+    pub fn new(duration: Duration) -> Summary {
+        // Based on https://datasketches.apache.org/docs/KLL/KLLAccuracyAndSize.html
+        // a K of 200 should give ~1.33% error.
+        let mut sketch = KllDoubleSketch::new_with_k(200).unwrap();
+        sketch.update(duration.as_nanos() as f64);
+
+        Summary {
+            sketch: sketch,
+            min: duration,
+            max: duration,
+            sum: duration,
+        }
+    }
+
+    /// Add a new time to the summary.
+    pub fn update(&mut self, duration: Duration) {
+        self.sketch.update(duration.as_nanos() as f64);
+
+        self.min = self.min.min(duration);
+        self.max = self.max.max(duration);
+        self.sum += duration;
+    }
+
+    /// Returns the number of items that have been processed.
+    pub fn count(&self) -> u64 {
+        self.sketch.get_n()
+    }
+
+    /// Returns the total time
+    pub fn total(&self) -> Duration {
+        self.sum
+    }
+
+    /// Returns the fastest operation
+    pub fn min(&self) -> Duration {
+        self.min
+    }
+
+    /// Returns the slowest operation
+    pub fn max(&self) -> Duration {
+        self.max
+    }
+
+    /// Returns the quantile (0 < quant < 1) time.
+    pub fn quantile(&self, quant: f64) -> f64 {
+        assert!(0.0 < quant && quant < 1.0);
+        self.sketch.get_quantile(quant)
+    }
+}
+
 /// Records and stores operations performed by the adapter.
 ///
 /// This struct is intended for use inside of a TracingAdapter.
 /// Operations must be recorded sequentially in chronological order.
 /// Recording out-of-order operations will lead to invalid state.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct Tracer {
-    pub calls: BTreeMap<FunctionCall, Vec<Duration>>,
+    calls: BTreeMap<FunctionCall, Summary>,
+
+    // When we measure the time of an iterator, we also measure the time spent
+    // evaluating its inputs. We must therefore subtract this time out when
+    // we record the time each operation takes.
+    last_input_duration: Option<Duration>,
 }
 
 impl Tracer {
@@ -30,29 +96,36 @@ impl Tracer {
     pub fn new() -> Self {
         Self {
             calls: BTreeMap::new(),
+            last_input_duration: None,
         }
     }
 
     /// Record an operation.
-    pub fn record_time(&mut self, call_id: FunctionCall, duration: Duration) {
-        self.calls
-            .entry(call_id)
-            .or_insert_with(|| Vec::with_capacity(1000))
-            .push(duration);
+    pub fn record_time(&mut self, call_id: &FunctionCall, duration: Duration) {
+        if let Some(summary) = self.calls.get_mut(&call_id) {
+            summary.update(duration);
+        } else {
+            self.calls.insert(call_id.clone(), Summary::new(duration));
+        }
     }
 
-    pub fn calls(&self) -> &BTreeMap<FunctionCall, Vec<Duration>> {
-        &self.calls
+    /// Set the duration of the last input.
+    pub fn record_last_input_duration(&mut self, duration: Duration) {
+        self.last_input_duration = Some(duration);
+    }
+
+    /// Get the duration of the last input. Panics if the duration is None.
+    pub fn get_last_input_duration(&self) -> Duration {
+        self.last_input_duration.unwrap()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FunctionCall {
-    ResolveStartingVertices(Vid),              // vertex ID
-    ResolveProperty(Vid, Arc<str>, Arc<str>),  // vertex ID + type name + name of the property
-    ResolveNeighbors(Vid, Arc<str>, Eid),      // vertex ID + type name + edge ID
+    ResolveProperty(Vid, Arc<str>, Arc<str>), // vertex ID + type name + name of the property
+    ResolveNeighbors(Vid, Arc<str>, Eid),     // vertex ID + type name + edge ID
     ResolveNeighborsInner(Vid, Arc<str>, Eid), // same as ResolveNeighbors
-    ResolveCoercion(Vid, Arc<str>, Arc<str>),  // vertex ID + current type + coerced-to type
+    ResolveCoercion(Vid, Arc<str>, Arc<str>), // vertex ID + current type + coerced-to type
 }
 
 struct PerfSpanIter<I, T, F>
@@ -79,6 +152,10 @@ where
             Some(item) => Some((self.post_action)(item, time)),
             None => None,
         }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
     }
 }
 
@@ -167,18 +244,29 @@ where
             property_name.clone(),
         );
 
+        let tracer_ref = self.tracer.clone();
+
+        let wrapped_contexts = Box::new(make_iter_with_perf_span(
+            contexts,
+            move |context, duration| {
+                tracer_ref.borrow_mut().record_last_input_duration(duration);
+                context
+            },
+        ));
+
         let inner_iter =
             self.inner
-                .resolve_property(contexts, type_name, property_name, resolve_info);
+                .resolve_property(wrapped_contexts, type_name, property_name, resolve_info);
 
-        let tracer_ref = self.tracer.clone();
+        let tracer_ref_2 = self.tracer.clone();
 
         Box::new(make_iter_with_perf_span(
             inner_iter,
             move |(context, value), duration| {
-                tracer_ref
+                let input_duration = tracer_ref_2.borrow().get_last_input_duration();
+                tracer_ref_2
                     .borrow_mut()
-                    .record_time(call_id.clone(), duration);
+                    .record_time(&call_id, duration - input_duration);
                 (context, value)
             },
         ))
@@ -192,14 +280,8 @@ where
         parameters: &EdgeParameters,
         resolve_info: &ResolveEdgeInfo,
     ) -> ContextOutcomeIterator<'vertex, V, VertexIterator<'vertex, Self::Vertex>> {
-        // Along with the standard information, we also want to know
-        // how many times each inner iterator yielded.
-        //
-        // While in most cases the time spent in inner iterators will be
-        // overshadowed by time spent in outer iterators, it can be significant.
-        //
-        // inner and outer call times are often quite different, so they need to
-        // be stored differently.
+        // Inner and outer call times are often quite different, so they need to
+        // be stored separately.
         let call_id = FunctionCall::ResolveNeighbors(
             resolve_info.origin_vid(),
             type_name.clone(),
@@ -211,35 +293,47 @@ where
             resolve_info.eid(),
         );
 
-        let inner_iter =
-            self.inner
-                .resolve_neighbors(contexts, type_name, edge_name, parameters, resolve_info);
-
         let tracer_ref = self.tracer.clone();
+
+        let wrapped_contexts = Box::new(make_iter_with_perf_span(
+            contexts,
+            move |context, duration| {
+                tracer_ref.borrow_mut().record_last_input_duration(duration);
+                context
+            },
+        ));
+
+        let inner_iter = self.inner.resolve_neighbors(
+            wrapped_contexts,
+            type_name,
+            edge_name,
+            parameters,
+            resolve_info,
+        );
+
+        let tracer_ref_2 = self.tracer.clone();
 
         Box::new(make_iter_with_perf_span(
             inner_iter,
             move |(context, neighbor_iter), duration| {
-                tracer_ref
+                let input_duration = tracer_ref_2.borrow().get_last_input_duration();
+                tracer_ref_2
                     .borrow_mut()
-                    .record_time(call_id.clone(), duration);
+                    .record_time(&call_id, duration - input_duration);
 
-                let tracer_ref_2 = tracer_ref.clone();
+                let tracer_ref_3 = tracer_ref_2.clone();
 
                 let value = call_id_inner.clone();
 
-                let tapped_neighbor_iter = Box::new(
-                    make_iter_with_perf_span(
-                        neighbor_iter.enumerate(),
-                        move |(pos, vertex), duration| {
-                            tracer_ref_2
-                                .borrow_mut()
-                                .record_time(value.clone(), duration);
-                            (pos, vertex)
-                        },
-                    )
-                    .map(|(_, vertex)| vertex),
-                );
+                // We do not subtract the input duration for the inner iterator
+                // because there is no input.
+                let tapped_neighbor_iter = Box::new(make_iter_with_perf_span(
+                    neighbor_iter,
+                    move |vertex, duration| {
+                        tracer_ref_3.borrow_mut().record_time(&value, duration);
+                        vertex
+                    },
+                ));
 
                 (context, tapped_neighbor_iter)
             },
@@ -259,18 +353,29 @@ where
             coerce_to_type.clone(),
         );
 
+        let tracer_ref = self.tracer.clone();
+
+        let wrapped_contexts = Box::new(make_iter_with_perf_span(
+            contexts,
+            move |context, duration| {
+                tracer_ref.borrow_mut().record_last_input_duration(duration);
+                context
+            },
+        ));
+
         let inner_iter =
             self.inner
-                .resolve_coercion(contexts, type_name, coerce_to_type, resolve_info);
+                .resolve_coercion(wrapped_contexts, type_name, coerce_to_type, resolve_info);
 
-        let tracer_ref = self.tracer.clone();
+        let tracer_ref_2 = self.tracer.clone();
 
         Box::new(make_iter_with_perf_span(
             inner_iter,
             move |(context, can_coerce), duration| {
-                tracer_ref
+                let input_duration = tracer_ref_2.borrow().get_last_input_duration();
+                tracer_ref_2
                     .borrow_mut()
-                    .record_time(call_id.clone(), duration);
+                    .record_time(&call_id, duration - input_duration);
                 (context, can_coerce)
             },
         ))
