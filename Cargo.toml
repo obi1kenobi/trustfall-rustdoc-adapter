@@ -14,7 +14,6 @@ readme = "./README.md"
 rayon = { version = "1.11.0", optional = true }
 rustc-hash = { version = "2.1.1", optional = true }
 cargo_toml = { version = "0.22.3", features = ["features"] }
-serde = { version = "1.0.219" }
 
 # Packages in our public API, where bumping a major version is a breaking change.
 # Extra spacing included to minimize the chance of merge conflicts.
