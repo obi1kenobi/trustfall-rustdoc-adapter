@@ -1,13 +1,16 @@
-use std::{
-    collections::BTreeMap, num::NonZero,
-    sync::Arc, time::Duration,
-};
+// The Trustfall API requires the adapter to be passed in as an Arc.
+// Our adapter is not Send/Sync (it doesn't need it),
+// but there's currently nothing we can do about this lint.
+#![allow(clippy::arc_with_non_send_sync)]
+
+use std::{collections::BTreeMap, num::NonZero, sync::Arc, time::Duration};
+
+use anyhow::Context;
+use trustfall::Schema;
+use trustfall::provider::{Eid, Vid};
 
 use super::ptrace::{ExpHistogram, FunctionCall, Summary, TracingAdapter};
 use crate::RustdocAdapter;
-use anyhow::Context;
-use trustfall::provider::{Eid, Vid};
-use trustfall::{Schema};
 
 macro_rules! get_test_data {
     ($data:ident, $case:ident) => {
