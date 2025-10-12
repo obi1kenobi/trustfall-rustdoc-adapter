@@ -3,8 +3,6 @@ use std::{
     time::Duration,
 };
 
-use kll_rs::KllDoubleSketch;
-
 use std::time::Instant;
 
 use trustfall::{
@@ -15,9 +13,72 @@ use trustfall::{
     },
 };
 
-#[derive(Debug)]
+/// A simple histogram that stores 15 roughly exponentially increasing buckets of
+/// values, from 0 to 1 billion, followed by a final bucket to store greater
+/// values.
+#[derive(Debug, Clone)]
+pub struct ExpHistogram {
+    buckets: Vec<u32>,
+    count: u32,
+}
+
+impl ExpHistogram {
+    /// Create a new histogram.
+    pub fn new() -> ExpHistogram {
+        ExpHistogram {
+            buckets: vec![0; 16],
+            count: 0,
+        }
+    }
+
+    /// Add a value to the histogram.
+    pub fn add(&mut self, num: u64) {
+        self.count += 1;
+
+        if num <= 100 {
+            self.buckets[0] += 1;
+            return;
+        }
+
+        let mut log = (num as f64).log10();
+        if log == log.floor() {
+            // The bucket is 1 off for exact powers of 10 without correction.
+            log -= 0.4;
+        }
+        let bucket = ((log * 2.0 - 3.0).floor() as usize).min(15);
+
+        self.buckets[bucket] += 1;
+    }
+
+    /// Returns the largest value that will be accepted into each bucket.
+    pub fn boundaries(&self) -> Vec<u64> {
+        (0..=14)
+            .map(|x| 10.0_f64.powf(((x as f64) / 2.0) + 2.0) as u64)
+            .chain(std::iter::once(u64::MAX))
+            .collect()
+    }
+
+    /// Returns the number of values stored in the histogram.
+    pub fn count(&self) -> u32 {
+        self.count
+    }
+
+    /// Returns the count of each bucket
+    pub fn buckets(&self) -> &Vec<u32> {
+        &self.buckets
+    }
+}
+
+impl Default for ExpHistogram {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A summary of key timing statistics.
+#[derive(Debug, Clone)]
 pub struct Summary {
-    sketch: KllDoubleSketch,
+    hist: ExpHistogram,
     min: Duration,
     max: Duration,
     sum: Duration,
@@ -26,13 +87,11 @@ pub struct Summary {
 impl Summary {
     // By initialising with a duration, we don't require min/max to be options.
     pub fn new(duration: Duration) -> Summary {
-        // Based on https://datasketches.apache.org/docs/KLL/KLLAccuracyAndSize.html
-        // a K of 200 should give ~1.33% error.
-        let mut sketch = KllDoubleSketch::new_with_k(200).unwrap();
-        sketch.update(duration.as_nanos() as f64);
+        let mut hist = ExpHistogram::new();
+        hist.add(duration.as_nanos() as u64);
 
         Summary {
-            sketch,
+            hist,
             min: duration,
             max: duration,
             sum: duration,
@@ -41,7 +100,7 @@ impl Summary {
 
     /// Add a new time to the summary.
     pub fn update(&mut self, duration: Duration) {
-        self.sketch.update(duration.as_nanos() as f64);
+        self.hist.add(duration.as_nanos() as u64);
 
         self.min = self.min.min(duration);
         self.max = self.max.max(duration);
@@ -49,8 +108,8 @@ impl Summary {
     }
 
     /// Returns the number of items that have been processed.
-    pub fn count(&self) -> u64 {
-        self.sketch.get_n()
+    pub fn count(&self) -> u32 {
+        self.hist.count()
     }
 
     /// Returns the total time
@@ -68,10 +127,14 @@ impl Summary {
         self.max
     }
 
-    /// Returns the quantile (0 < quant < 1) time.
-    pub fn quantile(&self, quant: f64) -> f64 {
-        assert!(0.0 < quant && quant < 1.0);
-        self.sketch.get_quantile(quant)
+    /// Returns the exponential histogram with times in nanoseconds.
+    pub fn histogram(&self) -> &ExpHistogram {
+        &self.hist
+    }
+
+    /// Returns the mean duration.
+    pub fn mean(&self) -> Duration {
+        self.sum / self.count()
     }
 }
 
@@ -80,9 +143,9 @@ impl Summary {
 /// This struct is intended for use inside of a TracingAdapter.
 /// Operations must be recorded sequentially in chronological order.
 /// Recording out-of-order operations will lead to invalid state.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Tracer {
-    calls: BTreeMap<FunctionCall, Summary>,
+    pub calls: BTreeMap<FunctionCall, Summary>,
 
     // When we measure the time of an iterator, we also measure the time spent
     // evaluating its inputs. We must therefore subtract this time out when
@@ -116,6 +179,12 @@ impl Tracer {
     /// Get the duration of the last input. Panics if the duration is None.
     pub fn get_last_input_duration(&self) -> Duration {
         self.last_input_duration.unwrap()
+    }
+}
+
+impl Default for Tracer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -186,15 +255,16 @@ where
     AdapterT: Adapter<'vertex>,
     AdapterT::Vertex: Debug + Clone + 'vertex,
 {
-    pub fn new(adapter: AdapterT, tracer: Rc<RefCell<Tracer>>) -> Self {
+    pub fn new(adapter: AdapterT) -> Self {
         Self {
-            tracer,
+            tracer: Rc::new(RefCell::new(Tracer::new())),
             inner: adapter,
             _phantom: PhantomData,
         }
     }
 
-    pub fn finish(self) -> Tracer {
+    /// Finalise the trace and return it.
+    pub fn finish(&self) -> Tracer {
         // Ensure nothing is reading the trace i.e. we can safely stop interpreting.
         let trace_ref = self.tracer.borrow_mut();
         let new_trace = Tracer::new();

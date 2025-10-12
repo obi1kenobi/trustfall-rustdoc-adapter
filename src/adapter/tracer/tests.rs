@@ -1,12 +1,13 @@
-use std::{cell::RefCell, collections::BTreeMap, fmt::Write, path::PathBuf, rc::Rc, sync::Arc};
-
-use super::ptrace::{Tracer, TracingAdapter};
-use crate::{
-    RustdocAdapter,
-    adapter::tracer::ptrace::{TraceOpType, YieldValue, trace_results},
+use std::{
+    collections::BTreeMap, num::NonZero,
+    sync::Arc, time::Duration,
 };
+
+use super::ptrace::{ExpHistogram, FunctionCall, Summary, TracingAdapter};
+use crate::RustdocAdapter;
 use anyhow::Context;
-use trustfall::{Schema, TryIntoStruct};
+use trustfall::provider::{Eid, Vid};
+use trustfall::{Schema};
 
 macro_rules! get_test_data {
     ($data:ident, $case:ident) => {
@@ -31,39 +32,192 @@ macro_rules! get_test_data {
     }
 }
 
-fn format_operation(op: &TraceOpType) -> String {
-    match op {
-        TraceOpType::Call(x) => format!("Call({:?})", x),
-        TraceOpType::AdvanceInputIterator => format!("AdvanceInputIterator"),
-        TraceOpType::YieldInto => format!("YieldInto"),
-        TraceOpType::YieldFrom(val) => {
-            let x = match val {
-                YieldValue::ResolveStartingVertices => format!("ResolveStartingVertices"),
-                YieldValue::ResolveProperty => format!("ResolveProperty"),
-                YieldValue::ResolveNeighborsOuter => format!("ResolveNeighborsOuter"),
-                YieldValue::ResolveNeighborsInner => format!("ResolveNeighborsInner"),
-                YieldValue::ResolveCoercion => format!("ResolveCoercion"),
-            };
-            format!("YieldFrom({})", x)
+#[test]
+fn exp_histogram() {
+    let mut hist = ExpHistogram::new();
+    assert_eq!(hist.count(), 0);
+    assert!(hist.buckets().iter().all(|&b| b == 0));
+
+    assert_eq!(
+        hist.boundaries(),
+        vec![
+            100,
+            316,
+            1000,
+            3162,
+            10000,
+            31622,
+            100000,
+            316227,
+            1000000,
+            3162277,
+            10000000,
+            31622776,
+            100000000,
+            316227766,
+            1000000000,
+            u64::MAX
+        ]
+    );
+
+    // Test adding entries at the top and bottom of the boundaries.
+    for (i, upper_lim) in hist.boundaries()[..15].iter().enumerate() {
+        hist.add(*upper_lim);
+        hist.add(*upper_lim + 1);
+        hist.add(*upper_lim - 1);
+
+        if i == 0 {
+            assert_eq!(hist.buckets()[i], 2);
+        } else {
+            assert_eq!(hist.buckets()[i], 3);
         }
-        TraceOpType::InputIteratorExhausted => format!("InputIteratorExhausted"),
-        TraceOpType::OutputIteratorExhausted => format!("OutputIteratorExhausted"),
-        TraceOpType::ProduceQueryResult => format!("ProduceQueryResult"),
+
+        assert_eq!(hist.count() as usize, 3 * (i + 1));
     }
+
+    hist.add(u64::MAX);
+    hist.add(10u64.pow(17));
+    assert_eq!(hist.buckets()[15], 3);
 }
 
-fn trace_to_text(trace: &Tracer) -> String {
-    let mut buffer = String::with_capacity(1_000_000);
-    for op in &trace.calls {
-        write!(
-            &mut buffer,
-            "{:?} {:?} {:?} {}\n",
-            op.opid,
-            op.parent_opid,
-            op.duration,
-            format_operation(&op.content)
-        )
-        .unwrap();
+#[test]
+fn summary() {
+    let dur = Duration::from_nanos(100);
+    let mut summary = Summary::new(dur);
+
+    assert_eq!(summary.count(), 1);
+    assert_eq!(summary.histogram().count(), 1);
+    assert_eq!(summary.min(), dur);
+    assert_eq!(summary.max(), dur);
+    assert_eq!(summary.total(), dur);
+    assert_eq!(summary.mean(), dur);
+
+    summary.update(Duration::from_nanos(50));
+    summary.update(Duration::from_nanos(200));
+
+    assert_eq!(summary.count(), 3);
+    assert_eq!(summary.histogram().count(), 3);
+    assert_eq!(summary.min(), Duration::from_nanos(50));
+    assert_eq!(summary.max(), Duration::from_nanos(200));
+    assert_eq!(summary.total(), Duration::from_nanos(350));
+    assert_eq!(summary.mean(), Duration::from_nanos(350 / 3));
+}
+
+#[test]
+fn tracing_adapter() {
+    // Confirm that the trace is the same.
+    get_test_data!(data, sealed_traits);
+    let adapter = RustdocAdapter::new(&data, None);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                name @output
+                sealed @output
+                public_api_sealed @output
+
+                importable_path @fold {
+                    path @output
+                }
+            }
+        }
     }
-    buffer
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema = Schema::parse(include_str!("../../rustdoc_schema.graphql"))
+        .expect("schema failed to parse");
+
+    let tracing_adapter = Arc::new(TracingAdapter::new(&adapter));
+
+    let mut _results: Vec<_> =
+        trustfall::execute_query(&schema, tracing_adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .collect();
+
+    let tracer = tracing_adapter.finish();
+
+    let desired = vec![
+        (
+            FunctionCall::ResolveProperty(
+                Vid::new(NonZero::new(2).unwrap()),
+                "Trait".into(),
+                "name".into(),
+            ),
+            115,
+        ),
+        (
+            FunctionCall::ResolveProperty(
+                Vid::new(NonZero::new(2).unwrap()),
+                "Trait".into(),
+                "public_api_sealed".into(),
+            ),
+            115,
+        ),
+        (
+            FunctionCall::ResolveProperty(
+                Vid::new(NonZero::new(2).unwrap()),
+                "Trait".into(),
+                "sealed".into(),
+            ),
+            115,
+        ),
+        (
+            FunctionCall::ResolveProperty(
+                Vid::new(NonZero::new(3).unwrap()),
+                "ImportablePath".into(),
+                "path".into(),
+            ),
+            93,
+        ),
+        (
+            FunctionCall::ResolveNeighbors(
+                Vid::new(NonZero::new(1).unwrap()),
+                "Crate".into(),
+                Eid::new(NonZero::new(1).unwrap()),
+            ),
+            1,
+        ),
+        (
+            FunctionCall::ResolveNeighbors(
+                Vid::new(NonZero::new(2).unwrap()),
+                "Trait".into(),
+                Eid::new(NonZero::new(2).unwrap()),
+            ),
+            115,
+        ),
+        (
+            FunctionCall::ResolveNeighborsInner(
+                Vid::new(NonZero::new(1).unwrap()),
+                "Crate".into(),
+                Eid::new(NonZero::new(1).unwrap()),
+            ),
+            247,
+        ),
+        (
+            FunctionCall::ResolveNeighborsInner(
+                Vid::new(NonZero::new(2).unwrap()),
+                "Trait".into(),
+                Eid::new(NonZero::new(2).unwrap()),
+            ),
+            93,
+        ),
+        (
+            FunctionCall::ResolveCoercion(
+                Vid::new(NonZero::new(2).unwrap()),
+                "Item".into(),
+                "Trait".into(),
+            ),
+            247,
+        ),
+    ];
+
+    for (i, (call, summary)) in tracer.calls.iter().enumerate() {
+        assert_eq!(*call, desired[i].0);
+        assert_eq!(summary.count(), desired[i].1);
+    }
 }
