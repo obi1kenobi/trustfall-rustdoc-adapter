@@ -18,53 +18,59 @@ use trustfall::{
 /// values.
 #[derive(Debug, Clone)]
 pub struct ExpHistogram {
-    buckets: Vec<u32>,
-    count: u32,
+    buckets: [u32; 16],
 }
+
+pub const BOUNDARIES: [u64; 16] = [
+    100,
+    300,
+    1000,
+    3000,
+    10000,
+    30000,
+    100000,
+    300000,
+    1000000,
+    3000000,
+    10000000,
+    30000000,
+    100000000,
+    300000000,
+    1000000000,
+    u64::MAX,
+];
 
 impl ExpHistogram {
     /// Create a new histogram.
     pub fn new() -> ExpHistogram {
-        ExpHistogram {
-            buckets: vec![0; 16],
-            count: 0,
-        }
+        ExpHistogram { buckets: [0; 16] }
     }
 
     /// Add a value to the histogram.
     pub fn add(&mut self, num: u64) {
-        self.count += 1;
-
-        if num <= 100 {
-            self.buckets[0] += 1;
-            return;
+        for (i, lim) in BOUNDARIES.iter().enumerate() {
+            if num <= *lim {
+                self.buckets[i] = self.buckets[i].saturating_add(1);
+                break;
+            }
         }
-
-        let mut log = (num as f64).log10();
-        if log == log.floor() {
-            // The bucket is 1 off for exact powers of 10 without correction.
-            log -= 0.4;
-        }
-        let bucket = ((log * 2.0 - 3.0).floor() as usize).min(15);
-
-        self.buckets[bucket] += 1;
     }
 
     /// Returns the largest value that will be accepted into each bucket.
-    pub fn boundaries(&self) -> Vec<u64> {
-        (0..=14)
-            .map(|x| 10.0_f64.powf(((x as f64) / 2.0) + 2.0) as u64)
-            .chain(std::iter::once(u64::MAX))
-            .collect()
+    pub fn boundaries(&self) -> &'static [u64; 16] {
+        &BOUNDARIES
     }
 
     /// Returns the number of values stored in the histogram.
     pub fn count(&self) -> u32 {
-        self.count
+        self.buckets()
+            .iter()
+            .copied()
+            .fold(0, |acc, num| acc.saturating_add(num))
     }
 
     /// Returns the count of each bucket
-    pub fn buckets(&self) -> &Vec<u32> {
+    pub fn buckets(&self) -> &[u32; 16] {
         &self.buckets
     }
 }
@@ -104,7 +110,7 @@ impl Summary {
 
         self.min = self.min.min(duration);
         self.max = self.max.max(duration);
-        self.sum += duration;
+        self.sum = self.sum.saturating_add(duration);
     }
 
     /// Returns the number of items that have been processed.
@@ -134,6 +140,7 @@ impl Summary {
 
     /// Returns the mean duration.
     pub fn mean(&self) -> Duration {
+        // This cannot panic since count() is always at least 1.
         self.sum / self.count()
     }
 }
@@ -189,7 +196,6 @@ impl Default for Tracer {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[allow(clippy::enum_variant_names)] // Names match the adapter functions 
 pub enum FunctionCall {
     ResolveProperty(Vid, Arc<str>, Arc<str>), // vertex ID + type name + name of the property
     ResolveNeighbors(Vid, Arc<str>, Eid),     // vertex ID + type name + edge ID
@@ -236,8 +242,9 @@ where
     PerfSpanIter { inner, post_action }
 }
 
-/// Traces an inner adapter. Constructed with new(). Each tracer is only valid
-/// for one query. When switching between queries, ensure you first call finish(),
+/// Traces an inner adapter. Constructed with [TracingAdapter::new()]. Each
+/// tracer is only valid for one query. When switching between queries, if you
+/// use the same adapter, ensure you first call [TracingAdapter::finish()],
 /// otherwise the new operations will be traced with the old.
 #[derive(Debug, Clone)]
 pub struct TracingAdapter<'vertex, AdapterT>
@@ -299,14 +306,22 @@ where
         property_name: &Arc<str>,
         resolve_info: &ResolveInfo,
     ) -> ContextOutcomeIterator<'vertex, V, FieldValue> {
+        // TODO: Move this comment to a better location, to make it clear it applies
+        //      to all resolve_* functions (except resolve_starting_vertices).
         // For each resolution we want to know:
         // 1. What are we resolving?
         // 2. How long did the resolution take?
-        // 3. How many times did we resolve the same property?
+        // 3. How many times was a particular (vid, type, property) triple resolved?
         //
         // We are not collecting:
-        // 1. Number of times a function is called.
-        // 2. Whether or not any results were returned.
+        // (1) Number of times a function is called, and time spent constructing
+        //     the iterators.
+        //
+        //     The number of times any given resolution function is called is
+        //     an implementation detail of trustfall, and since most time is spent
+        //     resolving iterators, tracking it isn't valuable.
+        //
+        // (2) Whether or not the returned iterator is empty.
 
         let call_id = FunctionCall::ResolveProperty(
             resolve_info.vid(),
@@ -351,7 +366,7 @@ where
         resolve_info: &ResolveEdgeInfo,
     ) -> ContextOutcomeIterator<'vertex, V, VertexIterator<'vertex, Self::Vertex>> {
         // Inner and outer call times are often quite different, so they need to
-        // be stored separately.
+        // be tracked separately.
         let call_id = FunctionCall::ResolveNeighbors(
             resolve_info.origin_vid(),
             type_name.clone(),

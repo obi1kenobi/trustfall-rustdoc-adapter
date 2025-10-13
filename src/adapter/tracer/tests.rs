@@ -1,7 +1,7 @@
 // The Trustfall API requires the adapter to be passed in as an Arc.
 // Our adapter is not Send/Sync (it doesn't need it),
 // but there's currently nothing we can do about this lint.
-#![allow(clippy::arc_with_non_send_sync)]
+#![expect(clippy::arc_with_non_send_sync)]
 
 use std::{collections::BTreeMap, num::NonZero, sync::Arc, time::Duration};
 
@@ -43,24 +43,24 @@ fn exp_histogram() {
 
     assert_eq!(
         hist.boundaries(),
-        vec![
+        &[
             100,
-            316,
+            300,
             1000,
-            3162,
+            3000,
             10000,
-            31622,
+            30000,
             100000,
-            316227,
+            300000,
             1000000,
-            3162277,
+            3000000,
             10000000,
-            31622776,
+            30000000,
             100000000,
-            316227766,
+            300000000,
             1000000000,
             u64::MAX
-        ]
+        ],
     );
 
     // Test adding entries at the top and bottom of the boundaries.
