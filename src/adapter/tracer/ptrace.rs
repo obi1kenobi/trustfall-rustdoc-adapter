@@ -152,14 +152,14 @@ impl Summary {
 
     /// Returns the mean duration.
     pub fn mean(&self) -> Duration {
-        // This cannot panic since count() is always at least 1.
+        // This cannot panic since `count()` is always at least 1.
         self.sum / self.count()
     }
 }
 
 /// Records and stores operations performed by the adapter.
 ///
-/// This struct is intended for use inside of a TracingAdapter.
+/// This struct is intended for use inside of a [`TracingAdapter`].
 /// Operations must be recorded sequentially in chronological order.
 /// Recording out-of-order operations will lead to invalid state.
 #[derive(Debug, Clone)]
@@ -167,7 +167,7 @@ pub struct Tracer {
     pub calls: BTreeMap<FunctionCall, Summary>,
 
     // When we measure the time of an iterator, we also measure the time spent
-    // evaluating its inputs. We must therefore subtract this time out when
+    // evaluating its inputs. We must therefore subtract out this time when
     // we record the time each operation takes.
     last_input_duration: Option<Duration>,
 }
@@ -195,7 +195,7 @@ impl Tracer {
         self.last_input_duration = Some(duration);
     }
 
-    /// Get the duration of the last input. Panics if the duration is None.
+    /// Get the duration of the last input. Panics if the duration is `None`.
     pub fn get_last_input_duration(&self) -> Duration {
         self.last_input_duration.unwrap()
     }
