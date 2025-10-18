@@ -14,14 +14,15 @@ use trustfall::{
 };
 
 /// A simple histogram that stores 15 roughly exponentially increasing buckets of
-/// values, from 0 to 1 billion, followed by a final bucket to store greater
-/// values.
-#[derive(Debug, Clone)]
+/// values, from 0 to 1 billion, followed by a final bucket to store numbers greater
+/// 1 billion.
+#[derive(Clone)]
 pub struct ExpHistogram {
     buckets: [u32; 16],
 }
 
-pub const BOUNDARIES: [u64; 16] = [
+/// The largest value that will be accepted into each bucket of the histogram.
+pub const HIST_BOUNDARIES: [u64; 16] = [
     100,
     300,
     1000,
@@ -48,7 +49,7 @@ impl ExpHistogram {
 
     /// Add a value to the histogram.
     pub fn add(&mut self, num: u64) {
-        for (i, lim) in BOUNDARIES.iter().enumerate() {
+        for (i, lim) in HIST_BOUNDARIES.iter().enumerate() {
             if num <= *lim {
                 self.buckets[i] = self.buckets[i].saturating_add(1);
                 break;
@@ -58,7 +59,7 @@ impl ExpHistogram {
 
     /// Returns the largest value that will be accepted into each bucket.
     pub fn boundaries(&self) -> &'static [u64; 16] {
-        &BOUNDARIES
+        &HIST_BOUNDARIES
     }
 
     /// Returns the number of values stored in the histogram.
@@ -72,6 +73,17 @@ impl ExpHistogram {
     /// Returns the count of each bucket
     pub fn buckets(&self) -> &[u32; 16] {
         &self.buckets
+    }
+}
+
+impl Debug for ExpHistogram {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ExpHistogram {{ buckets: {:?}, count: {:?} }}",
+            &self.buckets,
+            self.count()
+        )
     }
 }
 
@@ -280,6 +292,21 @@ where
     }
 }
 
+// For all resolutions we want to know:
+// 1. What are we resolving?
+// 2. How long did the resolution take?
+// 3. How many times was a specific resolution resolved?
+//     e.g. resolve_property(Vid(1), "Trait", "name"))
+//
+// We are not collecting:
+// (1) Number of times a function is called, and time spent constructing
+//     the iterators.
+//
+//     The number of times any given resolution function is called is
+//     an implementation detail of trustfall, and since most time is spent
+//     resolving iterators, tracking it isn't valuable.
+//
+// (2) Whether or not the returned iterator is empty.
 impl<'vertex, AdapterT> Adapter<'vertex> for TracingAdapter<'vertex, AdapterT>
 where
     AdapterT: Adapter<'vertex> + 'vertex,
@@ -306,23 +333,6 @@ where
         property_name: &Arc<str>,
         resolve_info: &ResolveInfo,
     ) -> ContextOutcomeIterator<'vertex, V, FieldValue> {
-        // TODO: Move this comment to a better location, to make it clear it applies
-        //      to all resolve_* functions (except resolve_starting_vertices).
-        // For each resolution we want to know:
-        // 1. What are we resolving?
-        // 2. How long did the resolution take?
-        // 3. How many times was a particular (vid, type, property) triple resolved?
-        //
-        // We are not collecting:
-        // (1) Number of times a function is called, and time spent constructing
-        //     the iterators.
-        //
-        //     The number of times any given resolution function is called is
-        //     an implementation detail of trustfall, and since most time is spent
-        //     resolving iterators, tracking it isn't valuable.
-        //
-        // (2) Whether or not the returned iterator is empty.
-
         let call_id = FunctionCall::ResolveProperty(
             resolve_info.vid(),
             type_name.clone(),

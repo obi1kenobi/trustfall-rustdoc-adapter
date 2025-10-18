@@ -12,6 +12,7 @@ use trustfall::provider::{Eid, Vid};
 use super::ptrace::{ExpHistogram, FunctionCall, Summary, TracingAdapter};
 use crate::RustdocAdapter;
 
+// Copied from src/adapter/tests.rs
 macro_rules! get_test_data {
     ($data:ident, $case:ident) => {
         let rustdoc_path = format!("./localdata/test_data/{}/rustdoc.json", stringify!($case));
@@ -109,7 +110,10 @@ fn summary() {
 #[test]
 fn tracing_adapter() {
     // Confirm that the trace is the same.
-    get_test_data!(data, sealed_traits);
+    // If this test fails, but the adapter tests all pass, then it's likely
+    // that this is being affected by a functionality change in the adapter.
+    // In that case, replace the `desired` list with the output of `tracer.calls`.
+    get_test_data!(data, function_has_body);
     let adapter = RustdocAdapter::new(&data, None);
 
     let query = r#"
@@ -117,12 +121,11 @@ fn tracing_adapter() {
     Crate {
         item {
             ... on Trait {
-                name @output
-                sealed @output
-                public_api_sealed @output
+                owner: name @output
 
-                importable_path @fold {
-                    path @output
+                method {
+                    name @output
+                    has_body @output
                 }
             }
         }
@@ -144,38 +147,31 @@ fn tracing_adapter() {
 
     let tracer = tracing_adapter.finish();
 
-    let desired = vec![
+    // List of (function call, count) tuples.
+    let desired = [
         (
             FunctionCall::ResolveProperty(
                 Vid::new(NonZero::new(2).unwrap()),
                 "Trait".into(),
                 "name".into(),
             ),
-            115,
-        ),
-        (
-            FunctionCall::ResolveProperty(
-                Vid::new(NonZero::new(2).unwrap()),
-                "Trait".into(),
-                "public_api_sealed".into(),
-            ),
-            115,
-        ),
-        (
-            FunctionCall::ResolveProperty(
-                Vid::new(NonZero::new(2).unwrap()),
-                "Trait".into(),
-                "sealed".into(),
-            ),
-            115,
+            2,
         ),
         (
             FunctionCall::ResolveProperty(
                 Vid::new(NonZero::new(3).unwrap()),
-                "ImportablePath".into(),
-                "path".into(),
+                "Method".into(),
+                "has_body".into(),
             ),
-            93,
+            2,
+        ),
+        (
+            FunctionCall::ResolveProperty(
+                Vid::new(NonZero::new(3).unwrap()),
+                "Method".into(),
+                "name".into(),
+            ),
+            2,
         ),
         (
             FunctionCall::ResolveNeighbors(
@@ -191,7 +187,7 @@ fn tracing_adapter() {
                 "Trait".into(),
                 Eid::new(NonZero::new(2).unwrap()),
             ),
-            115,
+            1,
         ),
         (
             FunctionCall::ResolveNeighborsInner(
@@ -199,7 +195,7 @@ fn tracing_adapter() {
                 "Crate".into(),
                 Eid::new(NonZero::new(1).unwrap()),
             ),
-            247,
+            20,
         ),
         (
             FunctionCall::ResolveNeighborsInner(
@@ -207,7 +203,7 @@ fn tracing_adapter() {
                 "Trait".into(),
                 Eid::new(NonZero::new(2).unwrap()),
             ),
-            93,
+            2,
         ),
         (
             FunctionCall::ResolveCoercion(
@@ -215,7 +211,7 @@ fn tracing_adapter() {
                 "Item".into(),
                 "Trait".into(),
             ),
-            247,
+            20,
         ),
     ];
 
