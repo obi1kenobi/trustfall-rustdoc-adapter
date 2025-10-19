@@ -18,5 +18,6 @@ pub use cargo_metadata;
 
 pub use {
     adapter::RustdocAdapter,
+    adapter::tracer::ptrace,
     indexed_crate::{ImportablePath, IndexedCrate, PackageIndex, PackageStorage},
 };
