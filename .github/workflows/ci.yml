@@ -248,12 +248,16 @@ jobs:
           fi
 
           BRANCH_MAJOR="${BASH_REMATCH[1]}"
+          MAJOR_VERSION="$(python - <<'PY'
+          import tomllib
+          with open('Cargo.toml', 'rb') as f:
+              data = tomllib.load(f)
+          print(data['package']['version'].split('.')[0])
+          PY
+          )"
 
-          CURRENT_VERSION="$(./scripts/get_current_version.sh trustfall-rustdoc-adapter)"
-          CARGO_MAJOR="${CURRENT_VERSION%%.*}"
-
-          if [[ "$BRANCH_MAJOR" != "$CARGO_MAJOR" ]]; then
-            echo "Branch major version ${BRANCH_MAJOR} does not match Cargo.toml major version ${CARGO_MAJOR}."
+          if [[ "$BRANCH_MAJOR" != "$MAJOR_VERSION" ]]; then
+            echo "Branch major version ${BRANCH_MAJOR} does not match Cargo.toml major version ${MAJOR_VERSION}."
             echo "trigger_publish=no" >> "$GITHUB_OUTPUT"
             exit 0
           fi
