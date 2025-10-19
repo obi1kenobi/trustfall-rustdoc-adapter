@@ -15,7 +15,7 @@ use trustfall::{
 
 /// A simple histogram that stores 15 roughly exponentially increasing buckets of
 /// values, from 0 to 1 billion, followed by a final bucket to store numbers greater
-/// 1 billion.
+/// than 1 billion.
 #[derive(Clone)]
 pub struct ExpHistogram {
     buckets: [u32; 16],
@@ -254,9 +254,9 @@ where
     PerfSpanIter { inner, post_action }
 }
 
-/// Traces an inner adapter. Constructed with [TracingAdapter::new()]. Each
+/// Traces an inner adapter. Constructed with [`TracingAdapter::new()`]. Each
 /// tracer is only valid for one query. When switching between queries, if you
-/// use the same adapter, ensure you first call [TracingAdapter::finish()],
+/// use the same adapter, ensure you first call [`TracingAdapter::finish()`],
 /// otherwise the new operations will be traced with the old.
 #[derive(Debug, Clone)]
 pub struct TracingAdapter<'vertex, AdapterT>
