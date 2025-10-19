@@ -146,11 +146,6 @@ jobs:
           cache: false
           rustflags: ""
 
-      # For Trusted Publishing:
-      # https://crates.io/docs/trusted-publishing
-      - uses: rust-lang/crates-io-auth-action@v1
-        id: auth
-
       - name: Tag the version
         run: |
           set -euxo pipefail
