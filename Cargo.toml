@@ -19,7 +19,7 @@ cargo_toml = { version = "0.22.3", features = ["features"] }
 # Extra spacing included to minimize the chance of merge conflicts.
 #
 trustfall = "0.8.1"
-cargo_metadata = "0.22.0"
+cargo_metadata = "0.23.0"
 indexmap = "2.11.0"
 
 #
