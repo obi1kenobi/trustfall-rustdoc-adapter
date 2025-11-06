@@ -1,4 +1,4 @@
-use std::{borrow::Cow, num::NonZeroUsize, rc::Rc};
+use std::{borrow::Cow, num::NonZeroUsize};
 
 use rustdoc_types::{
     Abi, Constant, Crate, Enum, Function, GenericBound, GenericParamDef, Impl, Item, Module, Path,

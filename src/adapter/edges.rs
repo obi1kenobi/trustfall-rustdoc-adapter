@@ -160,10 +160,7 @@ pub(super) fn resolve_importable_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
 
             let parent_crate = adapter.crate_at_origin(origin);
 
-            let importable_paths = parent_crate
-                .own_crate
-                .importable_paths_index
-                .get(item_id);
+            let importable_paths = parent_crate.own_crate.importable_paths_index.get(item_id);
 
             match importable_paths {
                 Some(importable_paths) => Box::new(
