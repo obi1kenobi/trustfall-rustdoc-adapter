@@ -165,7 +165,7 @@ pub(super) fn resolve_importable_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             match importable_paths {
                 Some(importable_paths) => Box::new(
                     importable_paths
-                        .into_iter()
+                        .iter()
                         .map(move |x| origin.make_importable_path_vertex(x)),
                 ),
                 None => Box::new(std::iter::empty()),

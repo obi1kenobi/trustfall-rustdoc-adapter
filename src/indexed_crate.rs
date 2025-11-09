@@ -459,14 +459,14 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
 
             let impl_entries = impl_items.filter_map(move |item_id| {
                 let item = index.get(item_id)?;
-                if item.name.is_none() {
-                    // Items must have a name in order to be importable.
-                    return None;
-                }
-
-                // The `impl_index` contains only methods, discard other item types.
-                if matches!(item.inner, rustdoc_types::ItemEnum::Function { .. }) {
-                    Some((ImplEntry::new(id, item_name), (impl_item, item)))
+                // Items must have a name in order to be importable.
+                if let Some(item_name) = &item.name {
+                    // The `impl_index` contains only methods, discard other item types.
+                    if matches!(item.inner, rustdoc_types::ItemEnum::Function { .. }) {
+                        Some((ImplEntry::new(id, item_name), (impl_item, item)))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -613,11 +613,7 @@ impl<'a> IndexedCrate<'a> {
                 if !supported_item_kind(item) {
                     return None;
                 }
-                let importable_paths = value.importable_paths_index.get(&item.id);
-                if importable_paths.is_none() {
-                    return None;
-                }
-                let importable_paths = importable_paths.unwrap();
+                let importable_paths = value.importable_paths_index.get(&item.id)?;
 
                 #[cfg(feature = "rayon")]
                 let iter = importable_paths.par_iter();
