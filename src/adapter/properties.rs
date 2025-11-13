@@ -358,7 +358,15 @@ pub(super) fn resolve_function_parameter_property<'a, V: AsVertex<Vertex<'a>> + 
             vertex
                 .as_function_parameter()
                 .expect("not a function parameter")
+                .0
                 .into()
+        }),
+        "type" => resolve_property_with(contexts, |vertex| {
+            let type_ = vertex
+                .as_function_parameter()
+                .expect("not a function parameter")
+                .1;
+            rust_type_name::rust_type_name(type_).into()
         }),
         _ => unreachable!("FunctionParameter property {property_name}"),
     }

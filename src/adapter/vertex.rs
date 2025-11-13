@@ -54,7 +54,7 @@ pub enum VertexKind<'a> {
     ImplementedTrait(ImplementedTrait<'a>),
 
     #[non_exhaustive]
-    FunctionParameter(&'a str),
+    FunctionParameter(&'a str, &'a Type),
 
     #[non_exhaustive]
     FunctionAbi(&'a Abi),
@@ -284,9 +284,9 @@ impl<'a> Vertex<'a> {
         })
     }
 
-    pub(super) fn as_function_parameter(&self) -> Option<&'a str> {
+    pub(super) fn as_function_parameter(&self) -> Option<(&'a str, &'a Type)> {
         match &self.kind {
-            VertexKind::FunctionParameter(name) => Some(name),
+            VertexKind::FunctionParameter(name, type_) => Some((name, type_)),
             _ => None,
         }
     }

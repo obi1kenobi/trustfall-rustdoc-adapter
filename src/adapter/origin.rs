@@ -1,6 +1,6 @@
 use std::{borrow::Cow, num::NonZeroUsize, rc::Rc};
 
-use rustdoc_types::{Abi, Item, Span};
+use rustdoc_types::{Abi, Item, Span, Type};
 
 use crate::{
     adapter::vertex::ReturnValue,
@@ -104,10 +104,10 @@ impl Origin {
         }
     }
 
-    pub(super) fn make_function_parameter_vertex<'a>(&self, name: &'a str) -> Vertex<'a> {
+    pub(super) fn make_function_parameter_vertex<'a>(&self, name: &'a str, type_: &'a Type) -> Vertex<'a> {
         Vertex {
             origin: *self,
-            kind: VertexKind::FunctionParameter(name),
+            kind: VertexKind::FunctionParameter(name, type_),
         }
     }
 

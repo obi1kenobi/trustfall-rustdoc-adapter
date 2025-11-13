@@ -231,7 +231,7 @@ pub(super) fn resolve_function_like_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                     .sig
                     .inputs
                     .iter()
-                    .map(move |(name, _type_)| origin.make_function_parameter_vertex(name)),
+                    .map(move |(name, type_)| origin.make_function_parameter_vertex(name, type_)),
             )
         }),
         "return_value" => resolve_neighbors_with(contexts, move |vertex| {

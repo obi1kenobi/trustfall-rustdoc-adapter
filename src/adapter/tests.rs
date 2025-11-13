@@ -8182,3 +8182,81 @@ fn function_return_value() {
 
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn function_parameter_types() {
+    get_test_data!(data, function_params_types);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output(name: "function_name")
+
+                parameter @fold {
+                    name @output(name: "parameter_name")
+                    type @output(name: "type_")
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables: BTreeMap<&str, bool> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        function_name: String,
+        parameter_name: Vec<String>,
+        type_: Vec<String>,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            function_name: "add".into(),
+            parameter_name: vec!["left".into(), "right".into()],
+            type_: vec!["u64".into(), "u64".into()],
+        },
+        Output {
+            function_name: "fn_with_ref".into(),
+            parameter_name: vec!["param".into()],
+            type_: vec!["&i32".into()],
+        },
+        Output {
+            function_name: "fn_with_mut_ref".into(),
+            parameter_name: vec!["param".into()],
+            type_: vec!["&mut i32".into()],
+        },
+        Output {
+            function_name: "fn_with_generic".into(),
+            parameter_name: vec!["a".into(), "b".into()],
+            type_: vec!["T".into(), "T".into()],
+        },
+        Output {
+            function_name: "fn_with_generic_ref".into(),
+            parameter_name: vec!["a".into(), "b".into()],
+            type_: vec!["&T".into(), "&T".into()],
+        },
+        Output {
+            function_name: "fn_with_array_param".into(),
+            parameter_name: vec!["arr".into()],
+            type_: vec!["[i32; 3]".into()],
+        }
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
