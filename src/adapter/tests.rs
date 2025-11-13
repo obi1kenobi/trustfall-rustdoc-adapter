@@ -8184,8 +8184,8 @@ fn function_return_value() {
 }
 
 #[test]
-fn function_parameter_types() {
-    get_test_data!(data, function_params_types);
+fn function_parameter_types_and_return_types() {
+    get_test_data!(data, function_param_types_and_return_value_types);
     let adapter = RustdocAdapter::new(&data, None);
     let adapter = Arc::new(&adapter);
 
@@ -8199,6 +8199,10 @@ fn function_parameter_types() {
                 parameter @fold {
                     name @output(name: "parameter_name")
                     type @output(name: "type_")
+                }
+
+                return_value {
+                    type @output(name: "return_type")
                 }
             }
         }
@@ -8215,6 +8219,7 @@ fn function_parameter_types() {
         function_name: String,
         parameter_name: Vec<String>,
         type_: Vec<String>,
+        return_type: String,
     }
 
     let mut expected_results = vec![
@@ -8222,31 +8227,37 @@ fn function_parameter_types() {
             function_name: "add".into(),
             parameter_name: vec!["left".into(), "right".into()],
             type_: vec!["u64".into(), "u64".into()],
+            return_type: "u64".into(),
         },
         Output {
             function_name: "fn_with_ref".into(),
             parameter_name: vec!["param".into()],
             type_: vec!["&i32".into()],
+            return_type: "i32".into(),
         },
         Output {
             function_name: "fn_with_mut_ref".into(),
             parameter_name: vec!["param".into()],
             type_: vec!["&mut i32".into()],
+            return_type: "()".into(),
         },
         Output {
             function_name: "fn_with_generic".into(),
             parameter_name: vec!["a".into(), "b".into()],
             type_: vec!["T".into(), "T".into()],
+            return_type: "T".into(),
         },
         Output {
             function_name: "fn_with_generic_ref".into(),
             parameter_name: vec!["a".into(), "b".into()],
             type_: vec!["&T".into(), "&T".into()],
+            return_type: "T".into(),
         },
         Output {
             function_name: "fn_with_array_param".into(),
             parameter_name: vec!["arr".into()],
             type_: vec!["[i32; 3]".into()],
+            return_type: "i32".into(),
         }
     ];
     expected_results.sort_unstable();

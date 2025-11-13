@@ -1,5 +1,5 @@
 [package]
-name = "function_params_types"
+name = "function_param_types_and_return_value_types"
 version = "0.1.0"
 edition = "2024"
 

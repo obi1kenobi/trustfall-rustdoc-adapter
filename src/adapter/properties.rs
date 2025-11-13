@@ -385,6 +385,15 @@ pub(super) fn resolve_return_value_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 .is_none()
                 .into()
         }),
+        "type" => resolve_property_with(contexts, |vertex| {
+            vertex
+                .as_return_value()
+                .expect("not a return value")
+                .type_
+                .map(rust_type_name::rust_type_name)
+                .unwrap_or("()".to_string())
+                .into()
+        }),
         _ => unreachable!("ReturnValue property {property_name}"),
     }
 }

@@ -2008,6 +2008,8 @@ type ReturnValue {
   ```
   """
   is_unit: Boolean!
+
+  type: String!
 }
 
 """
