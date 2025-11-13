@@ -104,7 +104,11 @@ impl Origin {
         }
     }
 
-    pub(super) fn make_function_parameter_vertex<'a>(&self, name: &'a str, type_: &'a Type) -> Vertex<'a> {
+    pub(super) fn make_function_parameter_vertex<'a>(
+        &self,
+        name: &'a str,
+        type_: &'a Type,
+    ) -> Vertex<'a> {
         Vertex {
             origin: *self,
             kind: VertexKind::FunctionParameter(name, type_),

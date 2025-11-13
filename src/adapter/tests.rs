@@ -8258,7 +8258,7 @@ fn function_parameter_types_and_return_types() {
             parameter_name: vec!["arr".into()],
             type_: vec!["[i32; 3]".into()],
             return_type: "i32".into(),
-        }
+        },
     ];
     expected_results.sort_unstable();
 
