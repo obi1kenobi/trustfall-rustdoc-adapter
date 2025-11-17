@@ -24,3 +24,12 @@ where
 pub fn fn_with_array_param(arr: [i32; 3]) -> i32 {
     arr.iter().sum()
 }
+
+pub fn fn_with_qualified_param(p: std::option::Option<i32>) -> i32 {
+    p.unwrap_or(0)
+}
+
+use std::option::Option;
+pub fn fn_with_unqualified_param(p: Option<i32>) -> i32 {
+    p.unwrap_or(0)
+}

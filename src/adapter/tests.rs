@@ -8259,6 +8259,113 @@ fn function_parameter_types_and_return_types() {
             type_: vec!["[i32; 3]".into()],
             return_type: "i32".into(),
         },
+        Output {
+            function_name: "fn_with_qualified_param".into(),
+            parameter_name: vec!["p".into()],
+            type_: vec!["std::option::Option<i32>".into()],
+            return_type: "i32".into(),
+        },
+        Output {
+            function_name: "fn_with_unqualified_param".into(),
+            parameter_name: vec!["p".into()],
+            type_: vec!["std::option::Option<i32>".into()],
+            return_type: "i32".into(),
+        }
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn function_types_info_test_on_raw_type_json() {
+    get_test_data!(data, raw_type_json);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output(name: "function_name")
+
+                parameter @fold {
+                    name @output(name: "parameter_name")
+                    type @output(name: "type_")
+                }
+
+                return_value {
+                    type @output(name: "return_type")
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables: BTreeMap<&str, bool> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        function_name: String,
+        parameter_name: Vec<String>,
+        type_: Vec<String>,
+        return_type: String,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            function_name: "const_fn".into(),
+            parameter_name: vec![],
+            type_: vec![],
+            return_type: "usize".into(),
+        },
+        Output {
+            function_name: "is_synthetic".into(),
+            parameter_name: vec!["x".into()],
+            type_: vec!["impl std::any::Any".into()],
+            return_type: "impl std::any::Any".into(),
+        },
+        Output {
+            function_name: "dyn_ambiguity".into(),
+            parameter_name: vec!["a".into(), "b".into(), "c".into(), "no_parens".into(), "sanity".into()],
+            type_: vec![
+                "&'a (impl Fn() -> *const fn() -> &'a (dyn Iterator<Item = ()> + Unpin) + Send)".into(),
+                "Box<dyn Fn() -> *const (dyn Unpin + Fn() -> &'static mut (dyn std::any::Any + Sync)) + Sync>".into(),
+                "fn() -> &'a (dyn Send + Fn() -> *const dyn std::any::Any)".into(),
+                "impl for<'x> Fn(&'x ()) -> &'x dyn std::fmt::Debug".into(),
+                "&dyn std::fmt::Display".into(),
+            ],
+            return_type: "()".into(),
+        },
+        Output {
+            function_name: "my_generic_function".into(),
+            parameter_name: vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()],
+            type_: vec![
+                "&'a &'static mut *const T".into(),
+                "&(dyn Iterator<Item = T> + Unpin + Send)".into(),
+                "Constant<25>".into(),
+                "impl for<'x> FnMut(&'a unsafe extern \"C\" fn(_: *const [u8], _: &'x mut *mut (), ...) -> std::borrow::Cow<'static, [u8]>) -> &'x (dyn std::fmt::Display) + Send + 'static".into(),
+                "<U as GAT<T>>::Type<'a, &'static *const ()>".into(),
+            ],
+            return_type: "impl std::future::Future<Output: Iterator<Item: 'a + Send> + for<'z> FnMut(&'z ()) -> &'z &'a ()>".into(),
+        },
+        Output {
+            function_name: "awesome_function".into(),
+            parameter_name: vec!["a".into(), "b".into()],
+            type_: vec!["&'a Constant<N>".into(), "&impl Clone".into()],
+            return_type: "impl Send".into(),
+        },
     ];
     expected_results.sort_unstable();
 
