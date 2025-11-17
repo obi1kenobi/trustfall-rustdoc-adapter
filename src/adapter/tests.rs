@@ -8270,7 +8270,7 @@ fn function_parameter_types_and_return_types() {
             parameter_name: vec!["p".into()],
             type_: vec!["std::option::Option<i32>".into()],
             return_type: "i32".into(),
-        }
+        },
     ];
     expected_results.sort_unstable();
 
