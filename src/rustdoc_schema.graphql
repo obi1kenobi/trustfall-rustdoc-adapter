@@ -1529,6 +1529,15 @@ type FunctionParameter {
   ```
   fn lifetime_fn<'a>(param: &'a str) {}
   ```
+
+  `Self` types in methods will appear as `Self`.
+
+  For example, in the following code, the parameter type string is `Self`:
+  ```
+  impl MyStruct {
+      fn method(self) {}
+  }
+  ```
   """
   type: String!
 }
@@ -2075,6 +2084,15 @@ type ReturnValue {
   For example, in the following code, the parameter type string is `&'a str`:
   ```
   fn lifetime_fn<'a>(param: &'a str) {}
+  ```
+
+  `Self` types in methods will appear as `Self`.
+
+  For example, in the following code, the parameter type string is `Self`:
+  ```
+  impl MyStruct {
+      fn method(self) {}
+  }
   ```
   """
   type: String!
