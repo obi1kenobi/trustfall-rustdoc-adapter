@@ -1496,6 +1496,40 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.FnDecl.html
 """
 type FunctionParameter {
   name: String!
+
+  """
+  Stringified representation of the parameter's type, as close to the
+  original source code as possible.  May not preserve whitespace, constant
+  expressions in types, or path names, but the output will be semantically
+  equivalent to the original.
+
+  The stringified type always within use full qualified path.
+
+  For example, in the following code, both functions have a parameter type
+  string of `std::option::Option<i32>`:
+  ```
+  fn fn_with_qualified_param(p: std::option::Option<i32>) {}
+
+  use std::option::Option;
+  fn fn_with_unqualified_param(p: Option<i32>) {}
+  ```
+
+  Generic parameters will appear without being defined and without their
+  bounds, since the definition and bounds are syntactically part of the
+  function, not the parameter.
+
+  For example, in the following code, the parameter type string is simply `T`:
+  ```
+  fn generic_fn<T: Copy>(param: T) {}
+  ```
+
+  Lifetime parameters will be preserved.
+
+  For example, in the following code, the parameter type string is `&'a str`:
+  ```
+  fn lifetime_fn<'a>(param: &'a str) {}
+  ```
+  """
   type: String!
 }
 
@@ -2009,6 +2043,40 @@ type ReturnValue {
   """
   is_unit: Boolean!
 
+  """
+  Stringified representation of the parameter's type, as close to the
+  original source code as possible.  May not preserve whitespace, constant
+  expressions in types, or path names, but the output will be semantically
+  equivalent to the original. Function with unit return value will have `()`
+  as type string.
+
+  The stringified type always within use full qualified path.
+
+  For example, in the following code, both functions have a parameter type
+  string of `std::option::Option<i32>`:
+  ```
+  fn fn_with_qualified_param(p: std::option::Option<i32>) {}
+
+  use std::option::Option;
+  fn fn_with_unqualified_param(p: Option<i32>) {}
+  ```
+
+  Generic parameters will appear without being defined and without their
+  bounds, since the definition and bounds are syntactically part of the
+  function, not the parameter.
+
+  For example, in the following code, the parameter type string is simply `T`:
+  ```
+  fn generic_fn<T: Copy>(param: T) {}
+  ```
+
+  Lifetime parameters will be preserved.
+
+  For example, in the following code, the parameter type string is `&'a str`:
+  ```
+  fn lifetime_fn<'a>(param: &'a str) {}
+  ```
+  """
   type: String!
 }
 
