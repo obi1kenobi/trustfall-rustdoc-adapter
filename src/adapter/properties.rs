@@ -391,8 +391,8 @@ pub(super) fn resolve_return_value_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 .expect("not a return value")
                 .type_
                 .map(rust_type_name::rust_type_name)
-                .unwrap_or("()".to_string())
-                .into()
+                .map(Into::into)
+                .unwrap_or("()".into())
         }),
         _ => unreachable!("ReturnValue property {property_name}"),
     }
