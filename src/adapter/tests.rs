@@ -8378,3 +8378,78 @@ fn function_types_info_test_on_raw_type_json() {
 
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn method_types_info_test_on_raw_type_json() {
+    get_test_data!(data, raw_type_json);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                method {
+                    name @output(name: "method_name")
+
+                    parameter @fold {
+                        name @output(name: "parameter_name")
+                        type @output(name: "type_")
+                    }
+
+                    return_value {
+                        type @output(name: "return_type")
+                    }
+                }
+            }
+        }
+    }
+}"#;
+    let variables: BTreeMap<&str, bool> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        method_name: String,
+        parameter_name: Vec<String>,
+        type_: Vec<String>,
+        return_type: String,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            method_name: "method".into(),
+            parameter_name: vec![],
+            type_: vec![],
+            return_type: "()".into(),
+        },
+        Output {
+            method_name: "associated_types".into(),
+            parameter_name: vec!["a".into(), "b".into()],
+            type_: vec![
+                "Self::Assoc<T>".into(),
+                "<Self as MyTrait>::Assoc<U>".into(),
+            ],
+            return_type: "()".into(),
+        },
+        Output {
+            method_name: "nested_generics".into(),
+            parameter_name: vec!["t".into(), "u".into()],
+            type_: vec!["T".into(), "U".into()],
+            return_type: "()".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
