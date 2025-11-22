@@ -74,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toolchain: ["1.91", "beta", "nightly"]
+        toolchain: ["1.91", "beta"]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
