@@ -1,4 +1,4 @@
-# trustfall-rustdoc
+# trustfall-rustdoc-adapter
 Trustfall adapter for querying rustdoc JSON data.
 
 - [Contributing](https://github.com/obi1kenobi/trustfall-rustdoc-adapter/blob/main/CONTRIBUTING.md)
