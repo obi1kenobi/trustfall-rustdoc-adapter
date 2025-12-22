@@ -2487,6 +2487,10 @@ fn importable_items_cover_expected_kinds() {
             kind: "Function".into(),
         },
         Output {
+            name: "target_feature".into(),
+            kind: "Module".into(),
+        },
+        Output {
             name: "top_level_fn".into(),
             kind: "Function".into(),
         },
@@ -2558,6 +2562,10 @@ fn importable_items_cover_more_kinds() {
             Output {
                 name: "Pathological".into(),
                 kind: "Enum".into(),
+            },
+            Output {
+                name: "enum_discriminants".into(),
+                kind: "Module".into(),
             },
         ];
         expected_results.sort_unstable();
@@ -2635,6 +2643,14 @@ fn importable_items_cover_more_kinds() {
                 name: "SECOND".into(),
                 kind: "Static".into(),
             },
+            Output {
+                name: "inner".into(),
+                kind: "Module".into(),
+            },
+            Output {
+                name: "reexport_consts_and_statics".into(),
+                kind: "Module".into(),
+            },
         ];
         expected_results.sort_unstable();
 
@@ -2663,6 +2679,10 @@ fn importable_items_cover_more_kinds() {
             Output {
                 name: "top_level".into(),
                 kind: "Macro".into(),
+            },
+            Output {
+                name: "hidden".into(),
+                kind: "Module".into(),
             },
             Output {
                 name: "nested_private".into(),
