@@ -2424,6 +2424,269 @@ fn item_own_public_api_properties() {
     similar_asserts::assert_eq!(expected_results, results);
 }
 
+#[test]
+fn importable_items_cover_expected_kinds() {
+    get_test_data!(data, target_feature);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Importable {
+                name @output
+                kind: __typename @output
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        kind: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            name: "Example".into(),
+            kind: "Struct".into(),
+        },
+        Output {
+            name: "Trait".into(),
+            kind: "Trait".into(),
+        },
+        Output {
+            name: "globally_enabled_features_are_still_listed".into(),
+            kind: "Function".into(),
+        },
+        Output {
+            name: "implies_avx".into(),
+            kind: "Function".into(),
+        },
+        Output {
+            name: "multiple_attrs".into(),
+            kind: "Function".into(),
+        },
+        Output {
+            name: "multiple_enable_clauses".into(),
+            kind: "Function".into(),
+        },
+        Output {
+            name: "top_level_fn".into(),
+            kind: "Function".into(),
+        },
+        Output {
+            name: "unsafe_top_level_fn".into(),
+            kind: "Function".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn importable_items_cover_more_kinds() {
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Importable {
+                name @output
+                kind: __typename @output
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        kind: String,
+    }
+
+    {
+        get_test_data!(data, enum_discriminants);
+        let adapter = RustdocAdapter::new(&data, None);
+        let adapter = Arc::new(&adapter);
+
+        let mut results: Vec<_> =
+            trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+                .expect("failed to run enum discriminants importable query")
+                .map(|row| row.try_into_struct().expect("shape mismatch"))
+                .collect();
+        results.sort_unstable();
+
+        let mut expected_results = vec![
+            Output {
+                name: "A".into(),
+                kind: "Enum".into(),
+            },
+            Output {
+                name: "FieldlessWithDiscrimants".into(),
+                kind: "Enum".into(),
+            },
+            Output {
+                name: "Fieldful".into(),
+                kind: "Enum".into(),
+            },
+            Output {
+                name: "FieldfulNoRepr".into(),
+                kind: "Enum".into(),
+            },
+            Output {
+                name: "Pathological".into(),
+                kind: "Enum".into(),
+            },
+        ];
+        expected_results.sort_unstable();
+
+        similar_asserts::assert_eq!(expected_results, results);
+    }
+
+    {
+        get_test_data!(data, unions);
+        let adapter = RustdocAdapter::new(&data, None);
+        let adapter = Arc::new(&adapter);
+
+        let mut results: Vec<Output> =
+            trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+                .expect("failed to run unions importable query")
+                .map(|row| row.try_into_struct().expect("shape mismatch"))
+                .collect();
+        results.retain(|row| {
+            matches!(
+                row.name.as_str(),
+                "PublicImportable"
+                    | "ModuleHidden"
+                    | "DeprecatedModuleHidden"
+                    | "Hidden"
+                    | "ModuleDeprecated"
+            )
+        });
+        results.sort_unstable();
+
+        let mut expected_results = vec![
+            Output {
+                name: "PublicImportable".into(),
+                kind: "Union".into(),
+            },
+            Output {
+                name: "ModuleHidden".into(),
+                kind: "Union".into(),
+            },
+            Output {
+                name: "DeprecatedModuleHidden".into(),
+                kind: "Union".into(),
+            },
+            Output {
+                name: "Hidden".into(),
+                kind: "Union".into(),
+            },
+            Output {
+                name: "ModuleDeprecated".into(),
+                kind: "Union".into(),
+            },
+        ];
+        expected_results.sort_unstable();
+
+        similar_asserts::assert_eq!(expected_results, results);
+    }
+
+    {
+        get_test_data!(data, reexport_consts_and_statics);
+        let adapter = RustdocAdapter::new(&data, None);
+        let adapter = Arc::new(&adapter);
+
+        let mut results: Vec<_> =
+            trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+                .expect("failed to run consts and statics importable query")
+                .map(|row| row.try_into_struct().expect("shape mismatch"))
+                .collect();
+        results.sort_unstable();
+
+        let mut expected_results = vec![
+            Output {
+                name: "FIRST".into(),
+                kind: "Constant".into(),
+            },
+            Output {
+                name: "SECOND".into(),
+                kind: "Static".into(),
+            },
+        ];
+        expected_results.sort_unstable();
+
+        similar_asserts::assert_eq!(expected_results, results);
+    }
+
+    {
+        get_test_data!(data, declarative_macros);
+        let adapter = RustdocAdapter::new(&data, None);
+        let adapter = Arc::new(&adapter);
+
+        let mut results: Vec<Output> =
+            trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+                .expect("failed to run declarative macros importable query")
+                .map(|row| row.try_into_struct().expect("shape mismatch"))
+                .collect();
+        results.retain(|row| {
+            matches!(
+                row.name.as_str(),
+                "top_level" | "nested_private" | "nested_public" | "hidden_parent" | "hidden"
+            )
+        });
+        results.sort_unstable();
+
+        let mut expected_results = vec![
+            Output {
+                name: "top_level".into(),
+                kind: "Macro".into(),
+            },
+            Output {
+                name: "nested_private".into(),
+                kind: "Macro".into(),
+            },
+            Output {
+                name: "nested_public".into(),
+                kind: "Macro".into(),
+            },
+            Output {
+                name: "hidden_parent".into(),
+                kind: "Macro".into(),
+            },
+            Output {
+                name: "hidden".into(),
+                kind: "Macro".into(),
+            },
+        ];
+        expected_results.sort_unstable();
+
+        similar_asserts::assert_eq!(expected_results, results);
+    }
+}
+
 /// Enum variants have as-if-public visibility by default -- they are public if the enum is public.
 #[test]
 fn enum_variant_public_api_eligible() {
