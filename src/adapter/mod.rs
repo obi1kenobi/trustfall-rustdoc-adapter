@@ -374,6 +374,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                                 | "Enum"
                                 | "Union"
                                 | "Trait"
+                                | "Module"
                                 | "Function"
                                 | "Static"
                                 | "Constant"
