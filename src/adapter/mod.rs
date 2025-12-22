@@ -115,7 +115,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
         } else {
             match type_name.as_ref() {
                 "Crate" => properties::resolve_crate_property(contexts, property_name),
-                "Item" | "GenericItem" => {
+                "Item" | "Importable" | "GenericItem" => {
                     properties::resolve_item_property(contexts, property_name)
                 }
                 "ImplOwner"
@@ -278,6 +278,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 edges::resolve_importable_edge(contexts, edge_name, self)
             }
             "Item"
+            | "Importable"
             | "GenericItem"
             | "ImplOwner"
             | "Struct"
@@ -367,6 +368,23 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                     let actual_type_name = vertex.typename();
 
                     match coerce_to_type.as_ref() {
+                        "Importable" => matches!(
+                            actual_type_name,
+                            "Struct"
+                                | "Enum"
+                                | "Union"
+                                | "Trait"
+                                | "Function"
+                                | "Static"
+                                | "Constant"
+                                | "Macro"
+                                | "FunctionLikeProcMacro"
+                                | "AttributeProcMacro"
+                                | "DeriveProcMacro" // TODO: In principle, variants should be here too,
+                                                    // but our import name analysis doesn't consider variants importable
+                                                    // at the moment. Add the following when it does:
+                                                    // "PlainVariant" | "TupleVariant" | "StructVariant"
+                        ),
                         "GenericItem" => matches!(
                             actual_type_name,
                             "Struct" | "Enum" | "Union" | "Trait" | "Function" | "Method"
