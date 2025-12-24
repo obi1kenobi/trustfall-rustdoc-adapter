@@ -23,6 +23,12 @@ serde = ["dep:serde"]
 # this feature is nightly-only and not considered stable
 nightly = []
 
+# features for testing transitive enables across several steps
+chain_root = ["chain_mid"]
+chain_mid = ["chain_deep"]
+chain_deep = ["chain_leaf"]
+chain_leaf = []
+
 # there's also an implicit `serde_json` dependency that's opt-in
 # due to the optional dependency that isn't referenced in a `dep:` or `/` or `?` operator
 
