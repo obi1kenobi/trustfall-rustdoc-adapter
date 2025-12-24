@@ -4837,7 +4837,7 @@ fn parenthesized_type_bounds_on_type_and_impl() {
 }
 
 #[test]
-fn features() {
+fn features_directly_enables() {
     get_test_data!(data, features);
     let adapter = RustdocAdapter::new(&data, None);
     let adapter = Arc::new(&adapter);
@@ -4862,7 +4862,7 @@ fn features() {
         Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
 
     #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
-    struct Output {
+    struct FeatureEnablesOutput {
         name: String,
         enables: Option<String>,
     }
@@ -4879,40 +4879,56 @@ fn features() {
     // This makes it easier to verify that the expected data here is correct
     // by reading it side-by-side with the file.
     let mut expected_results = vec![
-        Output {
+        FeatureEnablesOutput {
             name: "default".into(),
             enables: Some("foo".into()),
         },
-        Output {
+        FeatureEnablesOutput {
             name: "default".into(),
             enables: Some("bar".into()),
         },
-        Output {
+        FeatureEnablesOutput {
             name: "foo".into(),
             enables: Some("baz".into()),
         },
-        Output {
+        FeatureEnablesOutput {
             name: "bar".into(),
             enables: None,
         },
-        Output {
+        FeatureEnablesOutput {
             name: "baz".into(),
             enables: None,
         },
-        Output {
+        FeatureEnablesOutput {
             name: "opt_in".into(),
             enables: None,
         },
-        Output {
+        FeatureEnablesOutput {
             name: "serde".into(),
             enables: None,
         },
-        Output {
+        FeatureEnablesOutput {
             name: "serde_json".into(),
             enables: None,
         },
-        Output {
+        FeatureEnablesOutput {
             name: "nightly".into(),
+            enables: None,
+        },
+        FeatureEnablesOutput {
+            name: "chain_root".into(),
+            enables: Some("chain_mid".into()),
+        },
+        FeatureEnablesOutput {
+            name: "chain_mid".into(),
+            enables: Some("chain_deep".into()),
+        },
+        FeatureEnablesOutput {
+            name: "chain_deep".into(),
+            enables: Some("chain_leaf".into()),
+        },
+        FeatureEnablesOutput {
+            name: "chain_leaf".into(),
             enables: None,
         },
     ];
@@ -4959,6 +4975,122 @@ fn features() {
         DefaultsOutput { name: "baz".into() },
     ];
     expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn features_transitively_enables() {
+    get_test_data!(data, features);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        feature {
+            name @output
+
+            transitively_enables @optional {
+                enables: name @output
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct FeatureEnablesOutput {
+        name: String,
+        enables: Option<String>,
+    }
+
+    let mut results: Vec<_> = trustfall::execute_query(&schema, adapter.clone(), query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+    results.sort_unstable();
+
+    // We write the results in the order the items appear in the test file,
+    // and sort them afterward in order to compare with the (sorted) query results.
+    // This makes it easier to verify that the expected data here is correct
+    // by reading it side-by-side with the file.
+    let mut expected_results = vec![
+        FeatureEnablesOutput {
+            name: "default".into(),
+            enables: Some("foo".into()),
+        },
+        FeatureEnablesOutput {
+            name: "default".into(),
+            enables: Some("bar".into()),
+        },
+        FeatureEnablesOutput {
+            name: "default".into(),
+            enables: Some("baz".into()),
+        },
+        FeatureEnablesOutput {
+            name: "foo".into(),
+            enables: Some("baz".into()),
+        },
+        FeatureEnablesOutput {
+            name: "bar".into(),
+            enables: None,
+        },
+        FeatureEnablesOutput {
+            name: "baz".into(),
+            enables: None,
+        },
+        FeatureEnablesOutput {
+            name: "opt_in".into(),
+            enables: None,
+        },
+        FeatureEnablesOutput {
+            name: "serde".into(),
+            enables: None,
+        },
+        FeatureEnablesOutput {
+            name: "serde_json".into(),
+            enables: None,
+        },
+        FeatureEnablesOutput {
+            name: "nightly".into(),
+            enables: None,
+        },
+        FeatureEnablesOutput {
+            name: "chain_root".into(),
+            enables: Some("chain_mid".into()),
+        },
+        FeatureEnablesOutput {
+            name: "chain_root".into(),
+            enables: Some("chain_deep".into()),
+        },
+        FeatureEnablesOutput {
+            name: "chain_root".into(),
+            enables: Some("chain_leaf".into()),
+        },
+        FeatureEnablesOutput {
+            name: "chain_mid".into(),
+            enables: Some("chain_deep".into()),
+        },
+        FeatureEnablesOutput {
+            name: "chain_mid".into(),
+            enables: Some("chain_leaf".into()),
+        },
+        FeatureEnablesOutput {
+            name: "chain_deep".into(),
+            enables: Some("chain_leaf".into()),
+        },
+        FeatureEnablesOutput {
+            name: "chain_leaf".into(),
+            enables: None,
+        },
+    ];
+    expected_results.sort_unstable();
+
     similar_asserts::assert_eq!(expected_results, results);
 }
 
