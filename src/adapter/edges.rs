@@ -871,6 +871,26 @@ pub(super) fn resolve_feature_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                     }),
             )
         }),
+        "transitively_enables" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let feature: &Feature<'_> = vertex.as_feature().expect("vertex was not a Feature");
+            let feature_key = feature.inner.key;
+
+            let features_lookup = adapter
+                .crate_at_origin(origin)
+                .features
+                .as_ref()
+                .expect("no feature data was loaded");
+
+            let (enabled_features, _) = feature.inner.enables_recursive(&features_lookup.features);
+
+            Box::new(
+                enabled_features
+                    .into_iter()
+                    .filter(move |(key, _)| *key != feature_key)
+                    .map(move |(_, feat)| origin.make_feature_vertex(feat)),
+            )
+        }),
         _ => unreachable!("resolve_feature_edge {edge_name}"),
     }
 }
