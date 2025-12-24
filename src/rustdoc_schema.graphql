@@ -3161,4 +3161,11 @@ type Feature {
   Enabling those features may in turn enable other features not listed here.
   """
   directly_enables: [Feature!]
+
+  """
+  Other features that are enabled by this feature, directly or indirectly.
+
+  This does not include the feature itself.
+  """
+  transitively_enables: [Feature!]
 }
