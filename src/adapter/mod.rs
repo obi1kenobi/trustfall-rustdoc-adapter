@@ -261,6 +261,10 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
             | "ImplOwner"
             | "Struct"
             | "Enum"
+            | "Variant"
+            | "PlainVariant"
+            | "TupleVariant"
+            | "StructVariant"
             | "Union"
             | "Trait"
             | "Function"
@@ -372,6 +376,9 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                             actual_type_name,
                             "Struct"
                                 | "Enum"
+                                | "PlainVariant"
+                                | "TupleVariant"
+                                | "StructVariant"
                                 | "Union"
                                 | "Trait"
                                 | "Module"
@@ -381,10 +388,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                                 | "Macro"
                                 | "FunctionLikeProcMacro"
                                 | "AttributeProcMacro"
-                                | "DeriveProcMacro" // TODO: In principle, variants should be here too,
-                                                    // but our import name analysis doesn't consider variants importable
-                                                    // at the moment. Add the following when it does:
-                                                    // "PlainVariant" | "TupleVariant" | "StructVariant"
+                                | "DeriveProcMacro"
                         ),
                         "GenericItem" => matches!(
                             actual_type_name,
