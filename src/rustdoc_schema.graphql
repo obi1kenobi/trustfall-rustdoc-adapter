@@ -590,7 +590,7 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.Variant.html
 """
-type PlainVariant implements Item & Variant & Importable {
+type PlainVariant implements Item & Importable & Variant {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -673,7 +673,7 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.Variant.html
 """
-type TupleVariant implements Item & Variant & Importable {
+type TupleVariant implements Item & Importable & Variant {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -756,7 +756,7 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.Variant.html
 """
-type StructVariant implements Item & Variant & Importable {
+type StructVariant implements Item & Importable & Variant {
   # properties from Item
   id: String!
   crate_id: Int!

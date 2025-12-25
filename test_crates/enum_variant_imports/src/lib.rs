@@ -14,8 +14,10 @@
 //! - `namespace`, `namespace::Colors`, `namespace::Colors::{Red, Green, Blue}`,
 //!   and `namespace::Red` via a glob reexport of enum variants. The `namespace::Red` name is
 //!   both a value (variant) and a type (struct), which is allowed across namespaces.
-//!   `namespace::Green` and `namespace::Blue` are not exported because tuple/unit structs
-//!   of the same names shadow the glob-imported variants in the value namespace.
+//!   `namespace::Green` and `namespace::Blue` are the structs, not the variants,
+//!   because the variants are shadowed by the local struct definitions, since
+//!   the tuple struct's constructor and the unit struct's value are placed 
+//!   in the values namespace.
 //! - `namespace_glob_conflict`, `namespace_glob_conflict::Primary`,
 //!   `namespace_glob_conflict::Secondary`, `namespace_glob_conflict::{Red, Cyan}`,
 //!   and the enum-scoped variant paths.
