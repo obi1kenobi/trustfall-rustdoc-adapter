@@ -10,7 +10,7 @@ use anyhow::Context;
 use maplit::btreemap;
 use trustfall::{FieldValue, Schema, TryIntoStruct};
 
-use crate::RustdocAdapter;
+use crate::{PackageIndex, RustdocAdapter};
 
 #[allow(dead_code)]
 mod type_level_invariants {
@@ -2301,6 +2301,804 @@ fn importable_paths() {
     similar_asserts::assert_eq!(expected_results, results);
 }
 
+#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+struct VariantImportablePath {
+    name: String,
+    path: Vec<String>,
+    doc_hidden: bool,
+    deprecated: bool,
+    public_api: bool,
+}
+
+#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+struct ImportableItemPath {
+    name: String,
+    kind: String,
+    path: Vec<String>,
+}
+
+fn collect_variant_importable_paths(data: &PackageIndex<'_>) -> Vec<VariantImportablePath> {
+    let adapter = RustdocAdapter::new(data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Variant {
+                name @output
+                importable_path {
+                    path @output
+                    doc_hidden @output
+                    deprecated @output
+                    public_api @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    results
+}
+
+fn collect_module_importable_item_paths(
+    data: &PackageIndex<'_>,
+    module_name: &str,
+) -> Vec<ImportableItemPath> {
+    let adapter = RustdocAdapter::new(data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Module {
+                name @filter(op: "=", value: ["$module"])
+                item {
+                    ... on Importable {
+                        kind: __typename @output @filter(op: "one_of", value: ["$kinds"])
+                        name @output
+                        importable_path {
+                            path @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let mut variables: BTreeMap<&str, FieldValue> = BTreeMap::default();
+    variables.insert("module", module_name.into());
+    variables.insert("kinds", vec!["Struct", "Enum"].into());
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    results
+}
+
+/// Verifies enum variant importable paths across direct, renamed, doc-hidden, deprecated,
+/// namespace, and glob shadowing cases in `enum_variant_imports`.
+#[test]
+fn enum_variant_importable_paths() {
+    get_test_data!(data, enum_variant_imports);
+    let results = collect_variant_importable_paths(&data);
+
+    let mut expected_results = vec![
+        VariantImportablePath {
+            name: "Plain".into(),
+            path: vec!["enum_variant_imports".into(), "Base".into(), "Plain".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Plain".into(),
+            path: vec!["enum_variant_imports".into(), "Plain".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Plain".into(),
+            path: vec!["enum_variant_imports".into(), "RenamedPlain".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Plain".into(),
+            path: vec!["enum_variant_imports".into(), "HiddenPlain".into()],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        VariantImportablePath {
+            name: "Plain".into(),
+            path: vec!["enum_variant_imports".into(), "DeprecatedPlain".into()],
+            doc_hidden: false,
+            deprecated: true,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Deprecated".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "Base".into(),
+                "Deprecated".into(),
+            ],
+            doc_hidden: false,
+            deprecated: true,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Deprecated".into(),
+            path: vec!["enum_variant_imports".into(), "Deprecated".into()],
+            doc_hidden: false,
+            deprecated: true,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Hidden".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "Base".into(),
+                "Hidden".into(),
+            ],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        VariantImportablePath {
+            name: "Hidden".into(),
+            path: vec!["enum_variant_imports".into(), "Hidden".into()],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        VariantImportablePath {
+            name: "DeprecatedHidden".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "Base".into(),
+                "DeprecatedHidden".into(),
+            ],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "DeprecatedHidden".into(),
+            path: vec!["enum_variant_imports".into(), "DeprecatedHidden".into()],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Red".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Colors".into(),
+                "Red".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Red".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Red".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Green".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Colors".into(),
+                "Green".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Blue".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Colors".into(),
+                "Blue".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Clash".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "value_shadow".into(),
+                "Shadowed".into(),
+                "Clash".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Red".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Primary".into(),
+                "Red".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Red".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Red".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Green".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Primary".into(),
+                "Green".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Green".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Secondary".into(),
+                "Green".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Blue".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Primary".into(),
+                "Blue".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Blue".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Secondary".into(),
+                "Blue".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Cyan".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Secondary".into(),
+                "Cyan".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Cyan".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Cyan".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Same".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "Source".into(),
+                "Same".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Same".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "Same".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "SameTuple".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "Source".into(),
+                "SameTuple".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "SameTuple".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "SameTuple".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "SameStruct".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "Source".into(),
+                "SameStruct".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "SameStruct".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "SameStruct".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Clash".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Left".into(),
+                "Clash".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Tuple".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Left".into(),
+                "Tuple".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Struct".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Left".into(),
+                "Struct".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Clash".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Right".into(),
+                "Clash".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Tuple".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Right".into(),
+                "Tuple".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Struct".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Right".into(),
+                "Struct".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "LeftOnly".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Left".into(),
+                "LeftOnly".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "LeftOnly".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "LeftOnly".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "RightOnly".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Right".into(),
+                "RightOnly".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "RightOnly".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "RightOnly".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Verifies importable paths for enum/struct items that drive variant shadowing and
+/// glob-vs-glob ambiguity. We filter to the two modules that define those items,
+/// since variant importable paths are validated separately and the full crate list
+/// would be noisy.
+#[test]
+fn enum_variant_imports_module_item_paths() {
+    get_test_data!(data, enum_variant_imports);
+
+    let mut namespace_results = collect_module_importable_item_paths(&data, "namespace");
+    let mut expected_namespace_results = vec![
+        ImportableItemPath {
+            name: "Blue".into(),
+            kind: "Struct".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Blue".into(),
+            ],
+        },
+        ImportableItemPath {
+            name: "Colors".into(),
+            kind: "Enum".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Colors".into(),
+            ],
+        },
+        ImportableItemPath {
+            name: "Green".into(),
+            kind: "Struct".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Green".into(),
+            ],
+        },
+        ImportableItemPath {
+            name: "Red".into(),
+            kind: "Struct".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Red".into(),
+            ],
+        },
+    ];
+    namespace_results.sort_unstable();
+    expected_namespace_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_namespace_results, namespace_results);
+
+    let mut conflict_results =
+        collect_module_importable_item_paths(&data, "namespace_glob_conflict");
+    let mut expected_conflict_results = vec![
+        ImportableItemPath {
+            name: "Primary".into(),
+            kind: "Enum".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Primary".into(),
+            ],
+        },
+        ImportableItemPath {
+            name: "Secondary".into(),
+            kind: "Enum".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Secondary".into(),
+            ],
+        },
+    ];
+    conflict_results.sort_unstable();
+    expected_conflict_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_conflict_results, conflict_results);
+}
+
+/// Ensures glob reexports of enum variants surface as importable paths.
+#[test]
+fn enum_variant_glob_reexport_enum_variants() {
+    get_test_data!(data, glob_reexport_enum_variants);
+    let mut results: Vec<_> = collect_variant_importable_paths(&data);
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        VariantImportablePath {
+            name: "First".into(),
+            path: vec!["glob_reexport_enum_variants".into(), "First".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Second".into(),
+            path: vec!["glob_reexport_enum_variants".into(), "Second".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Confirms glob-of-glob reexports preserve enum variant importability.
+#[test]
+fn enum_variant_glob_of_glob_reexport() {
+    get_test_data!(data, glob_of_glob_reexport);
+    let mut results: Vec<_> = collect_variant_importable_paths(&data);
+    results.sort_unstable();
+
+    let mut expected_results = vec![VariantImportablePath {
+        name: "First".into(),
+        path: vec!["glob_of_glob_reexport".into(), "Baz".into(), "First".into()],
+        doc_hidden: false,
+        deprecated: false,
+        public_api: true,
+    }];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Confirms glob-of-renamed reexports preserve enum variant importability.
+#[test]
+fn enum_variant_glob_of_renamed_reexport() {
+    get_test_data!(data, glob_of_renamed_reexport);
+    let mut results: Vec<_> = collect_variant_importable_paths(&data);
+    results.sort_unstable();
+
+    let mut expected_results = vec![VariantImportablePath {
+        name: "First".into(),
+        path: vec!["glob_of_renamed_reexport".into(), "RenamedFirst".into()],
+        doc_hidden: false,
+        deprecated: false,
+        public_api: true,
+    }];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Verifies that glob-reexporting both an enum and its variants yields both importable paths.
+#[test]
+fn enum_variant_glob_reexport_enum_and_contents() {
+    get_test_data!(data, glob_reexport);
+    let mut results: Vec<_> = collect_variant_importable_paths(&data);
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        VariantImportablePath {
+            name: "First".into(),
+            path: vec!["glob_reexport".into(), "First".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "First".into(),
+            path: vec!["glob_reexport".into(), "Baz".into(), "First".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Second".into(),
+            path: vec!["glob_reexport".into(), "Second".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Second".into(),
+            path: vec!["glob_reexport".into(), "Baz".into(), "Second".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Ensures enum variant glob reexports do not shadow same-named functions in other namespaces.
+#[test]
+fn enum_variant_glob_of_enum_does_not_shadow_local_fn() {
+    get_test_data!(data, glob_of_enum_does_not_shadow_local_fn);
+    let mut results: Vec<_> = collect_variant_importable_paths(&data);
+    results.sort_unstable();
+
+    let mut expected_results = vec![VariantImportablePath {
+        name: "First".into(),
+        path: vec![
+            "glob_of_enum_does_not_shadow_local_fn".into(),
+            "Foo".into(),
+            "First".into(),
+        ],
+        doc_hidden: false,
+        deprecated: false,
+        public_api: true,
+    }];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Verifies that a local type shadows a glob-imported variant in the value namespace,
+/// while other variants remain glob-importable. This crate only defines those variants.
+#[test]
+fn enum_variant_overlapping_glob_of_enum_with_local_item() {
+    get_test_data!(data, overlapping_glob_of_enum_with_local_item);
+    let mut results: Vec<_> = collect_variant_importable_paths(&data);
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        VariantImportablePath {
+            name: "First".into(),
+            path: vec![
+                "overlapping_glob_of_enum_with_local_item".into(),
+                "Foo".into(),
+                "First".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Second".into(),
+            path: vec![
+                "overlapping_glob_of_enum_with_local_item".into(),
+                "Foo".into(),
+                "Second".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Second".into(),
+            path: vec![
+                "overlapping_glob_of_enum_with_local_item".into(),
+                "inner".into(),
+                "Second".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
 #[test]
 fn item_own_public_api_properties() {
     get_test_data!(data, importable_paths);
@@ -2548,20 +3346,108 @@ fn importable_items_cover_more_kinds() {
                 kind: "Enum".into(),
             },
             Output {
+                name: "Zero".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "One".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Two".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Three".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Four".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Five".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
                 name: "FieldlessWithDiscrimants".into(),
                 kind: "Enum".into(),
+            },
+            Output {
+                name: "First".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Tuple".into(),
+                kind: "TupleVariant".into(),
+            },
+            Output {
+                name: "Second".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Struct".into(),
+                kind: "StructVariant".into(),
+            },
+            Output {
+                name: "Unit".into(),
+                kind: "PlainVariant".into(),
             },
             Output {
                 name: "Fieldful".into(),
                 kind: "Enum".into(),
             },
             Output {
+                name: "Unit".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Tuple".into(),
+                kind: "TupleVariant".into(),
+            },
+            Output {
+                name: "Struct".into(),
+                kind: "StructVariant".into(),
+            },
+            Output {
+                name: "Unit2".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
                 name: "FieldfulNoRepr".into(),
                 kind: "Enum".into(),
             },
             Output {
+                name: "Unit".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Tuple".into(),
+                kind: "TupleVariant".into(),
+            },
+            Output {
+                name: "Struct".into(),
+                kind: "StructVariant".into(),
+            },
+            Output {
                 name: "Pathological".into(),
                 kind: "Enum".into(),
+            },
+            Output {
+                name: "Min".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "MinPlusOne".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "MinPlusTwo".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Max".into(),
+                kind: "PlainVariant".into(),
             },
             Output {
                 name: "enum_discriminants".into(),
