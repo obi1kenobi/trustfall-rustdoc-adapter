@@ -496,7 +496,7 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.Variant.html
 """
-interface Variant implements Item {
+interface Variant implements Item & Importable {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -545,6 +545,10 @@ interface Variant implements Item {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  # edges from Importable
+  importable_path: [ImportablePath!]
+  canonical_path: Path
 
   # own edges
   field: [StructField!]
@@ -586,7 +590,7 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.Variant.html
 """
-type PlainVariant implements Item & Variant {
+type PlainVariant implements Item & Importable & Variant {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -635,6 +639,10 @@ type PlainVariant implements Item & Variant {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  # edges from Importable
+  importable_path: [ImportablePath!]
+  canonical_path: Path
 
   # edges from Variant
   field: [StructField!]
@@ -665,7 +673,7 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.Variant.html
 """
-type TupleVariant implements Item & Variant {
+type TupleVariant implements Item & Importable & Variant {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -714,6 +722,10 @@ type TupleVariant implements Item & Variant {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  # edges from Importable
+  importable_path: [ImportablePath!]
+  canonical_path: Path
 
   # edges from Variant
   field: [StructField!]
@@ -744,7 +756,7 @@ https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.ItemEnum.html
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/enum.Variant.html
 """
-type StructVariant implements Item & Variant {
+type StructVariant implements Item & Importable & Variant {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -793,6 +805,10 @@ type StructVariant implements Item & Variant {
   # edges from Item
   span: Span
   attribute: [Attribute!]
+
+  # edges from Importable
+  importable_path: [ImportablePath!]
+  canonical_path: Path
 
   # edges from Variant
   field: [StructField!]
