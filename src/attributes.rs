@@ -406,13 +406,22 @@ impl<'a> ParsedAttribute<'a> {
 
     pub fn new(raw: &'a str) -> Self {
         let raw_trimmed = raw.trim();
-        let raw_without_closing = raw_trimmed.strip_suffix(']').unwrap_or_else(|| {
-            panic!(
-                "\
-String `{raw_trimmed}` cannot be parsed as an attribute \
-because it is not closed with a square bracket."
-            )
-        });
+
+        // Temporarily accept attrs without a closing `]` due to a bug in Rust 1.94:
+        // https://github.com/rust-lang/rust/pull/153465
+        //
+        // TODO: Restore the version below that requires a closing `]`
+        // once rustdoc stops emitting malformed attrs
+        // like `#[doc(test(attr(deny(rust_2018_idioms))))`.
+        let raw_without_closing = raw_trimmed.strip_suffix(']').unwrap_or(raw_trimmed);
+
+        // let raw_without_closing = raw_trimmed.strip_suffix(']').unwrap_or_else(|| {
+        //     panic!(
+        //         "\
+        // String `{raw_trimmed}` cannot be parsed as an attribute \
+        // because it is not closed with a square bracket."
+        //     )
+        // });
 
         if let Some(raw_content) = raw_without_closing.strip_prefix("#[") {
             ParsedAttribute {
@@ -814,6 +823,17 @@ mod tests {
                 })
             }
         )
+    }
+
+    #[test]
+    fn attribute_missing_final_square_bracket_is_tolerated() {
+        let malformed = "#[doc(test(attr(deny(rust_2018_idioms))))";
+        let repaired = "#[doc(test(attr(deny(rust_2018_idioms))))]";
+
+        let attribute = ParsedAttribute::new(malformed);
+
+        assert_eq!(attribute, ParsedAttribute::new(repaired));
+        assert_eq!(attribute.raw_attribute(), repaired);
     }
 
     #[test]
