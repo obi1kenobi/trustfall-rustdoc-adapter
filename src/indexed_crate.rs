@@ -293,11 +293,11 @@ impl<'a> PubItemKindIndex<'a> {
                     rustdoc_types::ItemEnum::Enum { .. } => {
                         acc.enums.insert(item.id, item);
                     }
-                    rustdoc_types::ItemEnum::Function { .. } => {
-                        if !fn_owner_index.contains_key(&item.id) {
-                            // This is a free function.
-                            acc.free_functions.insert(item.id, item);
-                        }
+                    rustdoc_types::ItemEnum::Function { .. }
+                        if !fn_owner_index.contains_key(&item.id) =>
+                    {
+                        // This is a free function.
+                        acc.free_functions.insert(item.id, item);
                     }
                     rustdoc_types::ItemEnum::Trait { .. } => {
                         acc.traits.insert(item.id, item);
