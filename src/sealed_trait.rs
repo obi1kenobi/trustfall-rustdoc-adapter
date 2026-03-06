@@ -475,18 +475,18 @@ fn is_method_or_item_sealed(
                     };
                 }
             }
-            rustdoc_types::ItemEnum::AssocType { type_, .. } if type_.is_none() => {
+            rustdoc_types::ItemEnum::AssocType { type_, .. }
+                if type_.is_none()
                 // Associated types without a default can cause a trait to be public-API-sealed.
 
-                if !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_non_pub_api_reachable()
-                {
-                    // This associated item is `doc(hidden)` and required to implement the trait.
-                    // That makes the trait public-API-sealed.
-                    flags
-                        .get_mut(trait_id)
-                        .expect("no flags entry for trait item ID")
-                        .set_pub_api_sealed();
-                }
+                && !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_non_pub_api_reachable() =>
+            {
+                // This associated item is `doc(hidden)` and required to implement the trait.
+                // That makes the trait public-API-sealed.
+                flags
+                    .get_mut(trait_id)
+                    .expect("no flags entry for trait item ID")
+                    .set_pub_api_sealed();
             }
             rustdoc_types::ItemEnum::AssocConst { type_, value } if value.is_none() => {
                 // Associated constants without a default can cause a trait to be sealed,
