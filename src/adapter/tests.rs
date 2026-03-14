@@ -8176,6 +8176,22 @@ fn method_self_receiver() {
             by_mut_reference: false,
             kind: "Pin<&Arc<Self>>".into(),
         },
+        Output {
+            struct_name: "GenericExample".into(),
+            method_name: "by_generic_ref".into(),
+            by_value: false,
+            by_reference: true,
+            by_mut_reference: false,
+            kind: "GenericExample<'a, T>".into(),
+        },
+        Output {
+            struct_name: "GenericExample".into(),
+            method_name: "by_generic_value".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "GenericExample<'a, T>".into(),
+        },
     ];
     expected_results.sort_unstable();
     similar_asserts::assert_eq!(expected_results, results);
