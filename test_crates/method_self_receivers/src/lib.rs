@@ -4,6 +4,8 @@ pub struct Example(i64);
 
 pub struct CustomReceiver<T>(T);
 
+pub struct GenericExample<'a, T: ?Sized + 'a>(&'a T);
+
 /// Per the docs: <https://doc.rust-lang.org/std/ops/trait.Receiver.html>
 ///
 /// N.B.: `Pin` currently doesn't appear to be able to be combined with custom receivers.
@@ -78,4 +80,14 @@ impl Example {
     pub fn by_pinned_ref_arc(self: std::pin::Pin<&std::sync::Arc<Self>>) {}
 
     pub fn wrong_self(selfless: ()) {}
+}
+
+impl<'a, T: ?Sized + 'a> GenericExample<'a, T> {
+    pub fn by_generic_value(self: GenericExample<'a, T>) -> &'a T {
+        self.0
+    }
+
+    pub fn by_generic_ref(self: &GenericExample<'a, T>) -> &&'a T {
+        &self.0
+    }
 }

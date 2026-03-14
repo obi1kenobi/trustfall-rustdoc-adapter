@@ -48,8 +48,8 @@ fn extract_kind_string(ty: &Type) -> Cow<'_, str> {
         // For &self and &mut self, we need to extract the inner type
         Type::BorrowedRef { type_, .. } => extract_kind_string(type_),
 
-        // Self is the simplest case - this handles both 'self' and 'mut self'
-        Type::Generic(name) if name == "Self" => Cow::Borrowed("Self"),
+        // Generic receiver components can be `Self` or any named type parameter.
+        Type::Generic(name) => Cow::Borrowed(name.as_str()),
 
         // Handle ResolvedPath types like Box<Self>, Pin<&mut Self>, etc.
         Type::ResolvedPath(path) => {
