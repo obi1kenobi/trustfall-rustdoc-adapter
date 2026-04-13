@@ -18,6 +18,7 @@ use self::{
 
 mod edges;
 mod enum_variant;
+mod normalized_signature;
 mod optimizations;
 mod origin;
 mod properties;
@@ -159,6 +160,11 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                     properties::resolve_item_property(contexts, property_name)
                 }
                 "Module" => properties::resolve_module_property(contexts, property_name),
+                "ImplOwner" | "Struct" | "Enum" | "Union"
+                    if matches!(property_name.as_ref(), "normalized_generic_signature") =>
+                {
+                    properties::resolve_impl_owner_property(contexts, property_name, self)
+                }
                 "Struct" => properties::resolve_struct_property(contexts, property_name),
                 "StructField" => properties::resolve_struct_field_property(contexts, property_name),
                 "Enum" => properties::resolve_enum_property(contexts, property_name),

@@ -9,7 +9,7 @@ use trustfall::{
 
 use crate::attributes::{Attribute, structured_attr_to_arc_str};
 
-use super::{RustdocAdapter, rust_type_name, vertex::Vertex};
+use super::{RustdocAdapter, normalized_signature, rust_type_name, vertex::Vertex};
 
 pub(super) fn resolve_crate_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
@@ -129,6 +129,21 @@ pub(super) fn resolve_struct_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             }
         }),
         _ => unreachable!("Struct property {property_name}"),
+    }
+}
+
+pub(super) fn resolve_impl_owner_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    property_name: &str,
+    adapter: &'a RustdocAdapter<'a>,
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    match property_name {
+        "normalized_generic_signature" => resolve_property_with(contexts, move |vertex| {
+            let item = vertex.as_item().expect("ImplOwner was not an Item");
+            let crate_ = adapter.crate_at_origin(vertex.origin);
+            normalized_signature::impl_owner_normalized_generic_signature(crate_, item).into()
+        }),
+        _ => unreachable!("ImplOwner property {property_name}"),
     }
 }
 

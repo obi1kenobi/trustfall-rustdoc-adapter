@@ -295,6 +295,30 @@ type Struct implements Item & Importable & ImplOwner & GenericItem {
 
   visibility_limit: String!
 
+  # properties from ImplOwner
+  """
+  The normalized "generics and bounds" signature of this item, excluding the item's own name.
+
+  The signature includes generic parameters with normalized names:
+  lifetimes as `'a`, `'b`, etc.; type parameters as `T1`, `T2`, etc.;
+  and const parameters as `C1`, `C2`, etc. Bounds are emitted only in
+  `where` position. Paths appearing in the signature are rendered as absolute
+  paths: public local items use one public importable path, private local items
+  use rustdoc's recorded path, and foreign items use the path rustdoc provides.
+
+  This field is intended to provide a quick name-agnostic way to check whether
+  the generics and bounds of this type have changed between different versions of
+  the type's defining crate, just by comparing two strings. It's designed to
+  be conservative: if the signature strings match then the generics and bounds
+  should be identical (with minor caveats), but spurious mismatches are possible
+  though rare.
+
+  Const generic values and expressions are a caveat: they are limited to the
+  representation rustdoc provides, which may sometimes contain `_` placeholders
+  instead of the full value or expression.
+  """
+  normalized_generic_signature: String!
+
   # own properties
   struct_type: String!
   fields_stripped: Boolean!
@@ -445,6 +469,30 @@ type Enum implements Item & Importable & ImplOwner & GenericItem {
   public_api_eligible: Boolean!
 
   visibility_limit: String!
+
+  # properties from ImplOwner
+  """
+  The normalized "generics and bounds" signature of this item, excluding the item's own name.
+
+  The signature includes generic parameters with normalized names:
+  lifetimes as `'a`, `'b`, etc.; type parameters as `T1`, `T2`, etc.;
+  and const parameters as `C1`, `C2`, etc. Bounds are emitted only in
+  `where` position. Paths appearing in the signature are rendered as absolute
+  paths: public local items use one public importable path, private local items
+  use rustdoc's recorded path, and foreign items use the path rustdoc provides.
+
+  This field is intended to provide a quick name-agnostic way to check whether
+  the generics and bounds of this type have changed between different versions of
+  the type's defining crate, just by comparing two strings. It's designed to
+  be conservative: if the signature strings match then the generics and bounds
+  should be identical (with minor caveats), but spurious mismatches are possible
+  though rare.
+
+  Const generic values and expressions are a caveat: they are limited to the
+  representation rustdoc provides, which may sometimes contain `_` placeholders
+  instead of the full value or expression.
+  """
+  normalized_generic_signature: String!
 
   # own properties
   variants_stripped: Boolean!
@@ -880,6 +928,30 @@ type Union implements Item & Importable & ImplOwner & GenericItem {
 
   visibility_limit: String!
 
+  # properties from ImplOwner
+  """
+  The normalized "generics and bounds" signature of this item, excluding the item's own name.
+
+  The signature includes generic parameters with normalized names:
+  lifetimes as `'a`, `'b`, etc.; type parameters as `T1`, `T2`, etc.;
+  and const parameters as `C1`, `C2`, etc. Bounds are emitted only in
+  `where` position. Paths appearing in the signature are rendered as absolute
+  paths: public local items use one public importable path, private local items
+  use rustdoc's recorded path, and foreign items use the path rustdoc provides.
+
+  This field is intended to provide a quick name-agnostic way to check whether
+  the generics and bounds of this type have changed between different versions of
+  the type's defining crate, just by comparing two strings. It's designed to
+  be conservative: if the signature strings match then the generics and bounds
+  should be identical (with minor caveats), but spurious mismatches are possible
+  though rare.
+
+  Const generic values and expressions are a caveat: they are limited to the
+  representation rustdoc provides, which may sometimes contain `_` placeholders
+  instead of the full value or expression.
+  """
+  normalized_generic_signature: String!
+
   # own properties
   fields_stripped: Boolean!
 
@@ -1032,6 +1104,30 @@ interface ImplOwner implements Item & Importable & GenericItem {
   public_api_eligible: Boolean!
 
   visibility_limit: String!
+
+  # own properties
+  """
+  The normalized "generics and bounds" signature of this item, excluding the item's own name.
+
+  The signature includes generic parameters with normalized names:
+  lifetimes as `'a`, `'b`, etc.; type parameters as `T1`, `T2`, etc.;
+  and const parameters as `C1`, `C2`, etc. Bounds are emitted only in
+  `where` position. Paths appearing in the signature are rendered as absolute
+  paths: public local items use one public importable path, private local items
+  use rustdoc's recorded path, and foreign items use the path rustdoc provides.
+
+  This field is intended to provide a quick name-agnostic way to check whether
+  the generics and bounds of this type have changed between different versions of
+  the type's defining crate, just by comparing two strings. It's designed to
+  be conservative: if the signature strings match then the generics and bounds
+  should be identical (with minor caveats), but spurious mismatches are possible
+  though rare.
+
+  Const generic values and expressions are a caveat: they are limited to the
+  representation rustdoc provides, which may sometimes contain `_` placeholders
+  instead of the full value or expression.
+  """
+  normalized_generic_signature: String!
 
   # edges from Item
   span: Span
