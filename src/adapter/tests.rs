@@ -6103,6 +6103,455 @@ fn type_generic_bounds() {
 }
 
 #[test]
+fn impl_owner_normalized_generic_signatures() {
+    get_test_data!(data, type_normalized_signature);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                kind: __typename @output
+                name @filter(op: "not_one_of", value: ["$excluded_names"]) @output
+                normalized_generic_signature @output
+            }
+        }
+    }
+}
+"#;
+
+    let mut variables: BTreeMap<&str, FieldValue> = BTreeMap::default();
+    variables.insert(
+        "excluded_names",
+        vec![
+            // Helper structs used only as bound targets.
+            "PrivateType",
+            "PublicType",
+        ]
+        .into(),
+    );
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        kind: String,
+        name: String,
+        normalized_generic_signature: String,
+    }
+
+    fn output(kind: &str, name: &str, normalized_generic_signature: &str) -> Output {
+        Output {
+            kind: kind.into(),
+            name: name.into(),
+            normalized_generic_signature: normalized_generic_signature.into(),
+        }
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let associated_constraint_forms_signature = concat!(
+        "<T1> where T1: ::core::iter::traits::collect::IntoIterator<",
+        "Item = ::type_normalized_signature::visible::PublicType>, ",
+        "<T1 as ::core::iter::traits::collect::IntoIterator>::IntoIter: ",
+        "::core::iter::traits::double_ended::DoubleEndedIterator + ",
+        "::core::iter::traits::exact_size::ExactSizeIterator, ",
+        "<T1 as ::core::iter::traits::collect::IntoIterator>::Item: ",
+        "::type_normalized_signature::PublicTrait<Assoc = ",
+        "::type_normalized_signature::private::PrivateType>",
+    );
+    let multiply_nested_associated_bounds_signature = concat!(
+        "<T1> where T1: ::type_normalized_signature::PublicTrait, ",
+        "<T1 as ::type_normalized_signature::PublicTrait>::Assoc: ",
+        "::type_normalized_signature::PublicTrait, ",
+        "<<T1 as ::type_normalized_signature::PublicTrait>::Assoc as ",
+        "::type_normalized_signature::PublicTrait>::Assoc: ::core::clone::Clone",
+    );
+    let higher_ranked_nested_associated_bounds_signature = concat!(
+        "<T1> where T1: for<'a> ",
+        "::type_normalized_signature::PublicLendingTrait<'a>, ",
+        "for<'a> <T1 as ::type_normalized_signature::PublicLendingTrait<'a>>",
+        "::Item: ::type_normalized_signature::PublicTrait, ",
+        "for<'a> <<T1 as ::type_normalized_signature::PublicLendingTrait<'a>>",
+        "::Item as ::type_normalized_signature::PublicTrait>::Assoc: ",
+        "::core::convert::AsRef<&'a ",
+        "::type_normalized_signature::visible::PublicType>",
+    );
+    let higher_ranked_where_predicate_associated_bounds_signature = concat!(
+        "<T1> where for<'a> T1: ",
+        "::type_normalized_signature::PublicLendingTrait<'a>, ",
+        "for<'a> <T1 as ::type_normalized_signature::PublicLendingTrait<'a>>",
+        "::Item: ::type_normalized_signature::PublicTrait, ",
+        "for<'a> <<T1 as ::type_normalized_signature::PublicLendingTrait<'a>>",
+        "::Item as ::type_normalized_signature::PublicTrait>::Assoc: ",
+        "::core::convert::AsRef<&'a ",
+        "::type_normalized_signature::visible::PublicType>",
+    );
+    let higher_ranked_where_predicate_nested_associated_bounds_signature = concat!(
+        "<T1> where for<'a> T1: ",
+        "::type_normalized_signature::PublicLendingTrait<'a>, ",
+        "for<'a> <T1 as ::type_normalized_signature::PublicLendingTrait<'a>>",
+        "::Item: for<'b> ::type_normalized_signature::PublicLendingTrait<'b>, ",
+        "for<'a, 'b> <<T1 as ::type_normalized_signature::PublicLendingTrait<'a>>",
+        "::Item as ::type_normalized_signature::PublicLendingTrait<'b>>::Item: ",
+        "::core::convert::AsRef<(&'a ",
+        "::type_normalized_signature::visible::PublicType, &'b ",
+        "::type_normalized_signature::visible::PublicType)>",
+    );
+    let function_pointer_qualifier_bounds_signature = concat!(
+        "<T1> where T1: ::core::convert::AsRef<unsafe extern \"C\" ",
+        "fn(T1) -> T1>, ",
+        "extern \"C\" fn(T1) -> T1: ::core::clone::Clone, ",
+        "extern \"C-unwind\" fn(T1) -> T1: ::core::clone::Clone, ",
+        "extern \"system\" fn(T1) -> T1: ::core::clone::Clone, ",
+        "extern \"sysv64\" fn(T1) -> T1: ::core::clone::Clone, ",
+        "unsafe extern \"C\" fn(T1) -> T1: ::core::clone::Clone, ",
+        "unsafe fn(T1) -> T1: ::core::clone::Clone",
+    );
+    let parallel_projection_subject_signature = concat!(
+        "<T1> where T1: ::type_normalized_signature::GenericPublicTrait<",
+        "<T1 as ::type_normalized_signature::PublicTrait>::Assoc> + ",
+        "::type_normalized_signature::PublicTrait, ",
+        "<T1 as ::type_normalized_signature::GenericPublicTrait<",
+        "<T1 as ::type_normalized_signature::PublicTrait>::Assoc>>::Assoc: ",
+        "::core::clone::Clone, ",
+        "<T1 as ::type_normalized_signature::PublicTrait>::Assoc: ",
+        "::type_normalized_signature::PublicTrait, ",
+        "<<T1 as ::type_normalized_signature::PublicTrait>::Assoc as ",
+        "::type_normalized_signature::PublicTrait>::Assoc: ::core::default::Default",
+    );
+
+    let mut expected_results = vec![
+        output(
+            "Enum",
+            "DefinitionOrder",
+            concat!(
+                "<'a, 'b, T1, const C1: usize, T2, const C2: usize = 7> ",
+                "where T1: ::type_normalized_signature::PublicTrait<Assoc = T2>, ",
+                "T2: ::core::default::Default, 'b: 'a",
+            ),
+        ),
+        output(
+            "Enum",
+            "EnumOwner",
+            concat!(
+                "<'a, T1, const C1: usize> ",
+                "where T1: ::type_normalized_signature::PublicTrait + 'a, ",
+                "[(); C1]: ::core::marker::Sized",
+            ),
+        ),
+        output(
+            "Struct",
+            "AnonymousLifetimeInFnBound",
+            concat!(
+                "<T1> where T1: ::core::ops::function::Fn(",
+                "&::type_normalized_signature::visible::PublicType",
+                ") -> &::type_normalized_signature::private::PrivateType",
+            ),
+        ),
+        output(
+            "Struct",
+            "AssociatedConstraintFormsA",
+            associated_constraint_forms_signature,
+        ),
+        output(
+            "Struct",
+            "AssociatedConstraintFormsB",
+            associated_constraint_forms_signature,
+        ),
+        output(
+            "Struct",
+            "AssociatedConstraintFormsC",
+            associated_constraint_forms_signature,
+        ),
+        output(
+            "Struct",
+            "BoundComponentOrderA",
+            concat!(
+                "<'a, T1> where T1: ::core::clone::Clone + ",
+                "::core::fmt::Debug + 'a",
+            ),
+        ),
+        output(
+            "Struct",
+            "BoundComponentOrderB",
+            concat!(
+                "<'a, T1> where T1: ::core::clone::Clone + ",
+                "::core::fmt::Debug + 'a",
+            ),
+        ),
+        output(
+            "Struct",
+            "BoundSubjectOrdering",
+            concat!(
+                "<'a, 'b, T1, T2> where ",
+                "T1: ::core::clone::Clone + ::core::fmt::Debug, ",
+                "T2: ::core::default::Default + ",
+                "::type_normalized_signature::PublicTrait, ",
+                "<T2 as ::type_normalized_signature::PublicTrait>::Assoc: ",
+                "::core::default::Default, ",
+                "(T1, T2): ::core::clone::Clone, ",
+                "'a: 'b, ",
+                "&'static str: ::core::convert::AsRef<str>, ",
+                "::alloc::string::String: ::core::clone::Clone",
+            ),
+        ),
+        output(
+            "Struct",
+            "ConstBounds",
+            concat!(
+                "<T1, const C1: usize, const C2: usize = 4>",
+                " where T1: ::core::convert::AsRef<[u8; C1]>, ",
+                "[u8; C1]: ::core::default::Default",
+            ),
+        ),
+        output(
+            "Struct",
+            "CompositeSubjectOrdering",
+            concat!(
+                "<T1, T2, const C1: usize, const C2: usize>",
+                " where (T1, T2): ::core::default::Default, ",
+                "[T1; C1]: ::core::clone::Clone, ",
+                "[T2; C2]: ::core::marker::Copy",
+            ),
+        ),
+        output(
+            "Struct",
+            "ConcreteConstExpr",
+            concat!(
+                "<const C1: usize = { 1 + 2 }> where ",
+                "::type_normalized_signature::ConstArgTarget<{ _ }>: ",
+                "::core::marker::Sized, [u8; 3]: ::core::default::Default",
+            ),
+        ),
+        output("Struct", "ConstArgTarget", "<const C1: usize>"),
+        output(
+            "Struct",
+            "DefaultType",
+            "<T1 = ::type_normalized_signature::visible::PublicType>",
+        ),
+        output(
+            "Struct",
+            "DirectBounds",
+            concat!(
+                "<'a, T1, const C1: usize = 0>",
+                " where T1: ::core::clone::Clone + 'a",
+            ),
+        ),
+        output(
+            "Struct",
+            "DynTraitWhere",
+            concat!(
+                "<'a, T1> where T1: ::core::convert::AsRef<dyn ",
+                "::core::marker::Send + ::type_normalized_signature::PublicTrait<",
+                "Assoc = ::type_normalized_signature::visible::PublicType> + ",
+                "'a>",
+            ),
+        ),
+        output(
+            "Struct",
+            "FunctionPointerBounds",
+            concat!(
+                "<T1> where T1: ::core::convert::AsRef<fn(T1) -> T1>, ",
+                "fn(T1) -> T1: ::core::clone::Clone",
+            ),
+        ),
+        output(
+            "Struct",
+            "FunctionPointerQualifierBounds",
+            function_pointer_qualifier_bounds_signature,
+        ),
+        output(
+            "Struct",
+            "GenericArgumentFlavors",
+            concat!(
+                "<'a, T1, const C1: usize> where ",
+                "T1: ::core::convert::AsRef<",
+                "::alloc::borrow::Cow<'a, [u8; C1]>> + ",
+                "::core::convert::AsRef<",
+                "::type_normalized_signature::ConstArgTarget<C1>>",
+            ),
+        ),
+        output(
+            "Struct",
+            "HigherRanked",
+            concat!(
+                "<T1> where T1: for<'a> ::core::ops::function::Fn(",
+                "&'a ::type_normalized_signature::visible::PublicType",
+                ") -> &'a ::type_normalized_signature::private::PrivateType",
+            ),
+        ),
+        output(
+            "Struct",
+            "HigherRankedWithOuterLifetime",
+            concat!(
+                "<'a, T1> where T1: for<'b> ::core::ops::function::Fn(",
+                "&'b ::type_normalized_signature::visible::PublicType, ",
+                "&'a ::type_normalized_signature::visible::PublicType",
+                ")",
+            ),
+        ),
+        output(
+            "Struct",
+            "NestedHigherRankedFreshNames",
+            concat!(
+                "<T1> where T1: for<'a, 'b> ::core::ops::function::Fn(",
+                "for<'c> fn(&'c ()), &'a (), &'b ()",
+                ")",
+            ),
+        ),
+        output(
+            "Struct",
+            "HigherRankedNestedAssociatedBounds",
+            higher_ranked_nested_associated_bounds_signature,
+        ),
+        output(
+            "Struct",
+            "HigherRankedWherePredicateAssociatedBounds",
+            higher_ranked_where_predicate_associated_bounds_signature,
+        ),
+        output(
+            "Struct",
+            "HigherRankedWherePredicateNestedAssociatedBounds",
+            higher_ranked_where_predicate_nested_associated_bounds_signature,
+        ),
+        output(
+            "Struct",
+            "InterleavedTypeConstParams",
+            concat!(
+                "<T1, const C1: usize, T2, const C2: usize>",
+                " where T1: ::core::convert::AsRef<[T2; C1]>, ",
+                "[T2; C2]: ::core::clone::Clone",
+            ),
+        ),
+        output("Struct", "LifetimeParamBounds", "<'a, 'b> where 'b: 'a"),
+        output(
+            "Struct",
+            "LifetimeSubjectOrdering",
+            "<'a, 'b, 'c> where 'a: 'c, 'c: 'b",
+        ),
+        output(
+            "Struct",
+            "LifetimePredicateMergeCombined",
+            "<'a, 'b, 'c> where 'c: 'a + 'b",
+        ),
+        output(
+            "Struct",
+            "LifetimePredicateMergeSplit",
+            "<'a, 'b, 'c> where 'c: 'a + 'b",
+        ),
+        output(
+            "Struct",
+            "LocalAndForeignBounds",
+            concat!(
+                "<T1> where T1: ::core::fmt::Debug + ::core::hash::Hash + ",
+                "::equivalent::Equivalent<str> + ",
+                "::type_normalized_signature::PublicTrait + ",
+                "::type_normalized_signature::private::PrivateTrait + ",
+                "::type_normalized_signature::visible::ModuleTrait",
+            ),
+        ),
+        output(
+            "Struct",
+            "MultiplyNestedAssociatedBounds",
+            multiply_nested_associated_bounds_signature,
+        ),
+        output(
+            "Struct",
+            "ParallelProjectionSubject",
+            parallel_projection_subject_signature,
+        ),
+        output("Struct", "NoGenerics", "<>"),
+        output(
+            "Struct",
+            "NonGenericConcreteBounds",
+            concat!(
+                "<> where &'static str: ::core::convert::AsRef<str>, ",
+                "::alloc::vec::Vec<u8>: ::core::default::Default",
+            ),
+        ),
+        output(
+            "Struct",
+            "NonGenericTrivialBounds",
+            "<> where ::alloc::string::String: ::core::clone::Clone",
+        ),
+        output(
+            "Struct",
+            "OneElementTupleBounds",
+            concat!(
+                "<T1, T2> where T2: ::core::convert::AsRef<(T1,)>, ",
+                "(T1,): ::core::clone::Clone",
+            ),
+        ),
+        output(
+            "Struct",
+            "NonGenericWhereTypes",
+            "<T1> where (T1, *const T1): ::core::clone::Clone",
+        ),
+        output(
+            "Struct",
+            "OriginalName",
+            "<T1> where T1: ::type_normalized_signature::PublicTrait",
+        ),
+        output(
+            "Struct",
+            "QualifiedPathBounds",
+            concat!(
+                "<T1, T2> where T1: ",
+                "::type_normalized_signature::PublicTrait<Assoc = T2>, ",
+                "<T1 as ::type_normalized_signature::PublicTrait>::Assoc: ",
+                "::equivalent::Equivalent<",
+                "::type_normalized_signature::visible::PublicType>",
+            ),
+        ),
+        output(
+            "Struct",
+            "SimpleGenerics",
+            concat!(
+                "<'a, T1, const C1: usize = 3>",
+                " where T1: ?::core::marker::Sized",
+            ),
+        ),
+        output(
+            "Struct",
+            "SplitSubjectBounds",
+            concat!(
+                "<T1> where T1: ::core::clone::Clone + ",
+                "::core::default::Default + ::core::fmt::Debug",
+            ),
+        ),
+        output(
+            "Struct",
+            "WhereBounds",
+            concat!(
+                "<'a, T1, const C1: usize = 0>",
+                " where T1: ::core::clone::Clone + 'a",
+            ),
+        ),
+        output(
+            "Union",
+            "UnionOwner",
+            concat!(
+                "<T1, const C1: usize>",
+                " where T1: ::type_normalized_signature::private::PrivateTrait, ",
+                "[u8; C1]: ::core::marker::Copy",
+            ),
+        ),
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
 fn function_signatures() {
     get_test_data!(data, raw_type_json);
     let adapter = RustdocAdapter::new(&data, None);
