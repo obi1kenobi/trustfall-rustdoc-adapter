@@ -81,7 +81,7 @@ impl Debug for ExpHistogram {
         write!(
             f,
             "ExpHistogram {{ buckets: {:?}, count: {:?} }}",
-            &self.buckets,
+            self.buckets,
             self.count()
         )
     }
