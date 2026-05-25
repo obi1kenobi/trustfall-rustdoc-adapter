@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, num::NonZeroUsize};
 
 use rustdoc_types::{
-    GenericBound::TraitBound, GenericParamDefKind, Id, ItemEnum, VariantKind, WherePredicate,
+    GenericBound::TraitBound, GenericParamDefKind, Id, ItemEnum, Type, VariantKind, WherePredicate,
 };
 use trustfall::provider::{
     AsVertex, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo, VertexIterator,
@@ -580,35 +580,48 @@ pub(super) fn resolve_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
             let trait_vertex = vertex.as_trait().expect("not a Trait vertex");
-            Box::new(trait_vertex.bounds.iter().filter_map(move |bound| {
-                if let TraitBound { trait_, .. } = &bound {
-                    // When the implemented trait is from the same crate
-                    // as its definition, the trait is expected to be present
-                    // in `item_index`. Otherwise, the
-                    // `rustdoc_types::Trait` is not in this rustdoc,
-                    // even if the trait is part of Rust `core` or `std`.
-                    // As a temporary workaround, some common
-                    // Rust built-in traits are manually "inlined"
-                    // with items stored in `manually_inlined_builtin_traits`.
-                    let found_item = item_index.get(&trait_.id).or_else(|| {
-                        adapter
-                            .crate_at_origin(origin)
-                            .own_crate
-                            .manually_inlined_builtin_traits
-                            .get(&trait_.id)
-                    });
+            let colon_supertraits = trait_vertex.bounds.iter();
+            let where_self_supertraits = trait_vertex
+                .generics
+                .where_predicates
+                .iter()
+                .filter_map(|predicate| match predicate {
+                    WherePredicate::BoundPredicate {
+                        type_: Type::Generic(name),
+                        bounds,
+                        ..
+                    } if name == "Self" => Some(bounds.as_slice()),
+                    _ => None,
+                })
+                .flatten();
 
-                    // TODO: Remove this once rust-analyzer stops falsely inferring the type of
-                    //       `bound` as `GenericBound` when in fact it's `&GenericBound`.
-                    //       It shows a phantom compile error unless we add `&` before `bound`.
-                    #[allow(clippy::needless_borrow)]
-                    let trait_bound: Option<&rustdoc_types::GenericBound> = Some(&bound);
+            Box::new(
+                colon_supertraits
+                    .chain(where_self_supertraits)
+                    .filter_map(move |bound| {
+                        let TraitBound { trait_, .. } = bound else {
+                            return None;
+                        };
 
-                    Some(origin.make_implemented_trait_vertex(trait_, trait_bound, found_item))
-                } else {
-                    None
-                }
-            }))
+                        // When the implemented trait is from the same crate
+                        // as its definition, the trait is expected to be present
+                        // in `item_index`. Otherwise, the
+                        // `rustdoc_types::Trait` is not in this rustdoc,
+                        // even if the trait is part of Rust `core` or `std`.
+                        // As a temporary workaround, some common
+                        // Rust built-in traits are manually "inlined"
+                        // with items stored in `manually_inlined_builtin_traits`.
+                        let found_item = item_index.get(&trait_.id).or_else(|| {
+                            adapter
+                                .crate_at_origin(origin)
+                                .own_crate
+                                .manually_inlined_builtin_traits
+                                .get(&trait_.id)
+                        });
+
+                        Some(origin.make_implemented_trait_vertex(trait_, Some(bound), found_item))
+                    }),
+            )
         }),
         "method" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
