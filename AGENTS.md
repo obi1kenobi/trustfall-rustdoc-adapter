@@ -16,7 +16,8 @@ querying the test crate and assert that the returned results are correct.
 
 ## Basics
 
-Always begin by reading the `CONTRIBUTING.md` file, and all `README.md` files in all directories.
+Start sessions by reading the `CONTRIBUTING.md` file. The first time you read, write,
+or edit a file in a directory, read the `README.md` file in that directory first, if one exists.
 
 Never under any circumstances propose or apply any change to the `package.version` field
 of the top-level `Cargo.toml` file. Never under any cicrcumstances change anything inside
@@ -53,6 +54,10 @@ whenever possible.
 
 Always prefer `.expect()` and similar methods over `.unwrap()`, making sure to add a descriptive
 but concise message that describes the problem.
+
+When writing comments, use backticks for concrete code items or syntax such as `where`, `?Sized`,
+`fn`, or a type name. Do not use backticks for ordinary prose categories like type, const, or trait
+unless the comment is specifically referring to the Rust keyword or syntax itself.
 
 ## Testing and linting proposed changes
 
