@@ -728,7 +728,7 @@ dependencies = [
 
 [[package]]
 name = "trustfall-rustdoc-adapter"
-version = "57.0.6"
+version = "57.0.7"
 dependencies = [
  "anyhow",
  "cargo_metadata",
