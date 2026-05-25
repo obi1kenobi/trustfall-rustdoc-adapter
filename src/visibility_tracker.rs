@@ -18,6 +18,24 @@ pub(crate) struct VisibilityTracker<'a> {
     visible_parent_ids: HashMap<u32, Vec<u32>>,
 }
 
+/// Mutable state for one publicly-importable-name traversal.
+///
+/// The optional limit is checked inside the recursive helpers, so limited
+/// lookups preserve the same traversal order as exhaustive lookups while
+/// stopping as soon as enough names have been found.
+struct ImportableNameSearch<'a> {
+    already_visited_ids: HashSet<u32>,
+    stack: Vec<&'a str>,
+    limit: Option<usize>,
+    output: Vec<ImportablePath<'a>>,
+}
+
+impl ImportableNameSearch<'_> {
+    fn reached_limit(&self) -> bool {
+        self.limit.is_some_and(|limit| self.output.len() >= limit)
+    }
+}
+
 impl<'a> VisibilityTracker<'a> {
     pub(crate) fn from_crate(crate_: &'a Crate) -> Self {
         let mut visible_parent_ids = compute_parent_ids_for_public_items(crate_);
@@ -41,38 +59,61 @@ impl<'a> VisibilityTracker<'a> {
     }
 
     pub(crate) fn collect_publicly_importable_names(&self, id: u32) -> Vec<ImportablePath<'a>> {
-        let mut already_visited_ids = Default::default();
-        let mut result = Default::default();
-
-        self.collect_publicly_importable_names_inner(
-            id,
-            &mut already_visited_ids,
-            &mut vec![],
-            false,
-            false,
-            &mut result,
-        );
-
-        result
+        self.collect_publicly_importable_names_with_optional_limit(id, None)
     }
 
-    pub(crate) fn collect_publicly_importable_names_inner(
+    /// Return up to `limit` publicly importable names in exhaustive traversal order.
+    ///
+    /// A zero limit returns no names without traversing.
+    pub(crate) fn collect_publicly_importable_names_with_limit(
+        &self,
+        id: u32,
+        limit: usize,
+    ) -> Vec<ImportablePath<'a>> {
+        if limit == 0 {
+            return Vec::new();
+        }
+
+        self.collect_publicly_importable_names_with_optional_limit(id, Some(limit))
+    }
+
+    /// Shared implementation for exhaustive and limit-bounded importable-name collection.
+    fn collect_publicly_importable_names_with_optional_limit(
+        &self,
+        id: u32,
+        limit: Option<usize>,
+    ) -> Vec<ImportablePath<'a>> {
+        let mut search = ImportableNameSearch {
+            already_visited_ids: Default::default(),
+            stack: Vec::new(),
+            limit,
+            output: Vec::new(),
+        };
+
+        self.collect_publicly_importable_names_inner(id, false, false, &mut search);
+
+        search.output
+    }
+
+    fn collect_publicly_importable_names_inner(
         &self,
         next_id: u32,
-        already_visited_ids: &mut HashSet<u32>,
-        stack: &mut Vec<&'a str>,
         currently_doc_hidden: bool,
         currently_deprecated: bool,
-        output: &mut Vec<ImportablePath<'a>>,
+        search: &mut ImportableNameSearch<'a>,
     ) {
-        if !already_visited_ids.insert(next_id) {
+        if search.reached_limit() {
+            return;
+        }
+
+        if !search.already_visited_ids.insert(next_id) {
             // We found a cycle, and we've already processed this item.
             // Nothing more to do here.
             return;
         }
 
         let item = &self.inner.index[&rustdoc_types::Id(next_id)];
-        if !stack.is_empty()
+        if !search.stack.is_empty()
             && matches!(
                 item.inner,
                 ItemEnum::Impl(..) | ItemEnum::Struct(..) | ItemEnum::Union(..)
@@ -104,7 +145,7 @@ impl<'a> VisibilityTracker<'a> {
                     let push_name = Some(import_item.name.as_str());
 
                     // The imported item may be renamed here, so pop it from the stack.
-                    let popped_name = Some(stack.pop().expect("no name to pop"));
+                    let popped_name = Some(search.stack.pop().expect("no name to pop"));
 
                     (push_name, popped_name)
                 }
@@ -116,7 +157,7 @@ impl<'a> VisibilityTracker<'a> {
 
                 // If there is an underlying item, pop it from the stack
                 // since it may be renamed here.
-                let popped_name = stack.pop();
+                let popped_name = search.stack.pop();
 
                 (push_name, popped_name)
             }
@@ -125,7 +166,7 @@ impl<'a> VisibilityTracker<'a> {
 
         // Push the new name onto the stack, if there is one.
         if let Some(pushed_name) = push_name {
-            stack.push(pushed_name);
+            search.stack.push(pushed_name);
         }
 
         let next_doc_hidden =
@@ -134,52 +175,54 @@ impl<'a> VisibilityTracker<'a> {
 
         self.collect_publicly_importable_names_recurse(
             next_id,
-            already_visited_ids,
-            stack,
             next_doc_hidden,
             next_deprecated,
-            output,
+            search,
         );
 
         // Undo any changes made to the stack, returning it to its pre-recursion state.
         if let Some(pushed_name) = push_name {
-            let recovered_name = stack.pop().expect("there was nothing to pop");
+            let recovered_name = search.stack.pop().expect("there was nothing to pop");
             assert_eq!(pushed_name, recovered_name);
         }
         if let Some(popped_name) = popped_name {
-            stack.push(popped_name);
+            search.stack.push(popped_name);
         }
 
         // We're leaving this item. Remove it from the visited set.
-        let removed = already_visited_ids.remove(&next_id);
+        let removed = search.already_visited_ids.remove(&next_id);
         assert!(removed);
     }
 
     fn collect_publicly_importable_names_recurse(
         &self,
         next_id: u32,
-        already_visited_ids: &mut HashSet<u32>,
-        stack: &mut Vec<&'a str>,
         currently_doc_hidden: bool,
         currently_deprecated: bool,
-        output: &mut Vec<ImportablePath<'a>>,
+        search: &mut ImportableNameSearch<'a>,
     ) {
+        if search.reached_limit() {
+            return;
+        }
+
         if next_id == self.inner.root.0 {
-            let final_name = stack.iter().rev().copied().collect();
-            output.push(ImportablePath::new(
+            let final_name = search.stack.iter().rev().copied().collect();
+            search.output.push(ImportablePath::new(
                 final_name,
                 currently_doc_hidden,
                 currently_deprecated,
             ));
         } else if let Some(visible_parents) = self.visible_parent_ids.get(&next_id) {
             for parent_id in visible_parents.iter().copied() {
+                if search.reached_limit() {
+                    break;
+                }
+
                 self.collect_publicly_importable_names_inner(
                     parent_id,
-                    already_visited_ids,
-                    stack,
                     currently_doc_hidden,
                     currently_deprecated,
-                    output,
+                    search,
                 );
             }
         }
