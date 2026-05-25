@@ -570,6 +570,11 @@ pub(super) fn resolve_trait_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 .is_trait_public_api_sealed(&trait_item.id)
                 .into()
         }),
+        "normalized_generic_signature" => resolve_property_with(contexts, move |vertex| {
+            let item = vertex.as_item().expect("Trait was not an Item");
+            let crate_ = adapter.crate_at_origin(vertex.origin);
+            normalized_signature::trait_normalized_generic_signature(crate_, item).into()
+        }),
         _ => unreachable!("Trait property {property_name}"),
     }
 }

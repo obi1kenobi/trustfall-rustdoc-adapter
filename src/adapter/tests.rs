@@ -6659,6 +6659,139 @@ fn impl_owner_normalized_generic_signatures() {
 }
 
 #[test]
+fn trait_normalized_generic_signatures() {
+    get_test_data!(data, trait_normalized_signature);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                name @filter(op: "one_of", value: ["$included_names"]) @output
+                normalized_generic_signature @output
+            }
+        }
+    }
+}
+"#;
+
+    let mut variables: BTreeMap<&str, FieldValue> = BTreeMap::default();
+    variables.insert(
+        "included_names",
+        vec![
+            "AssociatedSupertraitBounds",
+            "ConcreteConstExpr",
+            "ExplicitSelfWhere",
+            "HigherRankedSupertrait",
+            "InterleavedTypeConstParams",
+            "LifetimeParamBounds",
+            "NoGenerics",
+            "SimpleGenerics",
+            "SupertraitBounds",
+        ]
+        .into(),
+    );
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        normalized_generic_signature: String,
+    }
+
+    fn output(name: &str, normalized_generic_signature: &str) -> Output {
+        Output {
+            name: name.into(),
+            normalized_generic_signature: normalized_generic_signature.into(),
+        }
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        output(
+            "AssociatedSupertraitBounds",
+            concat!(
+                "<T1> where Self: ::core::iter::traits::collect::IntoIterator<",
+                "Item = T1>, T1: ::trait_normalized_signature::PublicTrait<",
+                "Assoc = ::trait_normalized_signature::private::PrivateType>, ",
+                "<Self as ::core::iter::traits::collect::IntoIterator>::IntoIter: ",
+                "::core::iter::traits::double_ended::DoubleEndedIterator + ",
+                "::core::iter::traits::exact_size::ExactSizeIterator",
+            ),
+        ),
+        output(
+            "ConcreteConstExpr",
+            concat!(
+                "<const C1: usize = { 1 + 2 }> where ",
+                "::trait_normalized_signature::ConstArgTarget<{ _ }>: ",
+                "::core::marker::Sized, [u8; 3]: ::core::default::Default",
+            ),
+        ),
+        output(
+            "ExplicitSelfWhere",
+            "<T1> where Self: ::core::convert::AsRef<T1>, T1: ::core::clone::Clone",
+        ),
+        output(
+            "HigherRankedSupertrait",
+            concat!(
+                "<T1> where Self: for<'a> ",
+                "::trait_normalized_signature::PublicLendingTrait<'a>, ",
+                "T1: ::core::convert::AsRef<",
+                "::trait_normalized_signature::visible::PublicType>, ",
+                "for<'a> <Self as ::trait_normalized_signature::PublicLendingTrait<'a>>",
+                "::Item: ::trait_normalized_signature::PublicTrait, ",
+                "for<'a> <<Self as ::trait_normalized_signature::PublicLendingTrait<'a>>",
+                "::Item as ::trait_normalized_signature::PublicTrait>::Assoc: ",
+                "::core::convert::AsRef<&'a ",
+                "::trait_normalized_signature::visible::PublicType>",
+            ),
+        ),
+        output(
+            "InterleavedTypeConstParams",
+            concat!(
+                "<T1, const C1: usize, T2, const C2: usize>",
+                " where T1: ::core::convert::AsRef<[T2; C1]>, ",
+                "[T2; C2]: ::core::clone::Clone",
+            ),
+        ),
+        output("LifetimeParamBounds", "<'a, 'b> where 'b: 'a"),
+        output("NoGenerics", "<>"),
+        output(
+            "SimpleGenerics",
+            concat!(
+                "<'a, T1, const C1: usize = 3>",
+                " where T1: ?::core::marker::Sized",
+            ),
+        ),
+        output(
+            "SupertraitBounds",
+            concat!(
+                "<T1> where Self: ::core::fmt::Debug + ",
+                "::trait_normalized_signature::PublicTrait<Assoc = ",
+                "::trait_normalized_signature::visible::PublicType> + ",
+                "::trait_normalized_signature::private::PrivateTrait + ",
+                "::trait_normalized_signature::visible::ModuleTrait<",
+                "Item = ::trait_normalized_signature::private::PrivateType>, ",
+                "T1: ::core::clone::Clone",
+            ),
+        ),
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
 fn function_signatures() {
     get_test_data!(data, raw_type_json);
     let adapter = RustdocAdapter::new(&data, None);

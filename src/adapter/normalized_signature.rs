@@ -1,8 +1,8 @@
-//! Normalized generic signatures for type-like Rust items.
+//! Normalized generic signatures for Rust items with item-level generics.
 //!
-//! The schema exposes this for `ImplOwner` vertices: structs, enums, and unions,
-//! formatting only the generic parameter list and `where` clause. The owner item
-//! name is intentionally omitted so re-exported names do not affect the output.
+//! The schema exposes this for structs, enums, unions, and traits, formatting
+//! only the generic parameter list and bounds. The owner item name is
+//! intentionally omitted so re-exported names do not affect the output.
 //!
 //! The normalization rules are:
 //!
@@ -10,9 +10,11 @@
 //!   namespace: lifetimes become `'a`, `'b`, etc.; types become `T1`, `T2`,
 //!   etc.; consts become `C1`, `C2`, etc. Nested binders continue the current
 //!   sequence so higher-ranked lifetimes cannot collide with outer lifetimes.
-//! - Inline bounds are lifted into `where` predicates, then merged with existing
-//!   rustdoc `where` predicates for the same subject and binder. Lifetime
-//!   outlives predicates are merged by subject too.
+//! - Inline bounds and trait supertrait bounds are lifted into `where`
+//!   predicates, then merged with existing rustdoc `where` predicates for the
+//!   same subject and binder. Lifetime outlives predicates are merged by
+//!   subject too.
+//! - Trait supertrait bounds use `Self` as their predicate subject.
 //! - Associated item bound constraints are lifted into explicit projection
 //!   predicates. Associated equality constraints stay attached to the trait path
 //!   because top-level associated type equality predicates are not stable Rust.
@@ -36,11 +38,11 @@
 // const expressions such as `N + 1`.
 
 // TODO: revisit rustdoc type shapes such as pattern types and return type
-// notation when they stabilize enough to appear in the type-owner generic
-// signatures this module formats.
+// notation when they stabilize enough to appear in the item generic signatures
+// this module formats.
 
 // TODO: revisit precise-capture `use<>` bounds if they become valid in
-// type-owner generic signatures such as struct, enum, or union bounds.
+// item generic signatures such as struct, enum, union, or trait bounds.
 
 use std::collections::BTreeMap;
 
@@ -65,23 +67,55 @@ pub(crate) fn impl_owner_normalized_generic_signature<'ctx>(
     SignatureFormatter::new(crate_, generics).format()
 }
 
-/// Formats the normalized generic signature for one type-like item.
+pub(crate) fn trait_normalized_generic_signature<'ctx>(
+    crate_: &'ctx PackageIndex<'ctx>,
+    item: &Item,
+) -> String {
+    let inner = match &item.inner {
+        ItemEnum::Trait(inner) => inner,
+        _ => unreachable!("expected Trait item, got {item:?}"),
+    };
+
+    SignatureFormatter::new_with_self_bounds(crate_, &inner.generics, &inner.bounds).format()
+}
+
+/// Formats the normalized generic signature for one item.
 ///
 /// The formatter starts from rustdoc's `Generics`, lifts inline bounds into
 /// `where`-style predicates, and delegates path/name normalization to
 /// `FormatContext`.
 struct SignatureFormatter<'a, 'ctx> {
     generics: &'a Generics,
+    self_bounds: &'a [GenericBound],
     context: FormatContext<'ctx>,
 }
 
 impl<'a, 'ctx> SignatureFormatter<'a, 'ctx> {
     fn new(crate_: &'ctx PackageIndex<'ctx>, generics: &'a Generics) -> Self {
+        Self::new_with_options(crate_, generics, &[], false)
+    }
+
+    fn new_with_self_bounds(
+        crate_: &'ctx PackageIndex<'ctx>,
+        generics: &'a Generics,
+        self_bounds: &'a [GenericBound],
+    ) -> Self {
+        Self::new_with_options(crate_, generics, self_bounds, true)
+    }
+
+    fn new_with_options(
+        crate_: &'ctx PackageIndex<'ctx>,
+        generics: &'a Generics,
+        self_bounds: &'a [GenericBound],
+        allow_self_type: bool,
+    ) -> Self {
         Self {
             generics,
+            self_bounds,
             context: FormatContext {
                 crate_,
                 names: NameMap::new(&generics.params),
+                allow_self_type,
             },
         }
     }
@@ -91,7 +125,7 @@ impl<'a, 'ctx> SignatureFormatter<'a, 'ctx> {
             .generics
             .params
             .iter()
-            .inspect(|param| assert_not_synthetic_type_owner_param(param))
+            .inspect(|param| assert_not_synthetic_owner_param(param))
             .map(|param| self.context.format_generic_param(param))
             .collect::<Vec<_>>();
 
@@ -106,16 +140,16 @@ impl<'a, 'ctx> SignatureFormatter<'a, 'ctx> {
         output
     }
 
-    /// Collect inline generic-param bounds and explicit `where` predicates in source order.
+    /// Collect inline generic-param bounds, trait `Self` bounds, and explicit `where` predicates.
     ///
     /// Later normalization stages merge and sort equivalent predicates; this
-    /// pass only converts rustdoc's two predicate sources into one representation.
+    /// pass only converts rustdoc's predicate sources into one representation.
     fn collect_predicates(&self) -> Vec<NormalizedPredicate<'a>> {
         let inline_predicates = self
             .generics
             .params
             .iter()
-            .inspect(|param| assert_not_synthetic_type_owner_param(param))
+            .inspect(|param| assert_not_synthetic_owner_param(param))
             .filter_map(|param| match &param.kind {
                 GenericParamDefKind::Lifetime { outlives } if !outlives.is_empty() => {
                     Some(NormalizedPredicate::Lifetime {
@@ -134,6 +168,12 @@ impl<'a, 'ctx> SignatureFormatter<'a, 'ctx> {
                 | GenericParamDefKind::Type { .. }
                 | GenericParamDefKind::Const { .. } => None,
             });
+
+        let self_predicate = (!self.self_bounds.is_empty()).then_some(NormalizedPredicate::Bound {
+            subject: PredicateSubjectSource::SelfType,
+            bounds: self.self_bounds,
+            generic_params: &[],
+        });
 
         let where_predicates =
             self.generics
@@ -160,7 +200,10 @@ impl<'a, 'ctx> SignatureFormatter<'a, 'ctx> {
                     ),
                 });
 
-        inline_predicates.chain(where_predicates).collect()
+        inline_predicates
+            .chain(self_predicate)
+            .chain(where_predicates)
+            .collect()
     }
 }
 
@@ -182,6 +225,7 @@ enum NormalizedPredicate<'a> {
 /// Inline bounds such as `T: Clone` provide only the generic parameter name,
 /// while explicit `where` predicates provide the full rustdoc `Type`.
 enum PredicateSubjectSource<'a> {
+    SelfType,
     Generic(&'a str),
     Type(&'a Type),
 }
@@ -495,7 +539,7 @@ impl NameMap {
 
     fn add_scope(&mut self, params: &[GenericParamDef]) {
         for param in params {
-            assert_not_synthetic_type_owner_param(param);
+            assert_not_synthetic_owner_param(param);
             match param.kind {
                 GenericParamDefKind::Lifetime { .. } => {
                     self.lifetimes.insert(
@@ -576,6 +620,7 @@ impl NameMap {
 struct FormatContext<'ctx> {
     crate_: &'ctx PackageIndex<'ctx>,
     names: NameMap,
+    allow_self_type: bool,
 }
 
 impl<'ctx> FormatContext<'ctx> {
@@ -583,6 +628,7 @@ impl<'ctx> FormatContext<'ctx> {
         Self {
             crate_: self.crate_,
             names: self.names.with_scope(params),
+            allow_self_type: self.allow_self_type,
         }
     }
 
@@ -651,6 +697,11 @@ impl<'ctx> FormatContext<'ctx> {
 
     fn predicate_subject(&self, subject: &PredicateSubjectSource<'_>) -> PredicateSubject {
         match subject {
+            PredicateSubjectSource::SelfType => PredicateSubject {
+                group: PredicateGroup::GenericType,
+                projection_depth: 0,
+                text: "Self".to_string(),
+            },
             PredicateSubjectSource::Generic(name) => PredicateSubject {
                 group: PredicateGroup::GenericType,
                 projection_depth: 0,
@@ -808,7 +859,7 @@ impl<'ctx> FormatContext<'ctx> {
         Binder::from_params(
             params
                 .iter()
-                .inspect(|param| assert_not_synthetic_type_owner_param(param))
+                .inspect(|param| assert_not_synthetic_owner_param(param))
                 .map(|param| self.format_generic_param(param)),
         )
     }
@@ -931,8 +982,13 @@ impl<'ctx> FormatContext<'ctx> {
                 }
             }
             Type::Generic(name) => FormattedType {
-                text: self.names.type_name(name),
-                mentions_owner_generic: self.names.types.contains_key(name),
+                text: if self.allow_self_type && name == "Self" {
+                    "Self".to_string()
+                } else {
+                    self.names.type_name(name)
+                },
+                mentions_owner_generic: self.names.types.contains_key(name)
+                    || (self.allow_self_type && name == "Self"),
                 projection_depth: 0,
             },
             Type::Primitive(name) => FormattedType {
@@ -1328,7 +1384,9 @@ impl<'ctx> FormatContext<'ctx> {
                         .as_ref()
                         .is_some_and(|lifetime| self.lifetime_mentions_generic(lifetime))
             }
-            Type::Generic(name) => self.names.types.contains_key(name),
+            Type::Generic(name) => {
+                self.names.types.contains_key(name) || (self.allow_self_type && name == "Self")
+            }
             Type::Primitive(_) | Type::Infer => false,
             Type::FunctionPointer(pointer) => self.function_pointer_mentions_generic(pointer),
             Type::Tuple(types) => types.iter().any(|type_| self.type_mentions_generic(type_)),
@@ -1454,7 +1512,7 @@ impl<'ctx> FormatContext<'ctx> {
 
     fn param_mentions_existing_generic(&self, param: &GenericParamDef) -> bool {
         // Stable Rust currently only exposes lifetimes in the HRTB-style binders
-        // that type-owner signatures use, but `rustdoc_types` permits richer
+        // that item-owner signatures use, but `rustdoc_types` permits richer
         // generic params here. Keep this traversal complete so a future rustdoc
         // shape cannot silently sort an owner-dependent subject with the
         // concrete-subject predicates.
@@ -1598,15 +1656,15 @@ fn push_abi(output: &mut String, name: &str, unwind: bool) {
     output.push_str(r#"" "#);
 }
 
-fn assert_not_synthetic_type_owner_param(param: &GenericParamDef) {
+fn assert_not_synthetic_owner_param(param: &GenericParamDef) {
     if let GenericParamDefKind::Type {
         is_synthetic: true, ..
     } = param.kind
     {
         unreachable!(
-            "synthetic generic parameter `{}` appeared in a type-owner normalized generic \
-             signature; synthetic `impl Trait` parameters are not valid in struct, enum, or \
-             union signatures",
+            "synthetic generic parameter `{}` appeared in an item-owner normalized generic \
+             signature; synthetic `impl Trait` parameters are not valid in struct, enum, union, \
+             or trait signatures",
             param.name
         )
     }

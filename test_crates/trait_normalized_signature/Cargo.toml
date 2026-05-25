@@ -1,0 +1,4 @@
+[package]
+name = "trait_normalized_signature"
+version = "0.1.0"
+edition = "2024"
