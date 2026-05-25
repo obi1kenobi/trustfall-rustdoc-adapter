@@ -202,6 +202,113 @@ fn rustdoc_finds_supertrait() {
 }
 
 #[test]
+fn rustdoc_finds_where_self_supertraits() {
+    get_test_data!(data, supertrait_where_self);
+    let adapter = RustdocAdapter::new(&data, None);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                name @output @filter(op: "one_of", value: ["$traits"])
+
+                supertrait {
+                    supertrait: name @output
+                    instantiated_name @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let mut variables: BTreeMap<&str, FieldValue> = BTreeMap::default();
+    variables.insert(
+        "traits",
+        vec![
+            "HeaderSupertrait",
+            "MixedSuperAndNonSuper",
+            "NonSelfWhere",
+            "RefSelfWithTraitLifetime",
+            "RefSelfWhere",
+            "TwoColonTwoWhere",
+            "WhereSelfGeneric",
+            "WhereSelfSupertrait",
+        ]
+        .into(),
+    );
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        supertrait: String,
+        instantiated_name: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![
+            Output {
+                name: "HeaderSupertrait".into(),
+                supertrait: "Base".into(),
+                instantiated_name: "Base<Assoc = u8>".into(),
+            },
+            Output {
+                name: "MixedSuperAndNonSuper".into(),
+                supertrait: "Base".into(),
+                instantiated_name: "Base<Assoc = u8>".into(),
+            },
+            Output {
+                name: "MixedSuperAndNonSuper".into(),
+                supertrait: "GenericBase".into(),
+                instantiated_name: "GenericBase<T>".into(),
+            },
+            Output {
+                name: "TwoColonTwoWhere".into(),
+                supertrait: "Base".into(),
+                instantiated_name: "Base<Assoc = u8>".into(),
+            },
+            Output {
+                name: "TwoColonTwoWhere".into(),
+                supertrait: "GenericBase".into(),
+                instantiated_name: "GenericBase<T>".into(),
+            },
+            Output {
+                name: "TwoColonTwoWhere".into(),
+                supertrait: "GenericMarker".into(),
+                instantiated_name: "GenericMarker<T>".into(),
+            },
+            Output {
+                name: "TwoColonTwoWhere".into(),
+                supertrait: "LocalMarker".into(),
+                instantiated_name: "LocalMarker".into(),
+            },
+            Output {
+                name: "WhereSelfGeneric".into(),
+                supertrait: "GenericBase".into(),
+                instantiated_name: "GenericBase<T>".into(),
+            },
+            Output {
+                name: "WhereSelfSupertrait".into(),
+                supertrait: "Base".into(),
+                instantiated_name: "Base<Assoc = u8>".into(),
+            },
+        ],
+        results
+    );
+}
+
+#[test]
 fn rustdoc_sealed_traits() {
     get_test_data!(data, sealed_traits);
     let adapter = RustdocAdapter::new(&data, None);
