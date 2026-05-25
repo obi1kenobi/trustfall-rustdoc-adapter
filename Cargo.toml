@@ -1,6 +1,6 @@
 [package]
 name = "trustfall-rustdoc-adapter"
-version = "57.0.6"
+version = "57.0.7"
 edition = "2024"
 authors = ["Predrag Gruevski <obi1kenobi82@gmail.com>"]
 license = "Apache-2.0 OR MIT"
