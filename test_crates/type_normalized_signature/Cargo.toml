@@ -1,9 +1,0 @@
-[package]
-name = "type_normalized_signature"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-# Small, stable external trait crate already pulled in by the top-level crate's
-# direct `indexmap` dependency, so likely to be in the cargo index cache already.
-equivalent = "1.0"

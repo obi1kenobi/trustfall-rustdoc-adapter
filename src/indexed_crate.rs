@@ -621,33 +621,6 @@ impl<'a> IndexedCrate<'a> {
         }
     }
 
-    /// Return at most `limit` paths with which the given item can be imported from this crate.
-    ///
-    /// Results use the same order as `publicly_importable_names()`. A zero
-    /// limit returns no paths without walking the visibility graph.
-    pub fn publicly_importable_names_with_limit(
-        &self,
-        id: &'a Id,
-        limit: usize,
-    ) -> Vec<ImportablePath<'a>> {
-        if self.inner.index.contains_key(id) {
-            self.visibility_tracker
-                .collect_publicly_importable_names_with_limit(id.0, limit)
-        } else {
-            Default::default()
-        }
-    }
-
-    /// Return the first path with which the given item can be imported from this crate.
-    ///
-    /// This is equivalent to the first item from `publicly_importable_names()`
-    /// but avoids collecting additional paths that the caller will not use.
-    pub fn first_publicly_importable_name(&self, id: &'a Id) -> Option<ImportablePath<'a>> {
-        self.publicly_importable_names_with_limit(id, 1)
-            .into_iter()
-            .next()
-    }
-
     /// Return `true` if our analysis indicates the trait is sealed, and `false` otherwise.
     ///
     /// Our analysis is conservative: it has false-negatives but no false-positives.
@@ -1495,40 +1468,6 @@ mod tests {
             };
 
             assert_exported_items_match(test_crate, &expected_items);
-        }
-
-        #[test]
-        fn publicly_importable_names_with_limit_matches_unlimited_prefix() {
-            let rustdoc = load_pregenerated_rustdoc("reexport");
-            let indexed_crate = IndexedCrate::new(&rustdoc);
-            let item_id = rustdoc
-                .index
-                .iter()
-                .filter_map(|(id, item)| (item.name.as_deref() == Some("foo")).then_some(id))
-                .exactly_one()
-                .expect("exactly one item named foo");
-
-            let all_names = indexed_crate.publicly_importable_names(item_id);
-            assert!(
-                all_names.len() > 1,
-                "test fixture must have more than one importable path"
-            );
-
-            let limited_to_one = indexed_crate.publicly_importable_names_with_limit(item_id, 1);
-            assert_eq!(&all_names[..1], limited_to_one.as_slice());
-            assert_eq!(
-                Some(all_names[0].clone()),
-                indexed_crate.first_publicly_importable_name(item_id),
-            );
-
-            let limited_to_two = indexed_crate.publicly_importable_names_with_limit(item_id, 2);
-            assert_eq!(&all_names[..2], limited_to_two.as_slice());
-
-            assert!(
-                indexed_crate
-                    .publicly_importable_names_with_limit(item_id, 0)
-                    .is_empty()
-            );
         }
 
         #[test]
