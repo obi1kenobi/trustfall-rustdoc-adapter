@@ -358,7 +358,16 @@ pub(super) fn resolve_function_parameter_property<'a, V: AsVertex<Vertex<'a>> + 
             vertex
                 .as_function_parameter()
                 .expect("not a function parameter")
+                .name
                 .into()
+        }),
+        "position" => resolve_property_with(contexts, |vertex| {
+            let position = vertex
+                .as_function_parameter()
+                .expect("not a function parameter")
+                .position;
+
+            FieldValue::Uint64(position.get() as u64)
         }),
         _ => unreachable!("FunctionParameter property {property_name}"),
     }
@@ -378,6 +387,31 @@ pub(super) fn resolve_return_value_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 .into()
         }),
         _ => unreachable!("ReturnValue property {property_name}"),
+    }
+}
+
+pub(super) fn resolve_normalized_type_signature_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    property_name: &str,
+    adapter: &'a RustdocAdapter<'a>,
+) -> ContextOutcomeIterator<'a, V, FieldValue> {
+    match property_name {
+        "signature" => resolve_property_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let normalized_type_signature = vertex
+                .as_normalized_type_signature()
+                .expect("not a NormalizedTypeSignature");
+            let crate_ = adapter.crate_at_origin(origin);
+
+            super::normalize::fn_param_or_return_type_signature(
+                crate_,
+                normalized_type_signature.context,
+                normalized_type_signature.component,
+                normalized_type_signature.type_,
+            )
+            .into()
+        }),
+        _ => unreachable!("NormalizedTypeSignature property {property_name}"),
     }
 }
 
