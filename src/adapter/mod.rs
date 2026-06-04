@@ -18,6 +18,7 @@ use self::{
 
 mod edges;
 mod enum_variant;
+mod normalize;
 mod optimizations;
 mod origin;
 mod properties;
@@ -189,6 +190,13 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                     properties::resolve_function_parameter_property(contexts, property_name)
                 }
                 "ReturnValue" => properties::resolve_return_value_property(contexts, property_name),
+                "NormalizedTypeSignature" => {
+                    properties::resolve_normalized_type_signature_property(
+                        contexts,
+                        property_name,
+                        self,
+                    )
+                }
                 "FunctionAbi" => properties::resolve_function_abi_property(contexts, property_name),
                 "Impl" => properties::resolve_impl_property(contexts, property_name),
                 "Attribute" => properties::resolve_attribute_property(contexts, property_name),
@@ -322,6 +330,11 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 if matches!(edge_name.as_ref(), "parameter" | "abi" | "return_value") =>
             {
                 edges::resolve_function_like_edge(contexts, edge_name)
+            }
+            "FunctionParameter" | "ReturnValue"
+                if matches!(edge_name.as_ref(), "normalized_type_signature") =>
+            {
+                edges::resolve_normalized_type_signature_edge(contexts, edge_name)
             }
             "GenericItem" | "ImplOwner" | "Struct" | "Enum" | "Union" | "Trait" | "Function"
             | "Method" | "Impl"

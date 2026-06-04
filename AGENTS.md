@@ -74,5 +74,6 @@ Before proposing a code change:
 - Run `cargo test` to ensure the code passes tests.
 
 If adding new test crates, then additionally:
+- Ensure their `Cargo.toml` sets `publish = false`.
 - Ensure `RUSTFLAGS="-A dead_code -A deprecated -A unused -A private_bounds" cargo check --manifest-path=<path-to-new-crate-cargo-toml>` passes without warnings on each new test crate.
 - Run `./scripts/regenerate_test_rustdocs.sh` before running the top-level `cargo test` to ensure generated rustdoc is updated.

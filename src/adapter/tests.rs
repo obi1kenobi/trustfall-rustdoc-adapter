@@ -6563,6 +6563,68 @@ fn impl_lookup_by_method_name_optimization() {
 }
 
 #[test]
+fn impl_lookup_by_multiple_method_names_visits_each_impl_once() {
+    get_test_data!(data, method_lookup_optimization);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                owner: name @filter(op: "=", value: ["$owner"]) @output
+
+                inherent_impl {
+                    method {
+                        method: name @filter(op: "one_of", value: ["$methods"]) @output
+                    }
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    let variables = btreemap! {
+        "owner" => FieldValue::String("MultiMethodOwner".into()),
+        "methods" => FieldValue::List(vec![
+            FieldValue::String("first".into()),
+            FieldValue::String("second".into()),
+        ].into()),
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        owner: String,
+        method: String,
+    }
+
+    let mut results: Vec<_> = trustfall::execute_query(&schema, adapter.clone(), query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            owner: "MultiMethodOwner".into(),
+            method: "first".into(),
+        },
+        Output {
+            owner: "MultiMethodOwner".into(),
+            method: "second".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
 fn generic_param_positions() {
     get_test_data!(data, generic_param_positions);
     let adapter = RustdocAdapter::new(&data, None);
@@ -9435,11 +9497,80 @@ fn function_parameters() {
             params: vec![],
         },
         Output {
+            name: "concrete_types".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "generic_identity".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "lifetime_ref".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "const_array".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "path_types".into(),
+            params: vec!["value".into(), "values".into()],
+        },
+        Output {
+            name: "composite_types".into(),
+            params: vec!["tuple".into(), "raw".into()],
+        },
+        Output {
+            name: "function_pointer".into(),
+            params: vec!["callback".into()],
+        },
+        Output {
+            name: "function_pointer_nested_generics".into(),
+            params: vec!["callback".into()],
+        },
+        Output {
+            name: "dyn_trait_lifetime".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "impl_trait_param".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "generic_and_impl_trait_params".into(),
+            params: vec!["generic".into(), "first".into(), "second".into()],
+        },
+        Output {
+            name: "nested_impl_trait_params".into(),
+            params: vec![
+                "generic".into(),
+                "borrowed".into(),
+                "values".into(),
+                "nested_tuple".into(),
+            ],
+        },
+        Output {
+            name: "nested_assoc_impl_trait_param".into(),
+            params: vec!["value".into(), "other".into()],
+        },
+        Output {
+            name: "impl_trait_return".into(),
+            params: vec![],
+        },
+        Output {
             name: "add_method".into(),
             params: vec!["self".into(), "left".into(), "right".into()],
         },
         Output {
             name: "method_returns_nothing".into(),
+            params: vec!["self".into()],
+        },
+        Output {
+            name: "combine".into(),
+            params: vec!["self".into(), "owner".into(), "method".into()],
+        },
+        Output {
+            name: "pin_box_self".into(),
             params: vec!["self".into()],
         },
         Output {
@@ -9449,6 +9580,14 @@ fn function_parameters() {
         Output {
             name: "trait_fn_returns_nothing".into(),
             params: vec!["self".into()],
+        },
+        Output {
+            name: "combine_trait".into(),
+            params: vec!["self".into(), "owner".into(), "method".into()],
+        },
+        Output {
+            name: "default_combine".into(),
+            params: vec!["self".into(), "owner".into(), "method".into()],
         },
     ];
     expected_results.sort_unstable();
@@ -9560,11 +9699,75 @@ fn function_return_value() {
             is_unit: true,
         },
         Output {
+            name: "concrete_types".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "generic_identity".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "lifetime_ref".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "const_array".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "path_types".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "composite_types".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "function_pointer".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "function_pointer_nested_generics".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "dyn_trait_lifetime".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "impl_trait_param".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "generic_and_impl_trait_params".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "nested_impl_trait_params".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "nested_assoc_impl_trait_param".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "impl_trait_return".into(),
+            is_unit: false,
+        },
+        Output {
             name: "add_method".into(),
             is_unit: false,
         },
         Output {
             name: "method_returns_nothing".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "combine".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "pin_box_self".into(),
             is_unit: true,
         },
         Output {
@@ -9574,6 +9777,14 @@ fn function_return_value() {
         Output {
             name: "trait_fn_returns_nothing".into(),
             is_unit: true,
+        },
+        Output {
+            name: "combine_trait".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "default_combine".into(),
+            is_unit: false,
         },
     ];
     expected_results.sort_unstable();
@@ -9603,6 +9814,677 @@ fn function_return_value() {
             .collect();
 
     results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn function_parameter_normalized_type_signatures() {
+    get_test_data!(data, function_params_and_return_value);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+
+                parameter {
+                    position @output
+                    param_name: name @output
+                    normalized_type_signature {
+                        signature @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables: BTreeMap<&str, bool> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        position: u64,
+        param_name: String,
+        signature: String,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            name: "add".into(),
+            position: 1,
+            param_name: "left".into(),
+            signature: "u64".into(),
+        },
+        Output {
+            name: "add".into(),
+            position: 2,
+            param_name: "right".into(),
+            signature: "u64".into(),
+        },
+        Output {
+            name: "concrete_types".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "u64".into(),
+        },
+        Output {
+            name: "generic_identity".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "lifetime_ref".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "&'a str".into(),
+        },
+        Output {
+            name: "const_array".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "[u8; C1]".into(),
+        },
+        Output {
+            name: "path_types".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "::function_params_and_return_value::PublicType<u8>".into(),
+        },
+        Output {
+            name: "path_types".into(),
+            position: 2,
+            param_name: "values".into(),
+            signature: "::alloc::vec::Vec<::function_params_and_return_value::PublicType<u8>>"
+                .into(),
+        },
+        Output {
+            name: "composite_types".into(),
+            position: 1,
+            param_name: "tuple".into(),
+            signature: "(&'a [T1], *const T1, fn(T1) -> T1, [u8; C1])".into(),
+        },
+        Output {
+            name: "composite_types".into(),
+            position: 2,
+            param_name: "raw".into(),
+            signature: "*mut T1".into(),
+        },
+        Output {
+            name: "function_pointer".into(),
+            position: 1,
+            param_name: "callback".into(),
+            signature: "for<'a> unsafe fn(&'a u8) -> &'a u8".into(),
+        },
+        Output {
+            name: "function_pointer_nested_generics".into(),
+            position: 1,
+            param_name: "callback".into(),
+            signature: "for<'b> fn(&'a T1, &'b [T1; C1]) -> &'b T1".into(),
+        },
+        Output {
+            name: "dyn_trait_lifetime".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "::alloc::boxed::Box<dyn ::core::marker::Send + ::core::marker::Sync + 'a>"
+                .into(),
+        },
+        Output {
+            name: "impl_trait_param".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "IT1".into(),
+        },
+        Output {
+            name: "generic_and_impl_trait_params".into(),
+            position: 1,
+            param_name: "generic".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "generic_and_impl_trait_params".into(),
+            position: 2,
+            param_name: "first".into(),
+            signature: "IT2".into(),
+        },
+        Output {
+            name: "generic_and_impl_trait_params".into(),
+            position: 3,
+            param_name: "second".into(),
+            signature: "IT3".into(),
+        },
+        Output {
+            name: "nested_impl_trait_params".into(),
+            position: 1,
+            param_name: "generic".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "nested_impl_trait_params".into(),
+            position: 2,
+            param_name: "borrowed".into(),
+            signature: "&IT2".into(),
+        },
+        Output {
+            name: "nested_impl_trait_params".into(),
+            position: 3,
+            param_name: "values".into(),
+            signature: "::alloc::vec::Vec<IT3>".into(),
+        },
+        Output {
+            name: "nested_impl_trait_params".into(),
+            position: 4,
+            param_name: "nested_tuple".into(),
+            signature: "(IT4, T1)".into(),
+        },
+        Output {
+            name: "nested_assoc_impl_trait_param".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "IT2".into(),
+        },
+        Output {
+            name: "nested_assoc_impl_trait_param".into(),
+            position: 2,
+            param_name: "other".into(),
+            signature: "IT3".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn function_return_normalized_type_signatures() {
+    get_test_data!(data, function_params_and_return_value);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+
+                return_value {
+                    normalized_type_signature {
+                        signature @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables: BTreeMap<&str, bool> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        signature: String,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            name: "add".into(),
+            signature: "u64".into(),
+        },
+        Output {
+            name: "fn_returns_nothing".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "concrete_types".into(),
+            signature: "bool".into(),
+        },
+        Output {
+            name: "generic_identity".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "lifetime_ref".into(),
+            signature: "&'a str".into(),
+        },
+        Output {
+            name: "const_array".into(),
+            signature: "[u8; C1]".into(),
+        },
+        Output {
+            name: "path_types".into(),
+            signature: "::core::option::Option<::function_params_and_return_value::PublicType<u8>>"
+                .into(),
+        },
+        Output {
+            name: "composite_types".into(),
+            signature: "(&'a [T1], *mut T1)".into(),
+        },
+        Output {
+            name: "function_pointer".into(),
+            signature: "for<'a> unsafe fn(&'a u8) -> &'a u8".into(),
+        },
+        Output {
+            name: "function_pointer_nested_generics".into(),
+            signature: "for<'b> fn(&'a T1, &'b [T1; C1]) -> &'b T1".into(),
+        },
+        Output {
+            name: "dyn_trait_lifetime".into(),
+            signature: "::alloc::boxed::Box<dyn ::core::marker::Send + ::core::marker::Sync + 'a>"
+                .into(),
+        },
+        Output {
+            name: "impl_trait_param".into(),
+            signature: "::alloc::string::String".into(),
+        },
+        Output {
+            name: "generic_and_impl_trait_params".into(),
+            signature: "(T1, ::alloc::string::String)".into(),
+        },
+        Output {
+            name: "nested_impl_trait_params".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "nested_assoc_impl_trait_param".into(),
+            signature: "usize".into(),
+        },
+        Output {
+            name: "impl_trait_return".into(),
+            signature: "impl ::core::iter::traits::iterator::Iterator<Item = u8>".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn method_normalized_type_signatures_include_parent_generics() {
+    get_test_data!(data, function_params_and_return_value);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let inherent_query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                owner: name @filter(op: "=", value: ["$inherent_owner"]) @output
+
+                inherent_impl {
+                    method {
+                        method_name: name @filter(op: "one_of", value: ["$inherent_methods"]) @output
+
+                        parameter {
+                            position @output
+                            param_name: name @output
+                            normalized_type_signature {
+                                param_signature: signature @output
+                            }
+                        }
+
+                        return_value {
+                            normalized_type_signature {
+                                return_signature: signature @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let trait_query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                owner: name @filter(op: "=", value: ["$trait_owner"]) @output
+
+                method {
+                    method_name: name @filter(op: "=", value: ["$trait_method"]) @output
+
+                    parameter {
+                        position @output
+                        param_name: name @output
+                        normalized_type_signature {
+                            param_signature: signature @output
+                        }
+                    }
+
+                    return_value {
+                        normalized_type_signature {
+                            return_signature: signature @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let trait_impl_query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                owner: name @filter(op: "=", value: ["$trait_impl_owner"]) @output
+
+                impl {
+                    implemented_trait {
+                        bare_name @filter(op: "=", value: ["$trait_owner"])
+                    }
+
+                    method {
+                        method_name: name @filter(op: "=", value: ["$trait_method"]) @output
+
+                        parameter {
+                            position @output
+                            param_name: name @output
+                            normalized_type_signature {
+                                param_signature: signature @output
+                            }
+                        }
+
+                        return_value {
+                            normalized_type_signature {
+                                return_signature: signature @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let default_trait_impl_query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                owner: name @filter(op: "=", value: ["$default_trait_impl_owner"]) @output
+
+                impl {
+                    implemented_trait {
+                        bare_name @filter(op: "=", value: ["$default_trait_owner"])
+                    }
+
+                    method {
+                        method_name: name @filter(op: "=", value: ["$default_trait_method"]) @output
+
+                        parameter {
+                            position @output
+                            param_name: name @output
+                            normalized_type_signature {
+                                param_signature: signature @output
+                            }
+                        }
+
+                        return_value {
+                            normalized_type_signature {
+                                return_signature: signature @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let inherent_variables: BTreeMap<&str, FieldValue> = btreemap! {
+        "inherent_owner" => "GenericExample".into(),
+        "inherent_methods" => vec![FieldValue::String("combine".into()), FieldValue::String("pin_box_self".into())].into(),
+    };
+    let trait_variables = btreemap! {
+        "trait_owner" => "GenericTrait",
+        "trait_method" => "combine_trait",
+    };
+    let trait_impl_variables = btreemap! {
+        "trait_owner" => "GenericTrait",
+        "trait_method" => "combine_trait",
+        "trait_impl_owner" => "ImplementsGenericTrait",
+    };
+    let default_trait_impl_variables = btreemap! {
+        "default_trait_owner" => "DefaultGenericTrait",
+        "default_trait_method" => "default_combine",
+        "default_trait_impl_owner" => "UsesDefaultGenericTrait",
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        owner: String,
+        method_name: String,
+        position: u64,
+        param_name: String,
+        param_signature: String,
+        return_signature: String,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            owner: "GenericExample".into(),
+            method_name: "combine".into(),
+            position: 1,
+            param_name: "self".into(),
+            param_signature: "&Self".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "GenericExample".into(),
+            method_name: "combine".into(),
+            position: 2,
+            param_name: "owner".into(),
+            param_signature: "T1".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "GenericExample".into(),
+            method_name: "combine".into(),
+            position: 3,
+            param_name: "method".into(),
+            param_signature: "T2".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "GenericExample".into(),
+            method_name: "pin_box_self".into(),
+            position: 1,
+            param_name: "self".into(),
+            param_signature: "::core::pin::Pin<::alloc::boxed::Box<Self>>".into(),
+            return_signature: "()".into(),
+        },
+        Output {
+            owner: "GenericTrait".into(),
+            method_name: "combine_trait".into(),
+            position: 1,
+            param_name: "self".into(),
+            param_signature: "&Self".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "GenericTrait".into(),
+            method_name: "combine_trait".into(),
+            position: 2,
+            param_name: "owner".into(),
+            param_signature: "T1".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "GenericTrait".into(),
+            method_name: "combine_trait".into(),
+            position: 3,
+            param_name: "method".into(),
+            param_signature: "T2".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "ImplementsGenericTrait".into(),
+            method_name: "combine_trait".into(),
+            position: 1,
+            param_name: "self".into(),
+            param_signature: "&Self".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "ImplementsGenericTrait".into(),
+            method_name: "combine_trait".into(),
+            position: 2,
+            param_name: "owner".into(),
+            param_signature: "T1".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "ImplementsGenericTrait".into(),
+            method_name: "combine_trait".into(),
+            position: 3,
+            param_name: "method".into(),
+            param_signature: "T2".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "UsesDefaultGenericTrait".into(),
+            method_name: "default_combine".into(),
+            position: 1,
+            param_name: "self".into(),
+            param_signature: "&mut Self".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "UsesDefaultGenericTrait".into(),
+            method_name: "default_combine".into(),
+            position: 2,
+            param_name: "owner".into(),
+            param_signature: "T1".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "UsesDefaultGenericTrait".into(),
+            method_name: "default_combine".into(),
+            position: 3,
+            param_name: "method".into(),
+            param_signature: "T2".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), inherent_query, inherent_variables)
+            .expect("failed to run inherent method query")
+            .chain(
+                trustfall::execute_query(&schema, adapter.clone(), trait_query, trait_variables)
+                    .expect("failed to run trait method query"),
+            )
+            .chain(
+                trustfall::execute_query(
+                    &schema,
+                    adapter.clone(),
+                    trait_impl_query,
+                    trait_impl_variables,
+                )
+                .expect("failed to run trait impl method query"),
+            )
+            .chain(
+                trustfall::execute_query(
+                    &schema,
+                    adapter.clone(),
+                    default_trait_impl_query,
+                    default_trait_impl_variables,
+                )
+                .expect("failed to run default trait impl method query"),
+            )
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn function_parameter_normalized_type_signature_lint_shape() {
+    get_test_data!(data, function_params_and_return_value);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                importable_path {
+                    path @filter(op: "=", value: ["$path"])
+                    public_api @filter(op: "=", value: ["$true"])
+                }
+
+                parameter {
+                    position @filter(op: "=", value: ["$position"])
+                    normalized_type_signature {
+                        signature @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables = btreemap! {
+        "path" => FieldValue::List(vec![
+            FieldValue::String("function_params_and_return_value".into()),
+            FieldValue::String("path_types".into()),
+        ].into()),
+        "position" => FieldValue::Uint64(2),
+        "true" => FieldValue::Boolean(true),
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        signature: String,
+    }
+
+    let expected_results = vec![Output {
+        signature: "::alloc::vec::Vec<::function_params_and_return_value::PublicType<u8>>".into(),
+    }];
+
+    let results: Vec<Output> = trustfall::execute_query(&schema, adapter.clone(), query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
 
     similar_asserts::assert_eq!(expected_results, results);
 }
