@@ -18,7 +18,7 @@ use super::{
     RustdocAdapter, optimizations,
     origin::Origin,
     receiver::Receiver,
-    vertex::{Feature, Vertex},
+    vertex::{Feature, FunctionContext, TypeSignatureComponent, Vertex, VertexKind},
 };
 
 pub(super) fn resolve_crate_diff_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
@@ -221,29 +221,61 @@ pub(super) fn resolve_function_like_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     edge_name: &str,
 ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
     match edge_name {
-        "parameter" => resolve_neighbors_with(contexts, move |vertex| {
-            let origin = vertex.origin;
+        "parameter" => {
+            resolve_neighbors_with(contexts, move |vertex| {
+                let origin = vertex.origin;
+                let (function_item, function, parent) = match &vertex.kind {
+                    VertexKind::Method(method) => {
+                        let ItemEnum::Function(function) = &method.function.inner else {
+                            unreachable!("Method vertex did not contain a function item");
+                        };
+                        (method.function, function, Some(method.parent))
+                    }
+                    VertexKind::Item(item) | VertexKind::PositionedItem(_, item) => {
+                        let ItemEnum::Function(function) = &item.inner else {
+                            unreachable!("vertex was not a FunctionLike");
+                        };
+                        (*item, function, None)
+                    }
+                    _ => unreachable!("vertex was not a FunctionLike"),
+                };
+                let context = FunctionContext {
+                    function: function_item,
+                    parent,
+                };
 
-            Box::new(
-                vertex
-                    .as_function()
-                    .expect("vertex was not a Function")
-                    .sig
-                    .inputs
-                    .iter()
-                    .map(move |(name, _type_)| origin.make_function_parameter_vertex(name)),
-            )
-        }),
+                Box::new(function.sig.inputs.iter().enumerate().map(
+                    move |(index, (name, type_))| {
+                        let position = NonZeroUsize::new(index + 1)
+                            .expect("function parameter positions are 1-based");
+                        origin.make_function_parameter_vertex(context, position, name, type_)
+                    },
+                ))
+            })
+        }
         "return_value" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let return_value = origin.make_return_value_vertex(
-                vertex
-                    .as_function()
-                    .expect("vertex was not a Function")
-                    .sig
-                    .output
-                    .as_ref(),
-            );
+            let (function_item, function, parent) = match &vertex.kind {
+                VertexKind::Method(method) => {
+                    let ItemEnum::Function(function) = &method.function.inner else {
+                        unreachable!("Method vertex did not contain a function item");
+                    };
+                    (method.function, function, Some(method.parent))
+                }
+                VertexKind::Item(item) | VertexKind::PositionedItem(_, item) => {
+                    let ItemEnum::Function(function) = &item.inner else {
+                        unreachable!("vertex was not a FunctionLike");
+                    };
+                    (*item, function, None)
+                }
+                _ => unreachable!("vertex was not a FunctionLike"),
+            };
+            let context = FunctionContext {
+                function: function_item,
+                parent,
+            };
+            let return_value =
+                origin.make_return_value_vertex(context, function.sig.output.as_ref());
 
             Box::new(std::iter::once(return_value))
         }),
@@ -258,6 +290,35 @@ pub(super) fn resolve_function_like_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             Box::new(std::iter::once(origin.make_function_abi_vertex(abi)))
         }),
         _ => unreachable!("resolve_function_like_edge {edge_name}"),
+    }
+}
+
+pub(super) fn resolve_normalized_type_signature_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    contexts: ContextIterator<'a, V>,
+    edge_name: &str,
+) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Vertex<'a>>> {
+    match edge_name {
+        "normalized_type_signature" => resolve_neighbors_with(contexts, move |vertex| {
+            let origin = vertex.origin;
+            let (context, component, type_) = match &vertex.kind {
+                VertexKind::FunctionParameter(parameter) => (
+                    parameter.context,
+                    TypeSignatureComponent::FunctionParameter(parameter.position),
+                    Some(parameter.type_),
+                ),
+                VertexKind::ReturnValue(return_value) => (
+                    return_value.context,
+                    TypeSignatureComponent::ReturnValue,
+                    return_value.type_,
+                ),
+                _ => unreachable!("vertex was not a normalized type signature source"),
+            };
+
+            Box::new(std::iter::once(
+                origin.make_normalized_type_signature_vertex(context, component, type_),
+            ))
+        }),
+        _ => unreachable!("resolve_normalized_type_signature_edge {edge_name}"),
     }
 }
 
@@ -626,6 +687,7 @@ pub(super) fn resolve_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
         "method" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
             let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
+            let trait_item = vertex.as_item().expect("not a Trait item");
 
             let trait_vertex = vertex.as_trait().expect("not a Trait vertex");
             Box::new(trait_vertex.items.iter().filter_map(move |item_id| {
@@ -633,7 +695,7 @@ pub(super) fn resolve_trait_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 if let Some(next_item) = next_item {
                     match &next_item.inner {
                         rustdoc_types::ItemEnum::Function(..) => {
-                            Some(origin.make_item_vertex(next_item))
+                            Some(origin.make_method_vertex(next_item, trait_item))
                         }
                         _ => None,
                     }

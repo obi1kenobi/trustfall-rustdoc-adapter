@@ -33,6 +33,9 @@ pub enum VertexKind<'a> {
     Item(&'a Item),
 
     #[non_exhaustive]
+    Method(Method<'a>),
+
+    #[non_exhaustive]
     Span(&'a Span),
 
     #[non_exhaustive]
@@ -54,7 +57,7 @@ pub enum VertexKind<'a> {
     ImplementedTrait(ImplementedTrait<'a>),
 
     #[non_exhaustive]
-    FunctionParameter(&'a str),
+    FunctionParameter(FunctionParameter<'a>),
 
     #[non_exhaustive]
     FunctionAbi(&'a Abi),
@@ -89,6 +92,9 @@ pub enum VertexKind<'a> {
 
     #[non_exhaustive]
     ReturnValue(ReturnValue<'a>),
+
+    #[non_exhaustive]
+    NormalizedTypeSignature(NormalizedTypeSignature<'a>),
 }
 
 impl Typename for Vertex<'_> {
@@ -130,6 +136,7 @@ impl Typename for Vertex<'_> {
             VertexKind::Attribute(..) => "Attribute",
             VertexKind::AttributeMetaItem(..) => "AttributeMetaItem",
             VertexKind::ImplementedTrait(..) => "ImplementedTrait",
+            VertexKind::Method(..) => "Method",
             VertexKind::RawType(ty) => match ty {
                 rustdoc_types::Type::ResolvedPath { .. } => "ResolvedPathType",
                 _ => "RawType",
@@ -152,6 +159,7 @@ impl Typename for Vertex<'_> {
             },
             VertexKind::Feature(..) => "Feature",
             VertexKind::RequiredTargetFeature(..) => "RequiredTargetFeature",
+            VertexKind::NormalizedTypeSignature(..) => "NormalizedTypeSignature",
         }
     }
 }
@@ -194,6 +202,7 @@ impl<'a> Vertex<'a> {
     pub(super) fn as_item(&self) -> Option<&'a Item> {
         match &self.kind {
             VertexKind::Item(item) => Some(item),
+            VertexKind::Method(method) => Some(method.function),
             VertexKind::Variant(variant) => Some(variant.item()),
             VertexKind::PositionedItem(_, item) => Some(item),
             _ => None,
@@ -284,9 +293,9 @@ impl<'a> Vertex<'a> {
         })
     }
 
-    pub(super) fn as_function_parameter(&self) -> Option<&'a str> {
+    pub(super) fn as_function_parameter(&self) -> Option<&FunctionParameter<'a>> {
         match &self.kind {
-            VertexKind::FunctionParameter(name) => Some(name),
+            VertexKind::FunctionParameter(parameter) => Some(parameter),
             _ => None,
         }
     }
@@ -294,6 +303,13 @@ impl<'a> Vertex<'a> {
     pub(super) fn as_return_value(&self) -> Option<&ReturnValue<'a>> {
         match &self.kind {
             VertexKind::ReturnValue(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_normalized_type_signature(&self) -> Option<&NormalizedTypeSignature<'a>> {
+        match &self.kind {
+            VertexKind::NormalizedTypeSignature(value) => Some(value),
             _ => None,
         }
     }
@@ -490,7 +506,45 @@ impl TargetFeature<'_> {
 }
 
 #[non_exhaustive]
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Method<'a> {
+    pub(crate) function: &'a Item,
+    pub(crate) parent: &'a Item,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FunctionContext<'a> {
+    pub(crate) function: &'a Item,
+    pub(crate) parent: Option<&'a Item>,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub(crate) struct FunctionParameter<'a> {
+    pub(crate) context: FunctionContext<'a>,
+    pub(crate) position: NonZeroUsize,
+    pub(crate) name: &'a str,
+    pub(crate) type_: &'a rustdoc_types::Type,
+}
+
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct ReturnValue<'a> {
+    pub(crate) context: FunctionContext<'a>,
+    pub(crate) type_: Option<&'a rustdoc_types::Type>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum TypeSignatureComponent {
+    FunctionParameter(NonZeroUsize),
+    ReturnValue,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub(crate) struct NormalizedTypeSignature<'a> {
+    pub(crate) context: FunctionContext<'a>,
+    pub(crate) component: TypeSignatureComponent,
     pub(crate) type_: Option<&'a rustdoc_types::Type>,
 }
