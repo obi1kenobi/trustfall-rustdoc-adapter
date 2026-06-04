@@ -170,6 +170,7 @@ fn resolve_impls_based_on_any_method_name<'a>(
     // We can't produce it once per method name, because given 2 methods we'll get 4 results not 2:
     // each time the `impl` vertex is produced, it'll in turn produce both method vertices.
     // Hence the need to deduplicate using `produced_impls`.
+    // This is analogous to `resolve_items_by_any_importable_path()` in `item_lookup.rs`.
     Box::new(
         method_names
             .into_iter()
