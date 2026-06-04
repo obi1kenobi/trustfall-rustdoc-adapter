@@ -18,6 +18,8 @@ querying the test crate and assert that the returned results are correct.
 
 Start sessions by reading the `CONTRIBUTING.md` file. The first time you read, write,
 or edit a file in a directory, read the `README.md` file in that directory first, if one exists.
+When editing files in a subdirectory, also check for and follow any `AGENTS.md` files along the
+path from the repository root to that subdirectory.
 
 Never under any circumstances propose or apply any change to the `package.version` field
 of the top-level `Cargo.toml` file. Never under any cicrcumstances change anything inside
