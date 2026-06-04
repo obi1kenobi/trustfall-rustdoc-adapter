@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rustdoc_types::Item;
+use rustdoc_types::{Id, Item};
 use trustfall::{
     FieldValue,
     provider::{
@@ -11,7 +11,7 @@ use trustfall::{
 
 use super::super::{RustdocAdapter, origin::Origin, vertex::Vertex};
 
-use crate::IndexedCrate;
+use crate::{IndexedCrate, hashtables::HashSet};
 
 pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
     adapter: &'a RustdocAdapter<'a>,
@@ -291,19 +291,47 @@ fn resolve_items_by_importable_path<'a>(
             destination_type.as_deref(),
             &value,
         ),
-        CandidateValue::Multiple(values) => Box::new(values.into_iter().flat_map(move |value| {
-            resolve_items_by_importable_path_field_value(
-                crate_vertex,
-                origin,
-                destination_type.as_deref(),
-                &value,
-            )
-        })),
+        CandidateValue::Multiple(values) => {
+            resolve_items_by_any_importable_path(crate_vertex, origin, destination_type, values)
+        }
         _ => {
             // fall through to slow path
             resolve_items_slow_path(crate_vertex, origin)
         }
     }
+}
+
+fn resolve_items_by_any_importable_path<'a>(
+    crate_vertex: &'a IndexedCrate,
+    origin: Origin,
+    destination_type: Option<Arc<str>>,
+    importable_paths: Vec<FieldValue>,
+) -> VertexIterator<'a, Vertex<'a>> {
+    let mut produced_items: HashSet<&Id> = Default::default();
+
+    // This is the `Crate.item` edge, not the nested `importable_path` edge.
+    // If we're looking up multiple importable paths and they happen to be on the same item,
+    // we must only produce that item's vertex *once*, or else we'll get duplicates.
+    // We need to union the produced item vertices to prevent this.
+    // This is analogous to `resolve_impls_based_on_any_method_name()` in `impl_lookup.rs`.
+    Box::new(
+        importable_paths
+            .into_iter()
+            .flat_map(move |importable_path| {
+                resolve_items_by_importable_path_field_value(
+                    crate_vertex,
+                    origin,
+                    destination_type.as_deref(),
+                    &importable_path,
+                )
+            })
+            .filter(move |vertex| {
+                let item = vertex
+                    .as_item()
+                    .expect("Crate.item optimization produced a non-item vertex");
+                produced_items.insert(&item.id)
+            }),
+    )
 }
 
 /// Resolve public items with importable path `path`, optionally of vertex type `destination_type`.
