@@ -1556,7 +1556,22 @@ A function parameter.
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.FnDecl.html
 """
 type FunctionParameter {
+  """
+  The 1-based position of this parameter in source order.
+
+  Receiver parameters such as `self` are included in the count when present.
+  """
+  position: Int!
+
+  """
+  The parameter name from the function signature.
+  """
   name: String!
+
+  """
+  Canonical normalized type signature for this parameter.
+  """
+  normalized_type_signature: NormalizedTypeSignature!
 }
 
 """
@@ -2068,6 +2083,52 @@ type ReturnValue {
   ```
   """
   is_unit: Boolean!
+
+  """
+  Canonical normalized type signature for this return value.
+
+  Unit return values are represented as `()`.
+  """
+  normalized_type_signature: NormalizedTypeSignature!
+}
+
+"""
+A normalized signature for a type, such as in a function parameter or return value.
+"""
+type NormalizedTypeSignature {
+  """
+  Canonical normalized string representation of one Rust type.
+
+  The signature is scoped to the item that contains the type.
+  Generic parameter names from that scope are normalized in declaration order:
+  lifetimes become `'a`, `'b`, and so on; non-synthetic type parameters
+  become `T1`, `T2`, and so on; synthetic type parameters from
+  parameter-position `impl Trait` become `IT1`, `IT2`, and so on using that
+  same type-parameter counter; const parameters become `C1`, `C2`, and so on.
+  For example, in
+  `impl<A> Example<A> { fn f<B>(&self, a: A, b: B) }`, parameter `a` has
+  signature `T1` and parameter `b` has signature `T2`.
+
+  Parameter names and patterns are not included. Neither are the containing
+  item's attributes such as ABI, safety, asyncness, constness, generic bounds,
+  and `where` clauses. For example, in
+  `fn f<T: Clone>(value: T) -> T where T: Debug`, the parameter and return
+  value both have signature `T1` since the generic `T` is normalized to `T1`.
+
+  `impl Trait` in parameter position is normalized to the corresponding
+  synthetic type parameter; for example, `impl Into<String>` may become `IT1`
+  or `IT2` depending on where it appears in the type-parameter counter.
+  Return-position `impl Trait` remains an `impl` (opaque) type, such as
+  `impl ::core::iter::traits::iterator::Iterator<Item = u8>`.
+
+  Item paths are canonical absolute paths when available. For example, in a
+  crate named `example_crate`, `PublicType<u8>` becomes
+  `::example_crate::PublicType<u8>`, and `Vec<PublicType<u8>>` becomes
+  `::alloc::vec::Vec<::example_crate::PublicType<u8>>`.
+
+  The unit type is represented as `()`.
+  """
+  signature: String!
 }
 
 """
