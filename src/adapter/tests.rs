@@ -10081,6 +10081,67 @@ fn function_parameter_normalized_type_signatures() {
 }
 
 #[test]
+fn function_parameter_normalized_type_signature_sorts_assoc_constraints_before_impl_trait_names() {
+    get_test_data!(data, assoc_constraint_order);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @filter(op: "one_of", value: ["$functions"]) @output
+
+                parameter {
+                    normalized_type_signature {
+                        signature @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables = btreemap! {
+        "functions" => FieldValue::List(vec![
+            FieldValue::String("a_then_b".into()),
+            FieldValue::String("b_then_a".into()),
+        ].into()),
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        signature: String,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            name: "a_then_b".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = IT1, B = IT2>>".into(),
+        },
+        Output {
+            name: "b_then_a".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = IT1, B = IT2>>".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
 fn function_return_normalized_type_signatures() {
     get_test_data!(data, function_params_and_return_value);
     let adapter = RustdocAdapter::new(&data, None);

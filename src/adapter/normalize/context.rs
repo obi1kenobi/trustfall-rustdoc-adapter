@@ -321,6 +321,11 @@ fn collect_generic_args_impl_trait_names<'a>(
                     GenericArg::Lifetime(_) | GenericArg::Const(_) | GenericArg::Infer => {}
                 }
             }
+            // The formatter sorts associated-item constraints for canonical output.
+            // Collect nested `impl Trait` names in the same order, otherwise source
+            // order can leak into the synthetic names assigned inside constraints.
+            let mut constraints = constraints.iter().collect::<Vec<_>>();
+            constraints.sort_unstable_by(|a, b| a.name.cmp(&b.name));
             for constraint in constraints {
                 collect_assoc_item_constraint_impl_trait_names(
                     constraint,
