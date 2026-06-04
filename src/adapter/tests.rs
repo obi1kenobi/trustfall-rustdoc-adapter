@@ -6563,6 +6563,68 @@ fn impl_lookup_by_method_name_optimization() {
 }
 
 #[test]
+fn impl_lookup_by_multiple_method_names_visits_each_impl_once() {
+    get_test_data!(data, method_lookup_optimization);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                owner: name @filter(op: "=", value: ["$owner"]) @output
+
+                inherent_impl {
+                    method {
+                        method: name @filter(op: "one_of", value: ["$methods"]) @output
+                    }
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    let variables = btreemap! {
+        "owner" => FieldValue::String("MultiMethodOwner".into()),
+        "methods" => FieldValue::List(vec![
+            FieldValue::String("first".into()),
+            FieldValue::String("second".into()),
+        ].into()),
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        owner: String,
+        method: String,
+    }
+
+    let mut results: Vec<_> = trustfall::execute_query(&schema, adapter.clone(), query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            owner: "MultiMethodOwner".into(),
+            method: "first".into(),
+        },
+        Output {
+            owner: "MultiMethodOwner".into(),
+            method: "second".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
 fn generic_param_positions() {
     get_test_data!(data, generic_param_positions);
     let adapter = RustdocAdapter::new(&data, None);
