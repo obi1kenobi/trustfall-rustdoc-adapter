@@ -338,31 +338,29 @@ fn format_generic_args<'a>(
                 needs_separator = true;
             }
 
-            let mut constraints = constraints
-                .iter()
-                .map(|constraint| {
-                    let mut formatted = String::new();
-                    format_assoc_item_constraint(
-                        context,
-                        constraint,
-                        parameter_impl_trait_names,
-                        &mut formatted,
-                    );
-                    formatted
-                })
-                .collect::<Vec<_>>();
-            constraints.sort_unstable();
+            let mut constraints = constraints.iter().collect::<Vec<_>>();
+            constraints.sort_unstable_by(|a, b| a.name.cmp(&b.name));
             if !constraints.is_empty() {
                 if needs_separator {
                     output.push_str(", ");
                 }
                 let mut constraints_iter = constraints.iter();
                 if let Some(constraint) = constraints_iter.next() {
-                    output.push_str(constraint);
+                    format_assoc_item_constraint(
+                        context,
+                        constraint,
+                        parameter_impl_trait_names,
+                        output,
+                    );
                 }
                 for constraint in constraints_iter {
                     output.push_str(", ");
-                    output.push_str(constraint);
+                    format_assoc_item_constraint(
+                        context,
+                        constraint,
+                        parameter_impl_trait_names,
+                        output,
+                    );
                 }
             }
             output.push('>');
