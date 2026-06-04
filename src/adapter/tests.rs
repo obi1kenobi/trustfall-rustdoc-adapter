@@ -6504,6 +6504,76 @@ fn item_lookup_by_path_optimization() {
 }
 
 #[test]
+fn item_lookup_by_multiple_importable_paths_visits_each_item_once() {
+    get_test_data!(data, item_lookup_optimization);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                name @output
+
+                importable_path {
+                    path @filter(op: "one_of", value: ["$paths"]) @output
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    let variables = btreemap! {
+        "paths" => FieldValue::List(vec![
+            FieldValue::List(vec![
+                FieldValue::String("item_lookup_optimization".into()),
+                FieldValue::String("MultiPathItem".into()),
+            ].into()),
+            FieldValue::List(vec![
+                FieldValue::String("item_lookup_optimization".into()),
+                FieldValue::String("inner".into()),
+                FieldValue::String("MultiPathItem".into()),
+            ].into()),
+        ].into()),
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        path: Vec<String>,
+    }
+
+    let mut results: Vec<_> = trustfall::execute_query(&schema, adapter.clone(), query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            name: "MultiPathItem".into(),
+            path: vec!["item_lookup_optimization".into(), "MultiPathItem".into()],
+        },
+        Output {
+            name: "MultiPathItem".into(),
+            path: vec![
+                "item_lookup_optimization".into(),
+                "inner".into(),
+                "MultiPathItem".into(),
+            ],
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
 fn impl_lookup_by_method_name_optimization() {
     // Any test crate that has `impl` blocks without methods would work for this test.
     get_test_data!(data, associated_consts);
