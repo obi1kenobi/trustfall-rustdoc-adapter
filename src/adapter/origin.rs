@@ -3,7 +3,6 @@ use std::{borrow::Cow, num::NonZeroUsize, rc::Rc};
 use rustdoc_types::{Abi, Item, Span};
 
 use crate::{
-    adapter::vertex::ReturnValue,
     attributes::{Attribute, AttributeMetaItem},
     indexed_crate::ImportablePath,
 };
@@ -11,7 +10,10 @@ use crate::{
 use super::{
     enum_variant::{EnumVariant, LazyDiscriminants},
     receiver::Receiver,
-    vertex::{ImplementedTrait, Vertex, VertexKind},
+    vertex::{
+        FunctionContext, FunctionParameter, ImplementedTrait, Method, NormalizedTypeSignature,
+        ReturnValue, TypeSignatureComponent, Vertex, VertexKind,
+    },
 };
 
 #[non_exhaustive]
@@ -104,20 +106,62 @@ impl Origin {
         }
     }
 
-    pub(super) fn make_function_parameter_vertex<'a>(&self, name: &'a str) -> Vertex<'a> {
+    pub(super) fn make_method_vertex<'a>(
+        &self,
+        function: &'a Item,
+        parent: &'a Item,
+    ) -> Vertex<'a> {
         Vertex {
             origin: *self,
-            kind: VertexKind::FunctionParameter(name),
+            kind: VertexKind::Method(Method { function, parent }),
+        }
+    }
+
+    pub(super) fn make_function_parameter_vertex<'a>(
+        &self,
+        context: FunctionContext<'a>,
+        position: NonZeroUsize,
+        name: &'a str,
+        type_: &'a rustdoc_types::Type,
+    ) -> Vertex<'a> {
+        Vertex {
+            origin: *self,
+            kind: VertexKind::FunctionParameter(FunctionParameter {
+                context,
+                position,
+                name,
+                type_,
+            }),
         }
     }
 
     pub(super) fn make_return_value_vertex<'a>(
         &self,
+        context: FunctionContext<'a>,
         return_type: Option<&'a rustdoc_types::Type>,
     ) -> Vertex<'a> {
         Vertex {
             origin: *self,
-            kind: VertexKind::ReturnValue(ReturnValue { type_: return_type }),
+            kind: VertexKind::ReturnValue(ReturnValue {
+                context,
+                type_: return_type,
+            }),
+        }
+    }
+
+    pub(super) fn make_normalized_type_signature_vertex<'a>(
+        &self,
+        context: FunctionContext<'a>,
+        component: TypeSignatureComponent,
+        type_: Option<&'a rustdoc_types::Type>, // none if `()` in a function return position
+    ) -> Vertex<'a> {
+        Vertex {
+            origin: *self,
+            kind: VertexKind::NormalizedTypeSignature(NormalizedTypeSignature {
+                context,
+                component,
+                type_,
+            }),
         }
     }
 

@@ -7,7 +7,10 @@ use trustfall::{
     },
 };
 
-use crate::{hashtables::HashMap, indexed_crate::ImplEntry};
+use crate::{
+    hashtables::{HashMap, HashSet},
+    indexed_crate::ImplEntry,
+};
 
 use super::super::{RustdocAdapter, origin::Origin, vertex::Vertex};
 
@@ -111,16 +114,13 @@ fn resolve_impl_based_on_method_name_candidate<'a>(
                 method_name,
             )
         }
-        CandidateValue::Multiple(values) => Box::new(values.into_iter().flat_map(move |value| {
-            let method_name = value.as_str().expect("method name was not a string");
-            resolve_impl_based_on_method_name(
-                origin,
-                impl_index,
-                inherent_impls_only,
-                item_id,
-                method_name,
-            )
-        })),
+        CandidateValue::Multiple(values) => resolve_impls_based_on_any_method_name(
+            origin,
+            impl_index,
+            inherent_impls_only,
+            item_id,
+            values,
+        ),
         _ => {
             // fall through to slow path
             resolve_owner_impl_slow_path(vertex, adapter, inherent_impls_only)
@@ -153,6 +153,55 @@ the `impl_index` returned a value where the `impl_item` was not an impl: {impl_i
     } else {
         Box::new(std::iter::empty())
     }
+}
+
+fn resolve_impls_based_on_any_method_name<'a>(
+    origin: Origin,
+    impl_index: &'a HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>,
+    inherent_impls_only: bool,
+    item_id: &'a Id,
+    method_names: Vec<FieldValue>,
+) -> VertexIterator<'a, Vertex<'a>> {
+    let mut produced_impls: HashSet<&Id> = Default::default();
+
+    // This is the `ImplOwner.impl` / `ImplOwner.inherent_impl` edge, not the
+    // nested `method` edge. If we're looking up multiple methods that appear inside
+    // the same `impl` block, we must only produce that `impl` vertex *once*.
+    // We can't produce it once per method name, because given 2 methods we'll get 4 results not 2:
+    // each time the `impl` vertex is produced, it'll in turn produce both method vertices.
+    // Hence the need to deduplicate using `produced_impls`.
+    // This is analogous to `resolve_items_by_any_importable_path()` in `item_lookup.rs`.
+    Box::new(
+        method_names
+            .into_iter()
+            .filter_map(move |method_name| {
+                // Use the `impl_index` to find the matching list
+                // of (impl item, method item) tuples, if any.
+                let method_name = method_name.as_str().expect("method name was not a string");
+                impl_index.get(&(item_id, method_name))
+            })
+            .flatten()
+            .filter_map(move |(impl_item, _)| {
+                if !produced_impls.insert(&impl_item.id) {
+                    // The edge already produced that impl vertex.
+                    // The desired methods would already have been produced there.
+                    return None;
+                }
+
+                let impl_content = match &impl_item.inner {
+                    rustdoc_types::ItemEnum::Impl(impl_) => impl_,
+                    _ => unreachable!(
+                        "the `impl_index` returned a value where the `impl_item` was not an impl: \
+                        {impl_item:?}"
+                    ),
+                };
+                if !inherent_impls_only || impl_content.trait_.is_none() {
+                    Some(origin.make_item_vertex(impl_item))
+                } else {
+                    None
+                }
+            }),
+    )
 }
 
 fn resolve_owner_impl_slow_path<'a>(

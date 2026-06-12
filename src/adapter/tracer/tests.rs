@@ -3,7 +3,7 @@
 // but there's currently nothing we can do about this lint.
 #![expect(clippy::arc_with_non_send_sync)]
 
-use std::{collections::BTreeMap, num::NonZero, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, num::NonZero, ops::RangeInclusive, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use trustfall::Schema;
@@ -147,15 +147,15 @@ fn tracing_adapter() {
 
     let tracer = tracing_adapter.finish();
 
-    // List of (function call, count) tuples.
-    let desired = [
+    // List of (function call, acceptable count range) tuples.
+    let desired: [(FunctionCall, RangeInclusive<u32>); 8] = [
         (
             FunctionCall::ResolveProperty(
                 Vid::new(NonZero::new(2).unwrap()),
                 "Trait".into(),
                 "name".into(),
             ),
-            2,
+            2..=2,
         ),
         (
             FunctionCall::ResolveProperty(
@@ -163,7 +163,7 @@ fn tracing_adapter() {
                 "Method".into(),
                 "has_body".into(),
             ),
-            2,
+            2..=2,
         ),
         (
             FunctionCall::ResolveProperty(
@@ -171,7 +171,7 @@ fn tracing_adapter() {
                 "Method".into(),
                 "name".into(),
             ),
-            2,
+            2..=2,
         ),
         (
             FunctionCall::ResolveNeighbors(
@@ -179,7 +179,7 @@ fn tracing_adapter() {
                 "Crate".into(),
                 Eid::new(NonZero::new(1).unwrap()),
             ),
-            1,
+            1..=1,
         ),
         (
             FunctionCall::ResolveNeighbors(
@@ -187,15 +187,18 @@ fn tracing_adapter() {
                 "Trait".into(),
                 Eid::new(NonZero::new(2).unwrap()),
             ),
-            1,
+            1..=1,
         ),
+        // Rust 1.96 nightly rustdoc emits a synthetic `impl UnsafeUnpin for Foo`,
+        // which adds one more top-level `Item` candidate and therefore one more
+        // attempted `Item -> Trait` coercion than older toolchains.
         (
             FunctionCall::ResolveNeighborsInner(
                 Vid::new(NonZero::new(1).unwrap()),
                 "Crate".into(),
                 Eid::new(NonZero::new(1).unwrap()),
             ),
-            20,
+            20..=21,
         ),
         (
             FunctionCall::ResolveNeighborsInner(
@@ -203,7 +206,7 @@ fn tracing_adapter() {
                 "Trait".into(),
                 Eid::new(NonZero::new(2).unwrap()),
             ),
-            2,
+            2..=2,
         ),
         (
             FunctionCall::ResolveCoercion(
@@ -211,12 +214,20 @@ fn tracing_adapter() {
                 "Item".into(),
                 "Trait".into(),
             ),
-            20,
+            20..=21,
         ),
     ];
 
-    for (i, (call, summary)) in tracer.calls.iter().enumerate() {
-        assert_eq!(*call, desired[i].0);
-        assert_eq!(summary.count(), desired[i].1);
+    assert_eq!(tracer.calls.len(), desired.len());
+    for ((call, summary), (expected_call, expected_count_range)) in
+        tracer.calls.iter().zip(desired.iter())
+    {
+        assert_eq!(call, expected_call);
+
+        let count = summary.count();
+        assert!(
+            expected_count_range.contains(&count),
+            "unexpected count for {call:?}: got {count}, expected {expected_count_range:?}",
+        );
     }
 }

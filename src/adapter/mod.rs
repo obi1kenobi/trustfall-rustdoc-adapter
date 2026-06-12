@@ -18,6 +18,7 @@ use self::{
 
 mod edges;
 mod enum_variant;
+mod normalize;
 mod optimizations;
 mod origin;
 mod properties;
@@ -189,6 +190,13 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                     properties::resolve_function_parameter_property(contexts, property_name)
                 }
                 "ReturnValue" => properties::resolve_return_value_property(contexts, property_name),
+                "NormalizedTypeSignature" => {
+                    properties::resolve_normalized_type_signature_property(
+                        contexts,
+                        property_name,
+                        self,
+                    )
+                }
                 "FunctionAbi" => properties::resolve_function_abi_property(contexts, property_name),
                 "Impl" => properties::resolve_impl_property(contexts, property_name),
                 "Attribute" => properties::resolve_attribute_property(contexts, property_name),
@@ -261,6 +269,10 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
             | "ImplOwner"
             | "Struct"
             | "Enum"
+            | "Variant"
+            | "PlainVariant"
+            | "TupleVariant"
+            | "StructVariant"
             | "Union"
             | "Trait"
             | "Function"
@@ -319,6 +331,11 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
             {
                 edges::resolve_function_like_edge(contexts, edge_name)
             }
+            "FunctionParameter" | "ReturnValue"
+                if matches!(edge_name.as_ref(), "normalized_type_signature") =>
+            {
+                edges::resolve_normalized_type_signature_edge(contexts, edge_name)
+            }
             "GenericItem" | "ImplOwner" | "Struct" | "Enum" | "Union" | "Trait" | "Function"
             | "Method" | "Impl"
                 if matches!(edge_name.as_ref(), "generic_parameter") =>
@@ -372,6 +389,9 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                             actual_type_name,
                             "Struct"
                                 | "Enum"
+                                | "PlainVariant"
+                                | "TupleVariant"
+                                | "StructVariant"
                                 | "Union"
                                 | "Trait"
                                 | "Module"
@@ -381,10 +401,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                                 | "Macro"
                                 | "FunctionLikeProcMacro"
                                 | "AttributeProcMacro"
-                                | "DeriveProcMacro" // TODO: In principle, variants should be here too,
-                                                    // but our import name analysis doesn't consider variants importable
-                                                    // at the moment. Add the following when it does:
-                                                    // "PlainVariant" | "TupleVariant" | "StructVariant"
+                                | "DeriveProcMacro"
                         ),
                         "GenericItem" => matches!(
                             actual_type_name,

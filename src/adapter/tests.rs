@@ -10,7 +10,7 @@ use anyhow::Context;
 use maplit::btreemap;
 use trustfall::{FieldValue, Schema, TryIntoStruct};
 
-use crate::RustdocAdapter;
+use crate::{PackageIndex, RustdocAdapter};
 
 #[allow(dead_code)]
 mod type_level_invariants {
@@ -195,6 +195,113 @@ fn rustdoc_finds_supertrait() {
             Output {
                 name: "MyTrait".into(),
                 supertrait: "Supertrait2".into(),
+            },
+        ],
+        results
+    );
+}
+
+#[test]
+fn rustdoc_finds_where_self_supertraits() {
+    get_test_data!(data, supertrait_where_self);
+    let adapter = RustdocAdapter::new(&data, None);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                name @output @filter(op: "one_of", value: ["$traits"])
+
+                supertrait {
+                    supertrait: name @output
+                    instantiated_name @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let mut variables: BTreeMap<&str, FieldValue> = BTreeMap::default();
+    variables.insert(
+        "traits",
+        vec![
+            "HeaderSupertrait",
+            "MixedSuperAndNonSuper",
+            "NonSelfWhere",
+            "RefSelfWithTraitLifetime",
+            "RefSelfWhere",
+            "TwoColonTwoWhere",
+            "WhereSelfGeneric",
+            "WhereSelfSupertrait",
+        ]
+        .into(),
+    );
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        supertrait: String,
+        instantiated_name: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![
+            Output {
+                name: "HeaderSupertrait".into(),
+                supertrait: "Base".into(),
+                instantiated_name: "Base<Assoc = u8>".into(),
+            },
+            Output {
+                name: "MixedSuperAndNonSuper".into(),
+                supertrait: "Base".into(),
+                instantiated_name: "Base<Assoc = u8>".into(),
+            },
+            Output {
+                name: "MixedSuperAndNonSuper".into(),
+                supertrait: "GenericBase".into(),
+                instantiated_name: "GenericBase<T>".into(),
+            },
+            Output {
+                name: "TwoColonTwoWhere".into(),
+                supertrait: "Base".into(),
+                instantiated_name: "Base<Assoc = u8>".into(),
+            },
+            Output {
+                name: "TwoColonTwoWhere".into(),
+                supertrait: "GenericBase".into(),
+                instantiated_name: "GenericBase<T>".into(),
+            },
+            Output {
+                name: "TwoColonTwoWhere".into(),
+                supertrait: "GenericMarker".into(),
+                instantiated_name: "GenericMarker<T>".into(),
+            },
+            Output {
+                name: "TwoColonTwoWhere".into(),
+                supertrait: "LocalMarker".into(),
+                instantiated_name: "LocalMarker".into(),
+            },
+            Output {
+                name: "WhereSelfGeneric".into(),
+                supertrait: "GenericBase".into(),
+                instantiated_name: "GenericBase<T>".into(),
+            },
+            Output {
+                name: "WhereSelfSupertrait".into(),
+                supertrait: "Base".into(),
+                instantiated_name: "Base<Assoc = u8>".into(),
             },
         ],
         results
@@ -2440,6 +2547,804 @@ fn importable_paths() {
     similar_asserts::assert_eq!(expected_results, results);
 }
 
+#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+struct VariantImportablePath {
+    name: String,
+    path: Vec<String>,
+    doc_hidden: bool,
+    deprecated: bool,
+    public_api: bool,
+}
+
+#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+struct ImportableItemPath {
+    name: String,
+    kind: String,
+    path: Vec<String>,
+}
+
+fn collect_variant_importable_paths(data: &PackageIndex<'_>) -> Vec<VariantImportablePath> {
+    let adapter = RustdocAdapter::new(data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Variant {
+                name @output
+                importable_path {
+                    path @output
+                    doc_hidden @output
+                    deprecated @output
+                    public_api @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    results
+}
+
+fn collect_module_importable_item_paths(
+    data: &PackageIndex<'_>,
+    module_name: &str,
+) -> Vec<ImportableItemPath> {
+    let adapter = RustdocAdapter::new(data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Module {
+                name @filter(op: "=", value: ["$module"])
+                item {
+                    ... on Importable {
+                        kind: __typename @output @filter(op: "one_of", value: ["$kinds"])
+                        name @output
+                        importable_path {
+                            path @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let mut variables: BTreeMap<&str, FieldValue> = BTreeMap::default();
+    variables.insert("module", module_name.into());
+    variables.insert("kinds", vec!["Struct", "Enum"].into());
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    results
+}
+
+/// Verifies enum variant importable paths across direct, renamed, doc-hidden, deprecated,
+/// namespace, and glob shadowing cases in `enum_variant_imports`.
+#[test]
+fn enum_variant_importable_paths() {
+    get_test_data!(data, enum_variant_imports);
+    let results = collect_variant_importable_paths(&data);
+
+    let mut expected_results = vec![
+        VariantImportablePath {
+            name: "Plain".into(),
+            path: vec!["enum_variant_imports".into(), "Base".into(), "Plain".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Plain".into(),
+            path: vec!["enum_variant_imports".into(), "Plain".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Plain".into(),
+            path: vec!["enum_variant_imports".into(), "RenamedPlain".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Plain".into(),
+            path: vec!["enum_variant_imports".into(), "HiddenPlain".into()],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        VariantImportablePath {
+            name: "Plain".into(),
+            path: vec!["enum_variant_imports".into(), "DeprecatedPlain".into()],
+            doc_hidden: false,
+            deprecated: true,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Deprecated".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "Base".into(),
+                "Deprecated".into(),
+            ],
+            doc_hidden: false,
+            deprecated: true,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Deprecated".into(),
+            path: vec!["enum_variant_imports".into(), "Deprecated".into()],
+            doc_hidden: false,
+            deprecated: true,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Hidden".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "Base".into(),
+                "Hidden".into(),
+            ],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        VariantImportablePath {
+            name: "Hidden".into(),
+            path: vec!["enum_variant_imports".into(), "Hidden".into()],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        VariantImportablePath {
+            name: "DeprecatedHidden".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "Base".into(),
+                "DeprecatedHidden".into(),
+            ],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "DeprecatedHidden".into(),
+            path: vec!["enum_variant_imports".into(), "DeprecatedHidden".into()],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Red".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Colors".into(),
+                "Red".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Red".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Red".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Green".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Colors".into(),
+                "Green".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Blue".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Colors".into(),
+                "Blue".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Clash".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "value_shadow".into(),
+                "Shadowed".into(),
+                "Clash".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Red".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Primary".into(),
+                "Red".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Red".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Red".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Green".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Primary".into(),
+                "Green".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Green".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Secondary".into(),
+                "Green".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Blue".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Primary".into(),
+                "Blue".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Blue".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Secondary".into(),
+                "Blue".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Cyan".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Secondary".into(),
+                "Cyan".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Cyan".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Cyan".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Same".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "Source".into(),
+                "Same".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Same".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "Same".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "SameTuple".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "Source".into(),
+                "SameTuple".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "SameTuple".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "SameTuple".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "SameStruct".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "Source".into(),
+                "SameStruct".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "SameStruct".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "SameStruct".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Clash".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Left".into(),
+                "Clash".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Tuple".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Left".into(),
+                "Tuple".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Struct".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Left".into(),
+                "Struct".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Clash".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Right".into(),
+                "Clash".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Tuple".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Right".into(),
+                "Tuple".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Struct".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Right".into(),
+                "Struct".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "LeftOnly".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Left".into(),
+                "LeftOnly".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "LeftOnly".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "LeftOnly".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "RightOnly".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "Right".into(),
+                "RightOnly".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "RightOnly".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_conflict".into(),
+                "RightOnly".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Verifies importable paths for enum/struct items that drive variant shadowing and
+/// glob-vs-glob ambiguity. We filter to the two modules that define those items,
+/// since variant importable paths are validated separately and the full crate list
+/// would be noisy.
+#[test]
+fn enum_variant_imports_module_item_paths() {
+    get_test_data!(data, enum_variant_imports);
+
+    let mut namespace_results = collect_module_importable_item_paths(&data, "namespace");
+    let mut expected_namespace_results = vec![
+        ImportableItemPath {
+            name: "Blue".into(),
+            kind: "Struct".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Blue".into(),
+            ],
+        },
+        ImportableItemPath {
+            name: "Colors".into(),
+            kind: "Enum".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Colors".into(),
+            ],
+        },
+        ImportableItemPath {
+            name: "Green".into(),
+            kind: "Struct".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Green".into(),
+            ],
+        },
+        ImportableItemPath {
+            name: "Red".into(),
+            kind: "Struct".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace".into(),
+                "Red".into(),
+            ],
+        },
+    ];
+    namespace_results.sort_unstable();
+    expected_namespace_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_namespace_results, namespace_results);
+
+    let mut conflict_results =
+        collect_module_importable_item_paths(&data, "namespace_glob_conflict");
+    let mut expected_conflict_results = vec![
+        ImportableItemPath {
+            name: "Primary".into(),
+            kind: "Enum".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Primary".into(),
+            ],
+        },
+        ImportableItemPath {
+            name: "Secondary".into(),
+            kind: "Enum".into(),
+            path: vec![
+                "enum_variant_imports".into(),
+                "namespace_glob_conflict".into(),
+                "Secondary".into(),
+            ],
+        },
+    ];
+    conflict_results.sort_unstable();
+    expected_conflict_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_conflict_results, conflict_results);
+}
+
+/// Ensures glob reexports of enum variants surface as importable paths.
+#[test]
+fn enum_variant_glob_reexport_enum_variants() {
+    get_test_data!(data, glob_reexport_enum_variants);
+    let mut results: Vec<_> = collect_variant_importable_paths(&data);
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        VariantImportablePath {
+            name: "First".into(),
+            path: vec!["glob_reexport_enum_variants".into(), "First".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Second".into(),
+            path: vec!["glob_reexport_enum_variants".into(), "Second".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Confirms glob-of-glob reexports preserve enum variant importability.
+#[test]
+fn enum_variant_glob_of_glob_reexport() {
+    get_test_data!(data, glob_of_glob_reexport);
+    let mut results: Vec<_> = collect_variant_importable_paths(&data);
+    results.sort_unstable();
+
+    let mut expected_results = vec![VariantImportablePath {
+        name: "First".into(),
+        path: vec!["glob_of_glob_reexport".into(), "Baz".into(), "First".into()],
+        doc_hidden: false,
+        deprecated: false,
+        public_api: true,
+    }];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Confirms glob-of-renamed reexports preserve enum variant importability.
+#[test]
+fn enum_variant_glob_of_renamed_reexport() {
+    get_test_data!(data, glob_of_renamed_reexport);
+    let mut results: Vec<_> = collect_variant_importable_paths(&data);
+    results.sort_unstable();
+
+    let mut expected_results = vec![VariantImportablePath {
+        name: "First".into(),
+        path: vec!["glob_of_renamed_reexport".into(), "RenamedFirst".into()],
+        doc_hidden: false,
+        deprecated: false,
+        public_api: true,
+    }];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Verifies that glob-reexporting both an enum and its variants yields both importable paths.
+#[test]
+fn enum_variant_glob_reexport_enum_and_contents() {
+    get_test_data!(data, glob_reexport);
+    let mut results: Vec<_> = collect_variant_importable_paths(&data);
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        VariantImportablePath {
+            name: "First".into(),
+            path: vec!["glob_reexport".into(), "First".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "First".into(),
+            path: vec!["glob_reexport".into(), "Baz".into(), "First".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Second".into(),
+            path: vec!["glob_reexport".into(), "Second".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Second".into(),
+            path: vec!["glob_reexport".into(), "Baz".into(), "Second".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Ensures enum variant glob reexports do not shadow same-named functions in other namespaces.
+#[test]
+fn enum_variant_glob_of_enum_does_not_shadow_local_fn() {
+    get_test_data!(data, glob_of_enum_does_not_shadow_local_fn);
+    let mut results: Vec<_> = collect_variant_importable_paths(&data);
+    results.sort_unstable();
+
+    let mut expected_results = vec![VariantImportablePath {
+        name: "First".into(),
+        path: vec![
+            "glob_of_enum_does_not_shadow_local_fn".into(),
+            "Foo".into(),
+            "First".into(),
+        ],
+        doc_hidden: false,
+        deprecated: false,
+        public_api: true,
+    }];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Verifies that a local type shadows a glob-imported variant in the value namespace,
+/// while other variants remain glob-importable. This crate only defines those variants.
+#[test]
+fn enum_variant_overlapping_glob_of_enum_with_local_item() {
+    get_test_data!(data, overlapping_glob_of_enum_with_local_item);
+    let mut results: Vec<_> = collect_variant_importable_paths(&data);
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        VariantImportablePath {
+            name: "First".into(),
+            path: vec![
+                "overlapping_glob_of_enum_with_local_item".into(),
+                "Foo".into(),
+                "First".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Second".into(),
+            path: vec![
+                "overlapping_glob_of_enum_with_local_item".into(),
+                "Foo".into(),
+                "Second".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        VariantImportablePath {
+            name: "Second".into(),
+            path: vec![
+                "overlapping_glob_of_enum_with_local_item".into(),
+                "inner".into(),
+                "Second".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
 #[test]
 fn item_own_public_api_properties() {
     get_test_data!(data, importable_paths);
@@ -2777,20 +3682,108 @@ fn importable_items_cover_more_kinds() {
                 kind: "Enum".into(),
             },
             Output {
+                name: "Zero".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "One".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Two".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Three".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Four".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Five".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
                 name: "FieldlessWithDiscrimants".into(),
                 kind: "Enum".into(),
+            },
+            Output {
+                name: "First".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Tuple".into(),
+                kind: "TupleVariant".into(),
+            },
+            Output {
+                name: "Second".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Struct".into(),
+                kind: "StructVariant".into(),
+            },
+            Output {
+                name: "Unit".into(),
+                kind: "PlainVariant".into(),
             },
             Output {
                 name: "Fieldful".into(),
                 kind: "Enum".into(),
             },
             Output {
+                name: "Unit".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Tuple".into(),
+                kind: "TupleVariant".into(),
+            },
+            Output {
+                name: "Struct".into(),
+                kind: "StructVariant".into(),
+            },
+            Output {
+                name: "Unit2".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
                 name: "FieldfulNoRepr".into(),
                 kind: "Enum".into(),
             },
             Output {
+                name: "Unit".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Tuple".into(),
+                kind: "TupleVariant".into(),
+            },
+            Output {
+                name: "Struct".into(),
+                kind: "StructVariant".into(),
+            },
+            Output {
                 name: "Pathological".into(),
                 kind: "Enum".into(),
+            },
+            Output {
+                name: "Min".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "MinPlusOne".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "MinPlusTwo".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Max".into(),
+                kind: "PlainVariant".into(),
             },
             Output {
                 name: "enum_discriminants".into(),
@@ -5740,6 +6733,76 @@ fn item_lookup_by_path_optimization() {
 }
 
 #[test]
+fn item_lookup_by_multiple_importable_paths_visits_each_item_once() {
+    get_test_data!(data, item_lookup_optimization);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                name @output
+
+                importable_path {
+                    path @filter(op: "one_of", value: ["$paths"]) @output
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    let variables = btreemap! {
+        "paths" => FieldValue::List(vec![
+            FieldValue::List(vec![
+                FieldValue::String("item_lookup_optimization".into()),
+                FieldValue::String("MultiPathItem".into()),
+            ].into()),
+            FieldValue::List(vec![
+                FieldValue::String("item_lookup_optimization".into()),
+                FieldValue::String("inner".into()),
+                FieldValue::String("MultiPathItem".into()),
+            ].into()),
+        ].into()),
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        path: Vec<String>,
+    }
+
+    let mut results: Vec<_> = trustfall::execute_query(&schema, adapter.clone(), query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            name: "MultiPathItem".into(),
+            path: vec!["item_lookup_optimization".into(), "MultiPathItem".into()],
+        },
+        Output {
+            name: "MultiPathItem".into(),
+            path: vec![
+                "item_lookup_optimization".into(),
+                "inner".into(),
+                "MultiPathItem".into(),
+            ],
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
 fn impl_lookup_by_method_name_optimization() {
     // Any test crate that has `impl` blocks without methods would work for this test.
     get_test_data!(data, associated_consts);
@@ -5795,6 +6858,68 @@ fn impl_lookup_by_method_name_optimization() {
         method: None,
     }];
     expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn impl_lookup_by_multiple_method_names_visits_each_impl_once() {
+    get_test_data!(data, method_lookup_optimization);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                owner: name @filter(op: "=", value: ["$owner"]) @output
+
+                inherent_impl {
+                    method {
+                        method: name @filter(op: "one_of", value: ["$methods"]) @output
+                    }
+                }
+            }
+        }
+    }
+}
+    "#;
+
+    let variables = btreemap! {
+        "owner" => FieldValue::String("MultiMethodOwner".into()),
+        "methods" => FieldValue::List(vec![
+            FieldValue::String("first".into()),
+            FieldValue::String("second".into()),
+        ].into()),
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        owner: String,
+        method: String,
+    }
+
+    let mut results: Vec<_> = trustfall::execute_query(&schema, adapter.clone(), query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            owner: "MultiMethodOwner".into(),
+            method: "first".into(),
+        },
+        Output {
+            owner: "MultiMethodOwner".into(),
+            method: "second".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
     similar_asserts::assert_eq!(expected_results, results);
 }
 
@@ -7519,6 +8644,22 @@ fn method_self_receiver() {
             by_mut_reference: false,
             kind: "Pin<&Arc<Self>>".into(),
         },
+        Output {
+            struct_name: "GenericExample".into(),
+            method_name: "by_generic_ref".into(),
+            by_value: false,
+            by_reference: true,
+            by_mut_reference: false,
+            kind: "GenericExample<'a, T>".into(),
+        },
+        Output {
+            struct_name: "GenericExample".into(),
+            method_name: "by_generic_value".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "GenericExample<'a, T>".into(),
+        },
     ];
     expected_results.sort_unstable();
     similar_asserts::assert_eq!(expected_results, results);
@@ -8655,11 +9796,80 @@ fn function_parameters() {
             params: vec![],
         },
         Output {
+            name: "concrete_types".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "generic_identity".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "lifetime_ref".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "const_array".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "path_types".into(),
+            params: vec!["value".into(), "values".into()],
+        },
+        Output {
+            name: "composite_types".into(),
+            params: vec!["tuple".into(), "raw".into()],
+        },
+        Output {
+            name: "function_pointer".into(),
+            params: vec!["callback".into()],
+        },
+        Output {
+            name: "function_pointer_nested_generics".into(),
+            params: vec!["callback".into()],
+        },
+        Output {
+            name: "dyn_trait_lifetime".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "impl_trait_param".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "generic_and_impl_trait_params".into(),
+            params: vec!["generic".into(), "first".into(), "second".into()],
+        },
+        Output {
+            name: "nested_impl_trait_params".into(),
+            params: vec![
+                "generic".into(),
+                "borrowed".into(),
+                "values".into(),
+                "nested_tuple".into(),
+            ],
+        },
+        Output {
+            name: "nested_assoc_impl_trait_param".into(),
+            params: vec!["value".into(), "other".into()],
+        },
+        Output {
+            name: "impl_trait_return".into(),
+            params: vec![],
+        },
+        Output {
             name: "add_method".into(),
             params: vec!["self".into(), "left".into(), "right".into()],
         },
         Output {
             name: "method_returns_nothing".into(),
+            params: vec!["self".into()],
+        },
+        Output {
+            name: "combine".into(),
+            params: vec!["self".into(), "owner".into(), "method".into()],
+        },
+        Output {
+            name: "pin_box_self".into(),
             params: vec!["self".into()],
         },
         Output {
@@ -8669,6 +9879,14 @@ fn function_parameters() {
         Output {
             name: "trait_fn_returns_nothing".into(),
             params: vec!["self".into()],
+        },
+        Output {
+            name: "combine_trait".into(),
+            params: vec!["self".into(), "owner".into(), "method".into()],
+        },
+        Output {
+            name: "default_combine".into(),
+            params: vec!["self".into(), "owner".into(), "method".into()],
         },
     ];
     expected_results.sort_unstable();
@@ -8780,11 +9998,75 @@ fn function_return_value() {
             is_unit: true,
         },
         Output {
+            name: "concrete_types".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "generic_identity".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "lifetime_ref".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "const_array".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "path_types".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "composite_types".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "function_pointer".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "function_pointer_nested_generics".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "dyn_trait_lifetime".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "impl_trait_param".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "generic_and_impl_trait_params".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "nested_impl_trait_params".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "nested_assoc_impl_trait_param".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "impl_trait_return".into(),
+            is_unit: false,
+        },
+        Output {
             name: "add_method".into(),
             is_unit: false,
         },
         Output {
             name: "method_returns_nothing".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "combine".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "pin_box_self".into(),
             is_unit: true,
         },
         Output {
@@ -8794,6 +10076,14 @@ fn function_return_value() {
         Output {
             name: "trait_fn_returns_nothing".into(),
             is_unit: true,
+        },
+        Output {
+            name: "combine_trait".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "default_combine".into(),
+            is_unit: false,
         },
     ];
     expected_results.sort_unstable();
@@ -8823,6 +10113,738 @@ fn function_return_value() {
             .collect();
 
     results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn function_parameter_normalized_type_signatures() {
+    get_test_data!(data, function_params_and_return_value);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+
+                parameter {
+                    position @output
+                    param_name: name @output
+                    normalized_type_signature {
+                        signature @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables: BTreeMap<&str, bool> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        position: u64,
+        param_name: String,
+        signature: String,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            name: "add".into(),
+            position: 1,
+            param_name: "left".into(),
+            signature: "u64".into(),
+        },
+        Output {
+            name: "add".into(),
+            position: 2,
+            param_name: "right".into(),
+            signature: "u64".into(),
+        },
+        Output {
+            name: "concrete_types".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "u64".into(),
+        },
+        Output {
+            name: "generic_identity".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "lifetime_ref".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "&'a str".into(),
+        },
+        Output {
+            name: "const_array".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "[u8; C1]".into(),
+        },
+        Output {
+            name: "path_types".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "::function_params_and_return_value::PublicType<u8>".into(),
+        },
+        Output {
+            name: "path_types".into(),
+            position: 2,
+            param_name: "values".into(),
+            signature: "::alloc::vec::Vec<::function_params_and_return_value::PublicType<u8>>"
+                .into(),
+        },
+        Output {
+            name: "composite_types".into(),
+            position: 1,
+            param_name: "tuple".into(),
+            signature: "(&'a [T1], *const T1, fn(T1) -> T1, [u8; C1])".into(),
+        },
+        Output {
+            name: "composite_types".into(),
+            position: 2,
+            param_name: "raw".into(),
+            signature: "*mut T1".into(),
+        },
+        Output {
+            name: "function_pointer".into(),
+            position: 1,
+            param_name: "callback".into(),
+            signature: "for<'a> unsafe fn(&'a u8) -> &'a u8".into(),
+        },
+        Output {
+            name: "function_pointer_nested_generics".into(),
+            position: 1,
+            param_name: "callback".into(),
+            signature: "for<'b> fn(&'a T1, &'b [T1; C1]) -> &'b T1".into(),
+        },
+        Output {
+            name: "dyn_trait_lifetime".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "::alloc::boxed::Box<dyn ::core::marker::Send + ::core::marker::Sync + 'a>"
+                .into(),
+        },
+        Output {
+            name: "impl_trait_param".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "IT1".into(),
+        },
+        Output {
+            name: "generic_and_impl_trait_params".into(),
+            position: 1,
+            param_name: "generic".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "generic_and_impl_trait_params".into(),
+            position: 2,
+            param_name: "first".into(),
+            signature: "IT2".into(),
+        },
+        Output {
+            name: "generic_and_impl_trait_params".into(),
+            position: 3,
+            param_name: "second".into(),
+            signature: "IT3".into(),
+        },
+        Output {
+            name: "nested_impl_trait_params".into(),
+            position: 1,
+            param_name: "generic".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "nested_impl_trait_params".into(),
+            position: 2,
+            param_name: "borrowed".into(),
+            signature: "&IT2".into(),
+        },
+        Output {
+            name: "nested_impl_trait_params".into(),
+            position: 3,
+            param_name: "values".into(),
+            signature: "::alloc::vec::Vec<IT3>".into(),
+        },
+        Output {
+            name: "nested_impl_trait_params".into(),
+            position: 4,
+            param_name: "nested_tuple".into(),
+            signature: "(IT4, T1)".into(),
+        },
+        Output {
+            name: "nested_assoc_impl_trait_param".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "IT2".into(),
+        },
+        Output {
+            name: "nested_assoc_impl_trait_param".into(),
+            position: 2,
+            param_name: "other".into(),
+            signature: "IT3".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn function_parameter_normalized_type_signature_sorts_assoc_constraints_before_impl_trait_names() {
+    get_test_data!(data, assoc_constraint_order);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @filter(op: "one_of", value: ["$functions"]) @output
+
+                parameter {
+                    normalized_type_signature {
+                        signature @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables = btreemap! {
+        "functions" => FieldValue::List(vec![
+            FieldValue::String("a_then_b".into()),
+            FieldValue::String("b_then_a".into()),
+        ].into()),
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        signature: String,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            name: "a_then_b".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = IT1, B = IT2>>".into(),
+        },
+        Output {
+            name: "b_then_a".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = IT1, B = IT2>>".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn function_return_normalized_type_signatures() {
+    get_test_data!(data, function_params_and_return_value);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+
+                return_value {
+                    normalized_type_signature {
+                        signature @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables: BTreeMap<&str, bool> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        signature: String,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            name: "add".into(),
+            signature: "u64".into(),
+        },
+        Output {
+            name: "fn_returns_nothing".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "concrete_types".into(),
+            signature: "bool".into(),
+        },
+        Output {
+            name: "generic_identity".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "lifetime_ref".into(),
+            signature: "&'a str".into(),
+        },
+        Output {
+            name: "const_array".into(),
+            signature: "[u8; C1]".into(),
+        },
+        Output {
+            name: "path_types".into(),
+            signature: "::core::option::Option<::function_params_and_return_value::PublicType<u8>>"
+                .into(),
+        },
+        Output {
+            name: "composite_types".into(),
+            signature: "(&'a [T1], *mut T1)".into(),
+        },
+        Output {
+            name: "function_pointer".into(),
+            signature: "for<'a> unsafe fn(&'a u8) -> &'a u8".into(),
+        },
+        Output {
+            name: "function_pointer_nested_generics".into(),
+            signature: "for<'b> fn(&'a T1, &'b [T1; C1]) -> &'b T1".into(),
+        },
+        Output {
+            name: "dyn_trait_lifetime".into(),
+            signature: "::alloc::boxed::Box<dyn ::core::marker::Send + ::core::marker::Sync + 'a>"
+                .into(),
+        },
+        Output {
+            name: "impl_trait_param".into(),
+            signature: "::alloc::string::String".into(),
+        },
+        Output {
+            name: "generic_and_impl_trait_params".into(),
+            signature: "(T1, ::alloc::string::String)".into(),
+        },
+        Output {
+            name: "nested_impl_trait_params".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "nested_assoc_impl_trait_param".into(),
+            signature: "usize".into(),
+        },
+        Output {
+            name: "impl_trait_return".into(),
+            signature: "impl ::core::iter::traits::iterator::Iterator<Item = u8>".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn method_normalized_type_signatures_include_parent_generics() {
+    get_test_data!(data, function_params_and_return_value);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let inherent_query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                owner: name @filter(op: "=", value: ["$inherent_owner"]) @output
+
+                inherent_impl {
+                    method {
+                        method_name: name @filter(op: "one_of", value: ["$inherent_methods"]) @output
+
+                        parameter {
+                            position @output
+                            param_name: name @output
+                            normalized_type_signature {
+                                param_signature: signature @output
+                            }
+                        }
+
+                        return_value {
+                            normalized_type_signature {
+                                return_signature: signature @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let trait_query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                owner: name @filter(op: "=", value: ["$trait_owner"]) @output
+
+                method {
+                    method_name: name @filter(op: "=", value: ["$trait_method"]) @output
+
+                    parameter {
+                        position @output
+                        param_name: name @output
+                        normalized_type_signature {
+                            param_signature: signature @output
+                        }
+                    }
+
+                    return_value {
+                        normalized_type_signature {
+                            return_signature: signature @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let trait_impl_query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                owner: name @filter(op: "=", value: ["$trait_impl_owner"]) @output
+
+                impl {
+                    implemented_trait {
+                        bare_name @filter(op: "=", value: ["$trait_owner"])
+                    }
+
+                    method {
+                        method_name: name @filter(op: "=", value: ["$trait_method"]) @output
+
+                        parameter {
+                            position @output
+                            param_name: name @output
+                            normalized_type_signature {
+                                param_signature: signature @output
+                            }
+                        }
+
+                        return_value {
+                            normalized_type_signature {
+                                return_signature: signature @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let default_trait_impl_query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                owner: name @filter(op: "=", value: ["$default_trait_impl_owner"]) @output
+
+                impl {
+                    implemented_trait {
+                        bare_name @filter(op: "=", value: ["$default_trait_owner"])
+                    }
+
+                    method {
+                        method_name: name @filter(op: "=", value: ["$default_trait_method"]) @output
+
+                        parameter {
+                            position @output
+                            param_name: name @output
+                            normalized_type_signature {
+                                param_signature: signature @output
+                            }
+                        }
+
+                        return_value {
+                            normalized_type_signature {
+                                return_signature: signature @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let inherent_variables: BTreeMap<&str, FieldValue> = btreemap! {
+        "inherent_owner" => "GenericExample".into(),
+        "inherent_methods" => vec![FieldValue::String("combine".into()), FieldValue::String("pin_box_self".into())].into(),
+    };
+    let trait_variables = btreemap! {
+        "trait_owner" => "GenericTrait",
+        "trait_method" => "combine_trait",
+    };
+    let trait_impl_variables = btreemap! {
+        "trait_owner" => "GenericTrait",
+        "trait_method" => "combine_trait",
+        "trait_impl_owner" => "ImplementsGenericTrait",
+    };
+    let default_trait_impl_variables = btreemap! {
+        "default_trait_owner" => "DefaultGenericTrait",
+        "default_trait_method" => "default_combine",
+        "default_trait_impl_owner" => "UsesDefaultGenericTrait",
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        owner: String,
+        method_name: String,
+        position: u64,
+        param_name: String,
+        param_signature: String,
+        return_signature: String,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            owner: "GenericExample".into(),
+            method_name: "combine".into(),
+            position: 1,
+            param_name: "self".into(),
+            param_signature: "&Self".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "GenericExample".into(),
+            method_name: "combine".into(),
+            position: 2,
+            param_name: "owner".into(),
+            param_signature: "T1".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "GenericExample".into(),
+            method_name: "combine".into(),
+            position: 3,
+            param_name: "method".into(),
+            param_signature: "T2".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "GenericExample".into(),
+            method_name: "pin_box_self".into(),
+            position: 1,
+            param_name: "self".into(),
+            param_signature: "::core::pin::Pin<::alloc::boxed::Box<Self>>".into(),
+            return_signature: "()".into(),
+        },
+        Output {
+            owner: "GenericTrait".into(),
+            method_name: "combine_trait".into(),
+            position: 1,
+            param_name: "self".into(),
+            param_signature: "&Self".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "GenericTrait".into(),
+            method_name: "combine_trait".into(),
+            position: 2,
+            param_name: "owner".into(),
+            param_signature: "T1".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "GenericTrait".into(),
+            method_name: "combine_trait".into(),
+            position: 3,
+            param_name: "method".into(),
+            param_signature: "T2".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "ImplementsGenericTrait".into(),
+            method_name: "combine_trait".into(),
+            position: 1,
+            param_name: "self".into(),
+            param_signature: "&Self".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "ImplementsGenericTrait".into(),
+            method_name: "combine_trait".into(),
+            position: 2,
+            param_name: "owner".into(),
+            param_signature: "T1".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "ImplementsGenericTrait".into(),
+            method_name: "combine_trait".into(),
+            position: 3,
+            param_name: "method".into(),
+            param_signature: "T2".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "UsesDefaultGenericTrait".into(),
+            method_name: "default_combine".into(),
+            position: 1,
+            param_name: "self".into(),
+            param_signature: "&mut Self".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "UsesDefaultGenericTrait".into(),
+            method_name: "default_combine".into(),
+            position: 2,
+            param_name: "owner".into(),
+            param_signature: "T1".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+        Output {
+            owner: "UsesDefaultGenericTrait".into(),
+            method_name: "default_combine".into(),
+            position: 3,
+            param_name: "method".into(),
+            param_signature: "T2".into(),
+            return_signature: "(T1, T2)".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), inherent_query, inherent_variables)
+            .expect("failed to run inherent method query")
+            .chain(
+                trustfall::execute_query(&schema, adapter.clone(), trait_query, trait_variables)
+                    .expect("failed to run trait method query"),
+            )
+            .chain(
+                trustfall::execute_query(
+                    &schema,
+                    adapter.clone(),
+                    trait_impl_query,
+                    trait_impl_variables,
+                )
+                .expect("failed to run trait impl method query"),
+            )
+            .chain(
+                trustfall::execute_query(
+                    &schema,
+                    adapter.clone(),
+                    default_trait_impl_query,
+                    default_trait_impl_variables,
+                )
+                .expect("failed to run default trait impl method query"),
+            )
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn function_parameter_normalized_type_signature_lint_shape() {
+    get_test_data!(data, function_params_and_return_value);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                importable_path {
+                    path @filter(op: "=", value: ["$path"])
+                    public_api @filter(op: "=", value: ["$true"])
+                }
+
+                parameter {
+                    position @filter(op: "=", value: ["$position"])
+                    normalized_type_signature {
+                        signature @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables = btreemap! {
+        "path" => FieldValue::List(vec![
+            FieldValue::String("function_params_and_return_value".into()),
+            FieldValue::String("path_types".into()),
+        ].into()),
+        "position" => FieldValue::Uint64(2),
+        "true" => FieldValue::Boolean(true),
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        signature: String,
+    }
+
+    let expected_results = vec![Output {
+        signature: "::alloc::vec::Vec<::function_params_and_return_value::PublicType<u8>>".into(),
+    }];
+
+    let results: Vec<Output> = trustfall::execute_query(&schema, adapter.clone(), query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
 
     similar_asserts::assert_eq!(expected_results, results);
 }

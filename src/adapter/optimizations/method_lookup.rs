@@ -40,8 +40,9 @@ pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let origin = vertex.origin;
             let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
 
+            let impl_item = vertex.as_item().expect("not an Impl item");
             let impl_vertex = vertex.as_impl().expect("not an Impl vertex");
-            resolve_methods_slow_path(impl_vertex, origin, item_index)
+            resolve_methods_slow_path(impl_item, impl_vertex, origin, item_index)
         })
     }
 }
@@ -96,41 +97,111 @@ fn resolve_method_from_candidate_value<'a>(
             CandidateValue::Impossible => Box::new(std::iter::empty()),
             CandidateValue::Single(name) => {
                 let method_name = name.as_str().expect("method name was not a string");
-                resolve_impl_method_by_name(origin, impl_index, impl_owner_id, impl_id, method_name)
+                resolve_impl_method_by_name(
+                    origin,
+                    impl_index,
+                    item_index,
+                    impl_owner_id,
+                    impl_id,
+                    method_name,
+                )
             }
             CandidateValue::Multiple(names) => Box::new(names.into_iter().flat_map(move |name| {
                 let method_name = name.as_str().expect("method name was not a string");
-                resolve_impl_method_by_name(origin, impl_index, impl_owner_id, impl_id, method_name)
+                resolve_impl_method_by_name(
+                    origin,
+                    impl_index,
+                    item_index,
+                    impl_owner_id,
+                    impl_id,
+                    method_name,
+                )
             })),
             _ => {
                 // Fall back to the default slow path.
-                resolve_methods_slow_path(impl_vertex, origin, item_index)
+                let impl_item = vertex.as_item().expect("not an Impl item");
+                resolve_methods_slow_path(impl_item, impl_vertex, origin, item_index)
             }
         }
     } else {
         // We couldn't determine the Id of the item that owns this method.
         // Fall back to the default slow path.
-        resolve_methods_slow_path(impl_vertex, origin, item_index)
+        let impl_item = vertex.as_item().expect("not an Impl item");
+        resolve_methods_slow_path(impl_item, impl_vertex, origin, item_index)
     }
 }
 
 fn resolve_impl_method_by_name<'a>(
     origin: Origin,
     impl_index: &'a HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>,
+    item_index: &'a HashMap<Id, Item>,
     impl_owner_id: &'a Id,
     impl_id: &'a Id,
     method_name: &str,
 ) -> VertexIterator<'a, Vertex<'a>> {
     if let Some(method_ids) = impl_index.get(&(impl_owner_id, method_name)) {
-        Box::new(method_ids.iter().filter_map(move |(impl_item, item)| {
-            (&impl_item.id == impl_id).then_some(origin.make_item_vertex(item))
-        }))
+        Box::new(
+            method_ids
+                .iter()
+                .filter(move |(impl_item, _)| &impl_item.id == impl_id)
+                .map(move |(impl_item, item)| {
+                    let parent = method_parent_for_impl_method(impl_item, item, item_index);
+                    origin.make_method_vertex(item, parent)
+                }),
+        )
     } else {
         Box::new(std::iter::empty())
     }
 }
 
+fn method_parent_for_impl_method<'a>(
+    impl_item: &'a Item,
+    method_item: &'a Item,
+    item_index: &'a HashMap<Id, Item>,
+) -> &'a Item {
+    let ItemEnum::Impl(impl_) = &impl_item.inner else {
+        unreachable!("method index returned a non-impl parent item: {impl_item:?}");
+    };
+
+    // Return the function declaration parent, not necessarily the `impl` we
+    // traversed from. Explicit impl methods use the `impl` generic scope, while
+    // trait-provided default methods use the trait generic scope because the
+    // rustdoc function item is declared on the trait.
+    if impl_.items.contains(&method_item.id) {
+        return impl_item;
+    }
+
+    let method_name = method_item
+        .name
+        .as_deref()
+        .expect("method item had no name");
+    debug_assert!(
+        impl_
+            .provided_trait_methods
+            .iter()
+            .any(|name| name == method_name),
+        "method item was neither explicitly implemented nor trait-provided: {method_item:?}",
+    );
+
+    let trait_path = impl_
+        .trait_
+        .as_ref()
+        .expect("provided trait method appeared on an inherent impl");
+    let trait_item = item_index
+        .get(&trait_path.id)
+        .expect("provided trait method parent trait was missing from the item index");
+    let ItemEnum::Trait(trait_) = &trait_item.inner else {
+        unreachable!("provided method parent was not a trait: {trait_item:?}");
+    };
+    debug_assert!(
+        trait_.items.contains(&method_item.id),
+        "provided method was not listed on its parent trait: {method_item:?}",
+    );
+    trait_item
+}
+
 fn resolve_methods_slow_path<'a>(
+    impl_item: &'a Item,
     impl_vertex: &'a Impl,
     origin: Origin,
     item_index: &'a HashMap<Id, Item>,
@@ -189,7 +260,9 @@ fn resolve_methods_slow_path<'a>(
                             // in the case where a trait provided a default
                             // but the impl had an override.
                             if produced_methods.insert(item_name) {
-                                Some(origin.make_item_vertex(next_item))
+                                let parent =
+                                    method_parent_for_impl_method(impl_item, next_item, item_index);
+                                Some(origin.make_method_vertex(next_item, parent))
                             } else {
                                 None
                             }
