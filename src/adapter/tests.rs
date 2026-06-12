@@ -2430,6 +2430,27 @@ fn importable_paths() {
             public_api: true,
         },
         Output {
+            name: "HiddenSubmodulePathCanSortFirst".into(),
+            path: vec![
+                "importable_paths".into(),
+                "hidden_glob_path_order_module".into(),
+                "HiddenSubmodulePathCanSortFirst".into(),
+            ],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        Output {
+            name: "HiddenSubmodulePathCanSortFirst".into(),
+            path: vec![
+                "importable_paths".into(),
+                "VisibleHiddenSubmodulePathCanSortFirst".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
             name: "DuplicateGlobHiddenAndVisible".into(),
             path: vec![
                 "importable_paths".into(),
@@ -2545,6 +2566,52 @@ fn importable_paths() {
     expected_results.sort_unstable();
 
     similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn normalized_paths_prefer_public_api_importable_path() {
+    get_test_data!(data, importable_paths);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @filter(op: "=", value: ["$name"])
+
+                return_value {
+                    normalized_type_signature {
+                        signature @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables = BTreeMap::from([("name", "hidden_glob_path_order_return")]);
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        signature: String,
+    }
+
+    let results: Vec<Output> = trustfall::execute_query(&schema, adapter.clone(), query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+
+    similar_asserts::assert_eq!(
+        vec![Output {
+            signature: "::importable_paths::VisibleHiddenSubmodulePathCanSortFirst".into(),
+        }],
+        results,
+    );
 }
 
 #[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
@@ -3470,6 +3537,12 @@ fn item_own_public_api_properties() {
         },
         Output {
             name: "BothHiddenAndVisibleSameName".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "HiddenSubmodulePathCanSortFirst".into(),
             doc_hidden: false,
             deprecated: false,
             public_api_eligible: true,
