@@ -113,6 +113,24 @@ pub use hidden_glob_source::BothHiddenAndVisible as VisibleBothHiddenAndVisible;
 // as the one from the `doc(hidden)` glob re-export.
 pub use hidden_glob_source::BothHiddenAndVisibleSameName;
 
+mod hidden_glob_path_order_source {
+    pub struct HiddenSubmodulePathCanSortFirst;
+}
+
+pub mod hidden_glob_path_order_module {
+    #[doc(hidden)]
+    pub use super::hidden_glob_path_order_source::*;
+}
+
+// A hidden glob inside a public module can sort before a visible root re-export.
+// Normalized signatures must still choose the visible root path instead of the
+// first path discovered by visibility traversal.
+pub use hidden_glob_path_order_source::HiddenSubmodulePathCanSortFirst as VisibleHiddenSubmodulePathCanSortFirst;
+
+pub fn hidden_glob_path_order_return() -> VisibleHiddenSubmodulePathCanSortFirst {
+    hidden_glob_path_order_source::HiddenSubmodulePathCanSortFirst
+}
+
 mod duplicate_glob_source {
     pub struct DuplicateGlobHiddenAndVisible;
 }
