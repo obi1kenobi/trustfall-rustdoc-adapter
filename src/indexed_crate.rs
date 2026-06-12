@@ -1127,31 +1127,31 @@ mod tests {
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&top_level_function.0)
         );
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&method.0)
         );
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&associated_fn.0)
         );
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&field.0)
         );
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&const_item.0)
         );
 
@@ -1199,31 +1199,31 @@ mod tests {
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&top_level_function.0)
         );
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&variant.0)
         );
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&method.0)
         );
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&associated_fn.0)
         );
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&const_item.0)
         );
 
@@ -1275,37 +1275,37 @@ mod tests {
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&top_level_function.0)
         );
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&method.0)
         );
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&associated_fn.0)
         );
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&left_field.0)
         );
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&right_field.0)
         );
         assert!(
             indexed_crate
                 .visibility_tracker
-                .visible_parent_ids()
+                .visible_parent_edges()
                 .contains_key(&const_item.0)
         );
 
