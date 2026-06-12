@@ -14,29 +14,29 @@ pub(crate) struct VisibilityTracker<'a> {
     // The crate this represents.
     inner: &'a Crate,
 
-    /// For an Id, give the list of item Ids under which it is publicly visible.
-    visible_parent_ids: HashMap<u32, Vec<u32>>,
+    /// For an Id, give the list of parent edges under which it is publicly visible.
+    visible_parent_edges: HashMap<u32, Vec<ParentEdge<'a>>>,
 }
 
 impl<'a> VisibilityTracker<'a> {
     pub(crate) fn from_crate(crate_: &'a Crate) -> Self {
-        let mut visible_parent_ids = compute_parent_ids_for_public_items(crate_);
+        let mut visible_parent_edges = compute_parent_edges_for_public_items(crate_);
 
         #[cfg(feature = "rayon")]
-        let iter = visible_parent_ids.par_iter_mut();
+        let iter = visible_parent_edges.par_iter_mut();
         #[cfg(not(feature = "rayon"))]
-        let iter = visible_parent_ids.iter_mut();
+        let iter = visible_parent_edges.iter_mut();
 
-        // Sort and deduplicate parent ids.
+        // Sort and deduplicate parent edges.
         // This ensures a consistent order, since queries can observe this order directly.
-        iter.for_each(|(_id, parent_ids)| {
-            parent_ids.sort_unstable();
-            parent_ids.dedup();
+        iter.for_each(|(_id, parent_edges)| {
+            parent_edges.sort_unstable();
+            parent_edges.dedup();
         });
 
         Self {
             inner: crate_,
-            visible_parent_ids,
+            visible_parent_edges,
         }
     }
 
@@ -171,23 +171,109 @@ impl<'a> VisibilityTracker<'a> {
                 currently_doc_hidden,
                 currently_deprecated,
             ));
-        } else if let Some(visible_parents) = self.visible_parent_ids.get(&next_id) {
-            for parent_id in visible_parents.iter().copied() {
+        } else if let Some(visible_parents) = self.visible_parent_edges.get(&next_id) {
+            for parent_edge in visible_parents.iter().copied() {
+                let replaced_name = parent_edge.imported_name.map(|imported_name| {
+                    let replaced_name = stack
+                        .pop()
+                        .expect("glob-imported item had no name to replace");
+                    stack.push(imported_name);
+                    (imported_name, replaced_name)
+                });
+
                 self.collect_publicly_importable_names_inner(
-                    parent_id,
+                    parent_edge.parent_id,
                     already_visited_ids,
                     stack,
-                    currently_doc_hidden,
-                    currently_deprecated,
+                    currently_doc_hidden || parent_edge.modifiers.doc_hidden,
+                    currently_deprecated || parent_edge.modifiers.deprecated,
                     output,
                 );
+
+                if let Some((imported_name, replaced_name)) = replaced_name {
+                    let recovered_name = stack.pop().expect("there was nothing to pop");
+                    assert_eq!(imported_name, recovered_name);
+                    stack.push(replaced_name);
+                }
             }
         }
     }
 
     #[cfg(test)]
-    pub(super) fn visible_parent_ids(&self) -> &HashMap<u32, Vec<u32>> {
-        &self.visible_parent_ids
+    pub(super) fn visible_parent_edges(&self) -> &HashMap<u32, Vec<ParentEdge<'a>>> {
+        &self.visible_parent_edges
+    }
+}
+
+/// A visible reverse edge from an item to one parent scope that can name it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct ParentEdge<'a> {
+    /// Id of the item whose scope makes the child item visible.
+    parent_id: u32,
+
+    /// Visibility metadata from glob `Use` items whose names are synthesized directly
+    /// into the importing module instead of being visited as path nodes.
+    modifiers: EdgeModifiers,
+
+    /// Replacement path component for glob-created edges.
+    ///
+    /// `None` means this edge does not alter the name already on the reconstruction stack.
+    /// `Some(name)` means the glob made the underlying item visible in `parent_id` under
+    /// `name`, so path reconstruction should substitute `name` for the item's own name.
+    imported_name: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+struct EdgeModifiers {
+    doc_hidden: bool,
+    deprecated: bool,
+}
+
+impl EdgeModifiers {
+    fn from_item(item: &Item) -> Self {
+        Self {
+            doc_hidden: item.attrs.iter().any(Attribute::is_doc_hidden),
+            deprecated: item.deprecation.is_some(),
+        }
+    }
+
+    fn union(self, other: Self) -> Self {
+        Self {
+            doc_hidden: self.doc_hidden || other.doc_hidden,
+            deprecated: self.deprecated || other.deprecated,
+        }
+    }
+
+    fn public_api(self) -> bool {
+        self.deprecated || !self.doc_hidden
+    }
+
+    /// Choose one concrete route among two equivalent glob re-export routes.
+    ///
+    /// This is used only when two glob-imported definitions have the same name and resolve
+    /// to the same underlying item. Such definitions are not ambiguous; they are alternative
+    /// routes for exposing the same item under the same path component.
+    ///
+    /// This method must return either `self` or `other`, not a synthesized combination of
+    /// their fields. Prefer a route that is public API; if both have the same public-API
+    /// status, prefer a route that is not `#[doc(hidden)]`; if still tied, prefer a route
+    /// that is not deprecated.
+    fn least_restrictive_alternative(self, other: Self) -> Self {
+        match (self.public_api(), other.public_api()) {
+            (true, false) => return self,
+            (false, true) => return other,
+            _ => {}
+        }
+
+        if self.doc_hidden != other.doc_hidden {
+            return if self.doc_hidden { other } else { self };
+        }
+
+        if self.deprecated != other.deprecated {
+            return if self.deprecated { other } else { self };
+        }
+
+        self
     }
 }
 
@@ -203,6 +289,15 @@ enum NamespacedName<'a> {
 }
 
 impl<'a> NamespacedName<'a> {
+    fn name(self) -> &'a str {
+        match self {
+            NamespacedName::Values(name)
+            | NamespacedName::Types(name)
+            | NamespacedName::BangMacros(name)
+            | NamespacedName::AttrOrDeriveMacros(name) => name,
+        }
+    }
+
     fn rename(&self, new_name: &'a str) -> Self {
         match self {
             NamespacedName::Values(_) => NamespacedName::Values(new_name),
@@ -215,30 +310,23 @@ impl<'a> NamespacedName<'a> {
 
 #[derive(Debug, Clone)]
 struct Definition {
-    /// The Id of this definition.
-    ///
-    /// When the definition is an import, the `current_id` is the Id of the import,
-    /// to account for possible renamings.
-    /// Otherwise, the `current_id` should be the same as the `underlying_id`.
-    current_id: u32,
-
     /// The actual underlying item this definition resolves to, like a struct or function.
     /// This Id must not point to an import item.
     final_underlying_id: u32,
+
+    /// Modifiers from glob `Use` items in the module where this name is visible.
+    ///
+    /// They are "invisible" because glob re-exports make their resolved names look local to the
+    /// importing module. The `Use` item itself is not part of the final importable path, but its
+    /// `#[doc(hidden)]` and deprecation metadata still apply to that path.
+    invisible_glob_modifiers: EdgeModifiers,
 }
 
 impl Definition {
-    fn new(current_id: u32, final_underlying_id: u32) -> Self {
+    fn new(final_underlying_id: u32) -> Self {
         Self {
-            current_id,
             final_underlying_id,
-        }
-    }
-
-    fn new_direct(id: u32) -> Self {
-        Self {
-            current_id: id,
-            final_underlying_id: id,
+            invisible_glob_modifiers: EdgeModifiers::default(),
         }
     }
 }
@@ -263,7 +351,26 @@ struct NameResolution<'a> {
     duplicated_glob_names_in_module: HashMap<u32, HashSet<NamespacedName<'a>>>,
 }
 
-fn compute_parent_ids_for_public_items(crate_: &Crate) -> HashMap<u32, Vec<u32>> {
+/// Working state for resolving the glob imports in one module.
+#[derive(Debug, Default)]
+struct GlobResolution<'a> {
+    /// Module/modifier combinations already expanded while following glob-of-glob chains.
+    ///
+    /// The modifier set is part of the key because the same module can be reached through
+    /// different glob imports, and those paths may carry different visibility metadata.
+    visited: HashSet<(u32, EdgeModifiers)>,
+
+    /// Glob-imported names that are usable in the module being resolved.
+    ///
+    /// Each name maps to the final non-`Use` item it resolves to, plus any invisible modifiers
+    /// carried by the glob imports that made the name visible.
+    names: HashMap<NamespacedName<'a>, Definition>,
+
+    /// Glob-imported names that resolve to multiple distinct items and therefore cannot be used.
+    duplicated_names: HashSet<NamespacedName<'a>>,
+}
+
+fn compute_parent_edges_for_public_items(crate_: &Crate) -> HashMap<u32, Vec<ParentEdge<'_>>> {
     let root_id = &crate_.root;
 
     if let Some(root_module) = crate_.index.get(root_id) {
@@ -438,7 +545,7 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
                         let Some(final_underlying_id) = final_underlying_id else {
                             continue;
                         };
-                        let definition = Definition::new(inner_id.0, final_underlying_id.0);
+                        let definition = Definition::new(final_underlying_id.0);
 
                         result
                             .names_defined_in_module
@@ -471,7 +578,7 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
                             .names_defined_in_module
                             .entry(crate_.root.0)
                             .or_default()
-                            .insert(name, (Definition::new_direct(inner_item.id.0), true));
+                            .insert(name, (Definition::new(inner_item.id.0), true));
                     }
                 }
             } else {
@@ -483,7 +590,7 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
                         .insert(
                             name,
                             (
-                                Definition::new_direct(inner_item.id.0),
+                                Definition::new(inner_item.id.0),
                                 matches!(
                                     inner_item.visibility,
                                     Visibility::Public | Visibility::Default
@@ -502,20 +609,22 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
 
 fn resolve_glob_imported_names<'a>(crate_: &'a Crate, traversal_state: &mut NameResolution<'a>) {
     for (&module_id, globs) in &traversal_state.modules_with_glob_imports {
-        let mut visited: HashSet<u32> = Default::default();
-        let mut names = Default::default();
-        let mut duplicated_names = Default::default();
+        let mut glob_resolution = GlobResolution::default();
 
-        visited.insert(module_id);
+        glob_resolution
+            .visited
+            .insert((module_id, EdgeModifiers::default()));
         for &glob_id in globs {
+            // This glob is directly inside the module whose visible names we're resolving,
+            // so its attributes affect the path that downstream users can type.
             recursively_compute_visited_names_for_glob(
                 crate_,
                 module_id,
                 glob_id,
                 &*traversal_state,
-                &mut visited,
-                &mut names,
-                &mut duplicated_names,
+                &mut glob_resolution,
+                EdgeModifiers::default(),
+                true,
             );
         }
 
@@ -524,11 +633,16 @@ fn resolve_glob_imported_names<'a>(crate_: &'a Crate, traversal_state: &mut Name
         // rules by removing any conflicting names from both of those collections.
         if let Some(local_names) = traversal_state.names_defined_in_module.get(&module_id) {
             for local_name in local_names.keys() {
-                names.remove(local_name);
-                duplicated_names.remove(local_name);
+                glob_resolution.names.remove(local_name);
+                glob_resolution.duplicated_names.remove(local_name);
             }
         }
 
+        let GlobResolution {
+            names,
+            duplicated_names,
+            ..
+        } = glob_resolution;
         if !names.is_empty() {
             traversal_state
                 .glob_imported_names_in_module
@@ -542,22 +656,39 @@ fn resolve_glob_imported_names<'a>(crate_: &'a Crate, traversal_state: &mut Name
     }
 }
 
+/// Resolve the names made visible by one glob import into `glob_parent_module_id`.
+///
+/// `glob_modifiers` contains modifiers from glob imports that are already known to affect
+/// the path being synthesized in `glob_parent_module_id`.
+///
+/// Set `include_current_glob_modifiers` to `true` when `glob_id` is one of the glob imports
+/// directly contained in `glob_parent_module_id`: that glob is the edge that exposes names
+/// in the module we're resolving, so its `#[doc(hidden)]` and deprecation metadata must be
+/// attached to the resulting importable paths.
+///
+/// Set it to `false` when following a glob import inside the target module of another glob.
+/// In that case the nested glob is used only to discover which names the target module exports;
+/// downstream users import those names through the outer glob, so the nested glob's own
+/// metadata is not part of the path they can type.
 fn recursively_compute_visited_names_for_glob<'a>(
     crate_: &'a Crate,
     glob_parent_module_id: u32,
     glob_id: u32,
     traversal_state: &NameResolution<'a>,
-    visited: &mut HashSet<u32>,
-    names: &mut HashMap<NamespacedName<'a>, Definition>,
-    duplicated_names: &mut HashSet<NamespacedName<'a>>,
+    glob_resolution: &mut GlobResolution<'a>,
+    glob_modifiers: EdgeModifiers,
+    include_current_glob_modifiers: bool,
 ) {
-    let ItemEnum::Use(glob_import) = &crate_.index[&rustdoc_types::Id(glob_id)].inner else {
-        unreachable!(
-            "Id {glob_id:?} was not a glob: {:?}",
-            crate_.index[&rustdoc_types::Id(glob_id)]
-        );
+    let glob_item = &crate_.index[&rustdoc_types::Id(glob_id)];
+    let ItemEnum::Use(glob_import) = &glob_item.inner else {
+        unreachable!("Id {glob_id:?} was not a glob: {glob_item:?}");
     };
     assert!(glob_import.is_glob, "not a glob import: {glob_import:?}");
+    let glob_modifiers = if include_current_glob_modifiers {
+        glob_modifiers.union(EdgeModifiers::from_item(glob_item))
+    } else {
+        glob_modifiers
+    };
 
     let module_local_items = traversal_state
         .names_defined_in_module
@@ -576,12 +707,15 @@ fn recursively_compute_visited_names_for_glob<'a>(
                     variant_item.name.as_deref().expect("no name for variant"),
                 );
 
+                let mut definition = Definition::new(variant_id.0);
+                definition.invisible_glob_modifiers =
+                    definition.invisible_glob_modifiers.union(glob_modifiers);
                 register_name(
                     module_local_items,
                     name,
-                    Definition::new_direct(variant_id.0),
-                    names,
-                    duplicated_names,
+                    definition,
+                    &mut glob_resolution.names,
+                    &mut glob_resolution.duplicated_names,
                 );
             }
         }
@@ -589,8 +723,8 @@ fn recursively_compute_visited_names_for_glob<'a>(
     }
 
     let module_id = target_id.0;
-    if !visited.insert(module_id) {
-        // Already checked this module.
+    if !glob_resolution.visited.insert((module_id, glob_modifiers)) {
+        // Already checked this module with these accumulated glob modifiers.
         return;
     }
 
@@ -599,12 +733,15 @@ fn recursively_compute_visited_names_for_glob<'a>(
         for (local_name, data) in names_in_module {
             let (item_defn, is_public) = data;
             if *is_public {
+                let mut item_defn = item_defn.clone();
+                item_defn.invisible_glob_modifiers =
+                    item_defn.invisible_glob_modifiers.union(glob_modifiers);
                 register_name(
                     module_local_items,
                     *local_name,
-                    item_defn.clone(),
-                    names,
-                    duplicated_names,
+                    item_defn,
+                    &mut glob_resolution.names,
+                    &mut glob_resolution.duplicated_names,
                 );
             }
         }
@@ -613,14 +750,16 @@ fn recursively_compute_visited_names_for_glob<'a>(
     // Recurse into any glob imports defined here.
     if let Some(globs) = traversal_state.modules_with_glob_imports.get(&module_id) {
         for &glob_id in globs {
+            // Nested globs describe the target module's exported names,
+            // but they are not the visible edge from the module currently being resolved.
             recursively_compute_visited_names_for_glob(
                 crate_,
                 module_id,
                 glob_id,
                 traversal_state,
-                visited,
-                names,
-                duplicated_names,
+                glob_resolution,
+                glob_modifiers,
+                false,
             );
         }
     }
@@ -642,9 +781,16 @@ fn register_name<'a>(
         match names.entry(name) {
             std::collections::hash_map::Entry::Occupied(entry) => {
                 if entry.get().final_underlying_id != definition.final_underlying_id {
-                    // Duplicate name, remove from here and move to duplicates.
+                    // Duplicate name, remove from here and move to duplicates due to ambiguity.
                     entry.remove();
                     duplicated_names.insert(name);
+                } else {
+                    // Same item under the same name. No ambiguity here.
+                    // Choose the least restrictive alternative between the two sets of modifiers.
+                    let existing = entry.into_mut();
+                    existing.invisible_glob_modifiers = existing
+                        .invisible_glob_modifiers
+                        .least_restrictive_alternative(definition.invisible_glob_modifiers);
                 }
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
@@ -656,14 +802,14 @@ fn register_name<'a>(
     }
 }
 
-/// Collect all public items that are reachable from the crate root and record their parent Ids.
+/// Collect all public items that are reachable from the crate root and record their parent edges.
 fn visit_root_reachable_public_items<'a>(
     crate_: &'a Crate,
-    parents: &mut HashMap<u32, Vec<u32>>,
+    parents: &mut HashMap<u32, Vec<ParentEdge<'a>>>,
     traversal_state: &NameResolution<'a>,
     currently_visited_items: &mut HashSet<u32>,
     item: &'a Item,
-    parent_id: Option<u32>,
+    parent_edge: Option<ParentEdge<'a>>,
 ) {
     match item.visibility {
         Visibility::Crate | Visibility::Restricted { .. } => {
@@ -680,8 +826,8 @@ fn visit_root_reachable_public_items<'a>(
     }
 
     let item_parents = parents.entry(item.id.0).or_default();
-    if let Some(parent_id) = parent_id {
-        item_parents.push(parent_id);
+    if let Some(parent_edge) = parent_edge {
+        item_parents.push(parent_edge);
     }
 
     if !currently_visited_items.insert(item.id.0) {
@@ -690,7 +836,11 @@ fn visit_root_reachable_public_items<'a>(
         return;
     }
 
-    let next_parent_id = Some(item.id.0);
+    let next_parent_edge = Some(ParentEdge {
+        parent_id: item.id.0,
+        modifiers: EdgeModifiers::default(),
+        imported_name: None,
+    });
     match &item.inner {
         rustdoc_types::ItemEnum::Module(m) => {
             for inner in m.items.iter().filter_map(|id| crate_.index.get(id)) {
@@ -700,7 +850,7 @@ fn visit_root_reachable_public_items<'a>(
                     traversal_state,
                     currently_visited_items,
                     inner,
-                    next_parent_id,
+                    next_parent_edge,
                 );
             }
 
@@ -711,20 +861,24 @@ fn visit_root_reachable_public_items<'a>(
                 .glob_imported_names_in_module
                 .get(&item.id.0)
             {
-                for inner_defn in glob_imports.values() {
-                    if let Some(inner_item) =
-                        crate_.index.get(&rustdoc_types::Id(inner_defn.current_id))
+                for (name, inner_defn) in glob_imports {
+                    if let Some(inner_item) = crate_
+                        .index
+                        .get(&rustdoc_types::Id(inner_defn.final_underlying_id))
                     {
-                        // Glob imports point directly to the contents of the pointed-to module.
-                        // For each glob-imported item in this module,
-                        // this module is their parent and not the glob import.
+                        // The glob import creates this path in the current module. Any `Use` item
+                        // that supplied the name in the target module is an internal detail.
                         visit_root_reachable_public_items(
                             crate_,
                             parents,
                             traversal_state,
                             currently_visited_items,
                             inner_item,
-                            next_parent_id,
+                            Some(ParentEdge {
+                                parent_id: item.id.0,
+                                modifiers: inner_defn.invisible_glob_modifiers,
+                                imported_name: Some(name.name()),
+                            }),
                         );
                     }
                 }
@@ -743,7 +897,7 @@ fn visit_root_reachable_public_items<'a>(
                         traversal_state,
                         currently_visited_items,
                         imported_item,
-                        next_parent_id,
+                        next_parent_edge,
                     );
                 }
             }
@@ -767,7 +921,7 @@ fn visit_root_reachable_public_items<'a>(
                     traversal_state,
                     currently_visited_items,
                     inner,
-                    next_parent_id,
+                    next_parent_edge,
                 );
             }
         }
@@ -784,7 +938,7 @@ fn visit_root_reachable_public_items<'a>(
                     traversal_state,
                     currently_visited_items,
                     inner,
-                    next_parent_id,
+                    next_parent_edge,
                 );
             }
         }
@@ -801,7 +955,7 @@ fn visit_root_reachable_public_items<'a>(
                     traversal_state,
                     currently_visited_items,
                     inner,
-                    next_parent_id,
+                    next_parent_edge,
                 );
             }
         }
@@ -813,7 +967,7 @@ fn visit_root_reachable_public_items<'a>(
                     traversal_state,
                     currently_visited_items,
                     inner,
-                    next_parent_id,
+                    next_parent_edge,
                 );
             }
         }
@@ -825,7 +979,7 @@ fn visit_root_reachable_public_items<'a>(
                     traversal_state,
                     currently_visited_items,
                     inner,
-                    next_parent_id,
+                    next_parent_edge,
                 );
             }
         }
@@ -843,7 +997,7 @@ fn visit_root_reachable_public_items<'a>(
                     traversal_state,
                     currently_visited_items,
                     reexport_target,
-                    next_parent_id,
+                    next_parent_edge,
                 );
             }
         }
