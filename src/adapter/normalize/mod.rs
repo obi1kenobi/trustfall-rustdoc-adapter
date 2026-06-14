@@ -9,7 +9,9 @@
 
 mod context;
 mod names;
+mod parameter_impl_trait;
 mod paths;
+mod sort_key;
 mod types;
 
 use crate::PackageIndex;
