@@ -2102,22 +2102,31 @@ type NormalizedTypeSignature {
   The signature is scoped to the item that contains the type.
   Generic parameter names from that scope are normalized in declaration order:
   lifetimes become `'a`, `'b`, and so on; non-synthetic type parameters
-  become `T1`, `T2`, and so on; synthetic type parameters from
-  parameter-position `impl Trait` become `IT1`, `IT2`, and so on using that
-  same type-parameter counter; const parameters become `C1`, `C2`, and so on.
-  For example, in
-  `impl<A> Example<A> { fn f<B>(&self, a: A, b: B) }`, parameter `a` has
-  signature `T1` and parameter `b` has signature `T2`.
+  become `T1`, `T2`, and so on; const parameters become `C1`, `C2`, and so on.
+  For example, in `impl<A> Example<A> { fn f<B>(&self, a: A, b: B) }`,
+  parameter `a` has signature `T1` while parameter `b` has signature `T2`.
 
-  Parameter names and patterns are not included. Neither are the containing
-  item's attributes such as ABI, safety, asyncness, constness, generic bounds,
-  and `where` clauses. For example, in
+  A single function parameter may contain multiple parameter-position `impl Trait`
+  uses, for example: `impl Iterator<Item = impl Into<String>>`.
+  We normalize parameter-position `impl Trait` into synthetic type parameters,
+  with each synthetic generic type scoped to the function parameter
+  that contains it. The first parameter uses synthetic generic types `IT1_1`,
+  `IT1_2`, and so on; the second parameter uses `IT2_1`, `IT2_2`, and so on.
+  For example, in `fn f(a: impl Clone, b: impl Copy)`, parameter `a` has
+  signature `IT1_1` and parameter `b` has signature `IT2_1`.
+
+  Bounds inside parameter-position `impl Trait` belong to that synthetic type
+  parameter, not to the normalized signature of the containing parameter type.
+  For example, in `fn f(value: impl Iterator<Item = impl Into<String>>)`,
+  `value` has signature `IT1_2` because the nested `impl Into<String>` is
+  assigned `IT1_1` before the outer `impl Iterator<...>`.
+
+  Parameter names and patterns are not included in the signature.
+  Neither are the containing item's attributes such as ABI, safety, asyncness,
+  constness, generic bounds, and `where` clauses. For example, in
   `fn f<T: Clone>(value: T) -> T where T: Debug`, the parameter and return
   value both have signature `T1` since the generic `T` is normalized to `T1`.
 
-  `impl Trait` in parameter position is normalized to the corresponding
-  synthetic type parameter; for example, `impl Into<String>` may become `IT1`
-  or `IT2` depending on where it appears in the type-parameter counter.
   Return-position `impl Trait` remains an `impl` (opaque) type, such as
   `impl ::core::iter::traits::iterator::Iterator<Item = u8>`.
 
