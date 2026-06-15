@@ -12,7 +12,17 @@ pub(super) fn normalized_path(crate_: &PackageIndex<'_>, path: &rustdoc_types::P
             .own_crate
             .visibility_tracker
             .collect_publicly_importable_names(path.id.0);
-        if let Some(importable_path) = importable_paths.first() {
+        // Normalized signatures should use a public API spelling when one exists.
+        // The `importable_path` edge has query-observable order, so choose here
+        // without reordering that edge.
+        let importable_path = importable_paths.iter().min_by_key(|importable_path| {
+            (
+                !importable_path.public_api(),
+                importable_path.modifiers.doc_hidden,
+                importable_path.modifiers.deprecated,
+            )
+        });
+        if let Some(importable_path) = importable_path {
             return absolute_path(importable_path.path.components.iter().copied());
         }
     }

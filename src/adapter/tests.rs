@@ -2396,6 +2396,166 @@ fn importable_paths() {
             public_api: true,
         },
         Output {
+            name: "HiddenGlobOnly".into(),
+            path: vec!["importable_paths".into(), "HiddenGlobOnly".into()],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        Output {
+            name: "BothHiddenAndVisible".into(),
+            path: vec!["importable_paths".into(), "BothHiddenAndVisible".into()],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        Output {
+            name: "BothHiddenAndVisible".into(),
+            path: vec![
+                "importable_paths".into(),
+                "VisibleBothHiddenAndVisible".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "BothHiddenAndVisibleSameName".into(),
+            path: vec![
+                "importable_paths".into(),
+                "BothHiddenAndVisibleSameName".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "HiddenSubmodulePathCanSortFirst".into(),
+            path: vec![
+                "importable_paths".into(),
+                "hidden_glob_path_order_module".into(),
+                "HiddenSubmodulePathCanSortFirst".into(),
+            ],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        Output {
+            name: "HiddenSubmodulePathCanSortFirst".into(),
+            path: vec![
+                "importable_paths".into(),
+                "VisibleHiddenSubmodulePathCanSortFirst".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "DuplicateGlobHiddenAndVisible".into(),
+            path: vec![
+                "importable_paths".into(),
+                "DuplicateGlobHiddenAndVisible".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "DuplicateGlobHiddenDeprecatedAndVisible".into(),
+            path: vec![
+                "importable_paths".into(),
+                "DuplicateGlobHiddenDeprecatedAndVisible".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "DuplicateGlobDeprecatedAndVisible".into(),
+            path: vec![
+                "importable_paths".into(),
+                "DuplicateGlobDeprecatedAndVisible".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "DeprecatedGlobOnly".into(),
+            path: vec!["importable_paths".into(), "DeprecatedGlobOnly".into()],
+            doc_hidden: false,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "HiddenDeprecatedGlobOnly".into(),
+            path: vec!["importable_paths".into(), "HiddenDeprecatedGlobOnly".into()],
+            doc_hidden: true,
+            deprecated: true,
+            public_api: true,
+        },
+        Output {
+            name: "NestedHiddenGlobOnly".into(),
+            path: vec!["importable_paths".into(), "NestedHiddenGlobOnly".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "NestedHiddenDeprecatedGlobOnly".into(),
+            path: vec![
+                "importable_paths".into(),
+                "NestedHiddenDeprecatedGlobOnly".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "PlainGlobOnly".into(),
+            path: vec!["importable_paths".into(), "PlainGlobOnly".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "HiddenPerItemThenRootPerItem".into(),
+            path: vec![
+                "importable_paths".into(),
+                "HiddenPerItemThenRootPerItem".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "HiddenPerItemThenRootGlob".into(),
+            path: vec![
+                "importable_paths".into(),
+                "HiddenPerItemThenRootGlob".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "HiddenGlobThenRootPerItem".into(),
+            path: vec![
+                "importable_paths".into(),
+                "HiddenGlobThenRootPerItem".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "HiddenGlobThenRootGlob".into(),
+            path: vec!["importable_paths".into(), "HiddenGlobThenRootGlob".into()],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
             name: "Aliased".into(),
             path: vec!["importable_paths".into(), "Aliased".into()],
             doc_hidden: true,
@@ -2406,6 +2566,52 @@ fn importable_paths() {
     expected_results.sort_unstable();
 
     similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn normalized_paths_prefer_public_api_importable_path() {
+    get_test_data!(data, importable_paths);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @filter(op: "=", value: ["$name"])
+
+                return_value {
+                    normalized_type_signature {
+                        signature @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables = BTreeMap::from([("name", "hidden_glob_path_order_return")]);
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        signature: String,
+    }
+
+    let results: Vec<Output> = trustfall::execute_query(&schema, adapter.clone(), query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+
+    similar_asserts::assert_eq!(
+        vec![Output {
+            signature: "::importable_paths::VisibleHiddenSubmodulePathCanSortFirst".into(),
+        }],
+        results,
+    );
 }
 
 #[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
@@ -3315,6 +3521,102 @@ fn item_own_public_api_properties() {
             name: "ModuleDeprecatedHidden".into(),
             doc_hidden: true,
             deprecated: true,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "HiddenGlobOnly".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "BothHiddenAndVisible".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "BothHiddenAndVisibleSameName".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "HiddenSubmodulePathCanSortFirst".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "DuplicateGlobHiddenAndVisible".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "DuplicateGlobHiddenDeprecatedAndVisible".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "DuplicateGlobDeprecatedAndVisible".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "DeprecatedGlobOnly".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "HiddenDeprecatedGlobOnly".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "NestedHiddenGlobOnly".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "NestedHiddenDeprecatedGlobOnly".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "PlainGlobOnly".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "HiddenPerItemThenRootPerItem".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "HiddenPerItemThenRootGlob".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "HiddenGlobThenRootPerItem".into(),
+            doc_hidden: false,
+            deprecated: false,
+            public_api_eligible: true,
+        },
+        Output {
+            name: "HiddenGlobThenRootGlob".into(),
+            doc_hidden: false,
+            deprecated: false,
             public_api_eligible: true,
         },
         Output {

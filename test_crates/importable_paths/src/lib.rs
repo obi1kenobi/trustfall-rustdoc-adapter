@@ -96,6 +96,174 @@ pub mod reexports {
     pub use super::deprecated::ModuleDeprecated as HiddenDeprecatedReexport;
 }
 
+mod hidden_glob_source {
+    pub struct HiddenGlobOnly;
+    pub struct BothHiddenAndVisible;
+    pub struct BothHiddenAndVisibleSameName;
+}
+
+// Items visible through here are not public API.
+#[doc(hidden)]
+pub use hidden_glob_source::*;
+
+// This name is public API though.
+pub use hidden_glob_source::BothHiddenAndVisible as VisibleBothHiddenAndVisible;
+
+// This name is also public API, even though it shadows the same (non-public API) name
+// as the one from the `doc(hidden)` glob re-export.
+pub use hidden_glob_source::BothHiddenAndVisibleSameName;
+
+mod hidden_glob_path_order_source {
+    pub struct HiddenSubmodulePathCanSortFirst;
+}
+
+pub mod hidden_glob_path_order_module {
+    #[doc(hidden)]
+    pub use super::hidden_glob_path_order_source::*;
+}
+
+// A hidden glob inside a public module can sort before a visible root re-export.
+// Normalized signatures must still choose the visible root path instead of the
+// first path discovered by visibility traversal.
+pub use hidden_glob_path_order_source::HiddenSubmodulePathCanSortFirst as VisibleHiddenSubmodulePathCanSortFirst;
+
+pub fn hidden_glob_path_order_return() -> VisibleHiddenSubmodulePathCanSortFirst {
+    hidden_glob_path_order_source::HiddenSubmodulePathCanSortFirst
+}
+
+mod duplicate_glob_source {
+    pub struct DuplicateGlobHiddenAndVisible;
+}
+
+// If multiple glob re-exports make available the same item, then the item's path is public API
+// if *either* of the re-exports is public API. The `doc(hidden)` re-export does not matter.
+#[doc(hidden)]
+pub use duplicate_glob_source::*;
+pub use duplicate_glob_source::*;
+
+mod duplicate_hidden_deprecated_glob_source {
+    pub struct DuplicateGlobHiddenDeprecatedAndVisible;
+}
+
+// The same rule applies if the hidden re-export is also deprecated. The regular re-export
+// gives downstream users a non-hidden, non-deprecated path to the same item.
+#[deprecated]
+#[doc(hidden)]
+pub use duplicate_hidden_deprecated_glob_source::*;
+pub use duplicate_hidden_deprecated_glob_source::*;
+
+mod duplicate_deprecated_glob_source {
+    pub struct DuplicateGlobDeprecatedAndVisible;
+}
+
+// The same rule applies if one re-export is deprecated. The regular re-export gives
+// downstream users a non-deprecated path to the same item.
+#[deprecated]
+pub use duplicate_deprecated_glob_source::*;
+pub use duplicate_deprecated_glob_source::*;
+
+mod deprecated_glob_source {
+    pub struct DeprecatedGlobOnly;
+}
+
+#[deprecated]
+pub use deprecated_glob_source::*;
+
+mod hidden_deprecated_glob_source {
+    pub struct HiddenDeprecatedGlobOnly;
+}
+
+// Everything re-exported here is public API because of `#[deprecated]`.
+#[deprecated]
+#[doc(hidden)]
+pub use hidden_deprecated_glob_source::*;
+
+mod nested_glob_source {
+    pub struct NestedHiddenGlobOnly;
+}
+
+mod nested_glob_layer {
+    #[doc(hidden)]
+    pub use super::nested_glob_source::*;
+}
+
+// Everything re-exported here is public API.
+// It doesn't matter that the names within the module
+// are imported with `#[doc(hidden)]`.
+// The external user is not relying on those -- they are using a public API item only.
+pub use nested_glob_layer::*;
+
+mod nested_hidden_deprecated_glob_source {
+    pub struct NestedHiddenDeprecatedGlobOnly;
+}
+
+mod nested_hidden_deprecated_glob_layer {
+    #[deprecated]
+    #[doc(hidden)]
+    pub use super::nested_hidden_deprecated_glob_source::*;
+}
+
+// Everything re-exported here is public API.
+// It doesn't matter that the names within the module
+// are imported with `#[doc(hidden)]` nor `#[deprecated]`.
+// The external user is not relying on those -- they are using a public API item only.
+pub use nested_hidden_deprecated_glob_layer::*;
+
+mod plain_glob_source {
+    pub struct PlainGlobOnly;
+}
+
+pub use plain_glob_source::*;
+
+// A non-hidden re-export of an internally-hidden re-export is public API.
+//
+// For this next batch of re-exports, the fact that the intermediate re-export
+// may be `#[doc(hidden)]` doesn't matter. Items can be made to be non-public API
+// if *either* the item's definition itself is `#[doc(hidden)]`
+// *or* if the path that an external (downstream) user might type involves a `#[doc(hidden)]` name,
+// in each case also accounting for `#[deprecated]` exceptions of course.
+
+mod top_level_public_api_per_item_sources {
+    pub struct HiddenPerItemThenRootPerItem;
+    pub struct HiddenPerItemThenRootGlob;
+}
+
+mod hidden_glob_then_root_per_item_source {
+    pub struct HiddenGlobThenRootPerItem;
+}
+
+mod hidden_glob_then_root_glob_source {
+    pub struct HiddenGlobThenRootGlob;
+}
+
+mod hidden_per_item_for_root_per_item {
+    #[doc(hidden)]
+    pub use super::top_level_public_api_per_item_sources::HiddenPerItemThenRootPerItem;
+}
+
+pub use hidden_per_item_for_root_per_item::HiddenPerItemThenRootPerItem;
+
+mod hidden_per_item_for_root_glob {
+    #[doc(hidden)]
+    pub use super::top_level_public_api_per_item_sources::HiddenPerItemThenRootGlob;
+}
+
+pub use hidden_per_item_for_root_glob::*;
+
+mod hidden_glob_for_root_per_item {
+    #[doc(hidden)]
+    pub use super::hidden_glob_then_root_per_item_source::*;
+}
+
+pub use hidden_glob_for_root_per_item::HiddenGlobThenRootPerItem;
+
+mod hidden_glob_for_root_glob {
+    #[doc(hidden)]
+    pub use super::hidden_glob_then_root_glob_source::*;
+}
+
+pub use hidden_glob_for_root_glob::*;
+
 // Our doc-hidden analysis works even when `#[doc(hidden)]` does not appear verbatim
 // in the attributes, and is instead combined with other `doc` commands.
 #[doc(hidden, alias = "TheAlias")]
