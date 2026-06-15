@@ -6,8 +6,7 @@ use rustdoc_types::{
 };
 
 use super::{
-    context::{FnNormalizationContext, ParameterImplTraitNames},
-    paths,
+    context::FnNormalizationContext, parameter_impl_trait::ParameterImplTraitCursor, paths,
 };
 
 /// Output a normalized parameter type.
@@ -18,16 +17,16 @@ pub(super) fn format_parameter_type<'a>(
     position: NonZeroUsize,
     type_: &'a Type,
 ) -> String {
-    let mut parameter_impl_trait_names = Some(context.parameter_impl_trait_names(position));
+    let mut parameter_impl_trait_cursor = Some(context.impl_trait_cursor_for_parameter(position));
     let mut output = String::new();
     format_type_inner(
         context,
         type_,
         false,
-        &mut parameter_impl_trait_names,
+        &mut parameter_impl_trait_cursor,
         &mut output,
     );
-    parameter_impl_trait_names
+    parameter_impl_trait_cursor
         .as_ref()
         .expect("parameter impl Trait cursor disappeared")
         .assert_finished();
@@ -38,13 +37,13 @@ pub(super) fn format_parameter_type<'a>(
 ///
 /// In non-parameters, `impl Trait` is normalized to an opaque type, not a synthetic generic type.
 pub(super) fn format_type<'a>(context: &FnNormalizationContext<'a>, type_: &'a Type) -> String {
-    let mut parameter_impl_trait_names = None;
+    let mut parameter_impl_trait_cursor = None;
     let mut output = String::new();
     format_type_inner(
         context,
         type_,
         false,
-        &mut parameter_impl_trait_names,
+        &mut parameter_impl_trait_cursor,
         &mut output,
     );
     output
@@ -54,12 +53,12 @@ fn format_type_inner<'a>(
     context: &FnNormalizationContext<'a>,
     type_: &'a Type,
     wrap_before_bounds: bool,
-    parameter_impl_trait_names: &mut Option<ParameterImplTraitNames<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
     output: &mut String,
 ) {
     match type_ {
         Type::ResolvedPath(path) => {
-            format_path(context, path, false, parameter_impl_trait_names, output);
+            format_path(context, path, false, parameter_impl_trait_cursor, output);
         }
         Type::DynTrait(dyn_trait) => {
             if wrap_before_bounds {
@@ -76,7 +75,7 @@ fn format_type_inner<'a>(
                         context,
                         poly_trait,
                         dyn_trait.traits.len() + usize::from(dyn_trait.lifetime.is_some()) > 1,
-                        parameter_impl_trait_names,
+                        parameter_impl_trait_cursor,
                         &mut formatted,
                     );
                     formatted
@@ -114,31 +113,26 @@ fn format_type_inner<'a>(
             // Function-pointer ABI and safety are part of the type being
             // normalized, unlike ABI and safety on the containing function.
             let pointer_context = context.with_params(&pointer.generic_params);
-            format_scoped_generic_params(
-                &pointer_context,
-                &pointer.generic_params,
-                parameter_impl_trait_names,
-                output,
-            );
+            format_scoped_generic_params(&pointer_context, &pointer.generic_params, output);
             format_function_header(&pointer.header, output);
             output.push_str("fn");
             format_function_signature(
                 &pointer_context,
                 &pointer.sig,
                 wrap_before_bounds,
-                parameter_impl_trait_names,
+                parameter_impl_trait_cursor,
                 output,
             );
         }
-        Type::Tuple(types) => format_tuple(context, types, parameter_impl_trait_names, output),
+        Type::Tuple(types) => format_tuple(context, types, parameter_impl_trait_cursor, output),
         Type::Slice(type_) => {
             output.push('[');
-            format_type_inner(context, type_, false, parameter_impl_trait_names, output);
+            format_type_inner(context, type_, false, parameter_impl_trait_cursor, output);
             output.push(']');
         }
         Type::Array { type_, len } => {
             output.push('[');
-            format_type_inner(context, type_, false, parameter_impl_trait_names, output);
+            format_type_inner(context, type_, false, parameter_impl_trait_cursor, output);
             output.push_str("; ");
             let len = context.names().const_expr(len);
             output.push_str(len.as_ref());
@@ -146,7 +140,7 @@ fn format_type_inner<'a>(
         }
         Type::Pat { .. } => unimplemented!("Type::Pat is unstable"),
         Type::ImplTrait(bounds) => {
-            if let Some(names) = parameter_impl_trait_names.as_mut() {
+            if let Some(names) = parameter_impl_trait_cursor.as_mut() {
                 // We're in parameter mode, output a synthetic generic.
                 output.push_str(names.next());
             } else {
@@ -155,7 +149,7 @@ fn format_type_inner<'a>(
                     output.push('(');
                 }
                 output.push_str("impl ");
-                format_bounds(context, bounds, parameter_impl_trait_names, output);
+                format_bounds(context, bounds, parameter_impl_trait_cursor, output);
                 if wrap_before_bounds {
                     output.push(')');
                 }
@@ -174,7 +168,7 @@ fn format_type_inner<'a>(
                 context,
                 type_,
                 wrap_before_bounds || needs_parens_before_bounds(type_),
-                parameter_impl_trait_names,
+                parameter_impl_trait_cursor,
                 output,
             );
         }
@@ -196,7 +190,7 @@ fn format_type_inner<'a>(
                 context,
                 type_,
                 wrap_before_bounds || needs_parens_before_bounds(type_),
-                parameter_impl_trait_names,
+                parameter_impl_trait_cursor,
                 output,
             );
         }
@@ -212,7 +206,7 @@ fn format_type_inner<'a>(
                         context,
                         self_type,
                         false,
-                        parameter_impl_trait_names,
+                        parameter_impl_trait_cursor,
                         output,
                     );
                 } else {
@@ -221,11 +215,11 @@ fn format_type_inner<'a>(
                         context,
                         self_type,
                         false,
-                        parameter_impl_trait_names,
+                        parameter_impl_trait_cursor,
                         output,
                     );
                     output.push_str(" as ");
-                    format_path(context, trait_, false, parameter_impl_trait_names, output);
+                    format_path(context, trait_, false, parameter_impl_trait_cursor, output);
                     output.push('>');
                 }
             } else {
@@ -233,7 +227,7 @@ fn format_type_inner<'a>(
                     context,
                     self_type,
                     false,
-                    parameter_impl_trait_names,
+                    parameter_impl_trait_cursor,
                     output,
                 );
             }
@@ -241,7 +235,7 @@ fn format_type_inner<'a>(
             output.push_str("::");
             output.push_str(name);
             if let Some(args) = args.as_deref() {
-                format_generic_args(context, args, false, parameter_impl_trait_names, output);
+                format_generic_args(context, args, false, parameter_impl_trait_cursor, output);
             }
         }
     }
@@ -250,14 +244,14 @@ fn format_type_inner<'a>(
 fn format_tuple<'a>(
     context: &FnNormalizationContext<'a>,
     types: &'a [Type],
-    parameter_impl_trait_names: &mut Option<ParameterImplTraitNames<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
     output: &mut String,
 ) {
     match types {
         [] => output.push_str("()"),
         [type_] => {
             output.push('(');
-            format_type_inner(context, type_, false, parameter_impl_trait_names, output);
+            format_type_inner(context, type_, false, parameter_impl_trait_cursor, output);
             output.push_str(",)");
         }
         _ => {
@@ -266,7 +260,7 @@ fn format_tuple<'a>(
                 if index != 0 {
                     output.push_str(", ");
                 }
-                format_type_inner(context, type_, false, parameter_impl_trait_names, output);
+                format_type_inner(context, type_, false, parameter_impl_trait_cursor, output);
             }
             output.push(')');
         }
@@ -277,21 +271,16 @@ fn format_poly_trait<'a>(
     context: &FnNormalizationContext<'a>,
     poly_trait: &'a rustdoc_types::PolyTrait,
     wrap_before_bounds: bool,
-    parameter_impl_trait_names: &mut Option<ParameterImplTraitNames<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
     output: &mut String,
 ) {
     let context = context.with_params(&poly_trait.generic_params);
-    format_scoped_generic_params(
-        &context,
-        &poly_trait.generic_params,
-        parameter_impl_trait_names,
-        output,
-    );
+    format_scoped_generic_params(&context, &poly_trait.generic_params, output);
     format_path(
         &context,
         &poly_trait.trait_,
         wrap_before_bounds,
-        parameter_impl_trait_names,
+        parameter_impl_trait_cursor,
         output,
     );
 }
@@ -300,16 +289,16 @@ fn format_path<'a>(
     context: &FnNormalizationContext<'a>,
     path: &'a rustdoc_types::Path,
     wrap_args_before_bounds: bool,
-    parameter_impl_trait_names: &mut Option<ParameterImplTraitNames<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
     output: &mut String,
 ) {
-    output.push_str(&paths::normalized_path(context, path));
+    output.push_str(&paths::normalized_path(context.crate_(), path));
     if let Some(args) = path.args.as_deref() {
         format_generic_args(
             context,
             args,
             wrap_args_before_bounds,
-            parameter_impl_trait_names,
+            parameter_impl_trait_cursor,
             output,
         );
     }
@@ -319,7 +308,7 @@ fn format_generic_args<'a>(
     context: &FnNormalizationContext<'a>,
     args: &'a rustdoc_types::GenericArgs,
     wrap_output_before_bounds: bool,
-    parameter_impl_trait_names: &mut Option<ParameterImplTraitNames<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
     output: &mut String,
 ) {
     match args {
@@ -334,33 +323,35 @@ fn format_generic_args<'a>(
                 if needs_separator {
                     output.push_str(", ");
                 }
-                format_generic_arg(context, arg, parameter_impl_trait_names, output);
+                format_generic_arg(context, arg, parameter_impl_trait_cursor, output);
                 needs_separator = true;
             }
 
-            let mut constraints = constraints.iter().collect::<Vec<_>>();
-            constraints.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+            let mut constraints = constraints
+                .iter()
+                .map(|constraint| {
+                    let mut formatted = String::new();
+                    format_assoc_item_constraint(
+                        context,
+                        constraint,
+                        parameter_impl_trait_cursor,
+                        &mut formatted,
+                    );
+                    formatted
+                })
+                .collect::<Vec<_>>();
+            constraints.sort_unstable();
             if !constraints.is_empty() {
                 if needs_separator {
                     output.push_str(", ");
                 }
                 let mut constraints_iter = constraints.iter();
                 if let Some(constraint) = constraints_iter.next() {
-                    format_assoc_item_constraint(
-                        context,
-                        constraint,
-                        parameter_impl_trait_names,
-                        output,
-                    );
+                    output.push_str(constraint);
                 }
                 for constraint in constraints_iter {
                     output.push_str(", ");
-                    format_assoc_item_constraint(
-                        context,
-                        constraint,
-                        parameter_impl_trait_names,
-                        output,
-                    );
+                    output.push_str(constraint);
                 }
             }
             output.push('>');
@@ -374,7 +365,7 @@ fn format_generic_args<'a>(
                 if index != 0 {
                     output.push_str(", ");
                 }
-                format_type_inner(context, type_, false, parameter_impl_trait_names, output);
+                format_type_inner(context, type_, false, parameter_impl_trait_cursor, output);
             }
             output.push(')');
 
@@ -384,7 +375,7 @@ fn format_generic_args<'a>(
                     context,
                     return_type,
                     wrap_output_before_bounds,
-                    parameter_impl_trait_names,
+                    parameter_impl_trait_cursor,
                     output,
                 );
             }
@@ -396,7 +387,7 @@ fn format_generic_args<'a>(
 fn format_generic_arg<'a>(
     context: &FnNormalizationContext<'a>,
     arg: &'a GenericArg,
-    parameter_impl_trait_names: &mut Option<ParameterImplTraitNames<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
     output: &mut String,
 ) {
     match arg {
@@ -405,7 +396,7 @@ fn format_generic_arg<'a>(
             output.push_str(lifetime.as_ref());
         }
         GenericArg::Type(type_) => {
-            format_type_inner(context, type_, false, parameter_impl_trait_names, output);
+            format_type_inner(context, type_, false, parameter_impl_trait_cursor, output);
         }
         GenericArg::Const(constant) => format_constant(context, constant, output),
         GenericArg::Infer => output.push('_'),
@@ -415,22 +406,22 @@ fn format_generic_arg<'a>(
 fn format_assoc_item_constraint<'a>(
     context: &FnNormalizationContext<'a>,
     constraint: &'a AssocItemConstraint,
-    parameter_impl_trait_names: &mut Option<ParameterImplTraitNames<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
     output: &mut String,
 ) {
     output.push_str(&constraint.name);
     if let Some(args) = constraint.args.as_deref() {
-        format_generic_args(context, args, false, parameter_impl_trait_names, output);
+        format_generic_args(context, args, false, parameter_impl_trait_cursor, output);
     }
 
     match &constraint.binding {
         AssocItemConstraintKind::Constraint(bounds) => {
             output.push_str(": ");
-            format_bounds(context, bounds, parameter_impl_trait_names, output);
+            format_bounds(context, bounds, parameter_impl_trait_cursor, output);
         }
         AssocItemConstraintKind::Equality(term) => {
             output.push_str(" = ");
-            format_term(context, term, parameter_impl_trait_names, output);
+            format_term(context, term, parameter_impl_trait_cursor, output);
         }
     }
 }
@@ -438,7 +429,7 @@ fn format_assoc_item_constraint<'a>(
 fn format_bounds<'a>(
     context: &FnNormalizationContext<'a>,
     bounds: &'a [GenericBound],
-    parameter_impl_trait_names: &mut Option<ParameterImplTraitNames<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
     output: &mut String,
 ) {
     let mut bounds = bounds
@@ -449,7 +440,7 @@ fn format_bounds<'a>(
                 context,
                 bound,
                 bounds.len() > 1,
-                parameter_impl_trait_names,
+                parameter_impl_trait_cursor,
                 &mut formatted,
             );
             formatted
@@ -470,7 +461,7 @@ fn format_generic_bound<'a>(
     context: &FnNormalizationContext<'a>,
     bound: &'a GenericBound,
     wrap_before_or_after_bounds: bool,
-    parameter_impl_trait_names: &mut Option<ParameterImplTraitNames<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
     output: &mut String,
 ) {
     match bound {
@@ -480,12 +471,7 @@ fn format_generic_bound<'a>(
             modifier,
         } => {
             let context = context.with_params(generic_params);
-            format_scoped_generic_params(
-                &context,
-                generic_params,
-                parameter_impl_trait_names,
-                output,
-            );
+            format_scoped_generic_params(&context, generic_params, output);
             match modifier {
                 TraitBoundModifier::None => {}
                 TraitBoundModifier::Maybe => output.push('?'),
@@ -495,7 +481,7 @@ fn format_generic_bound<'a>(
                 &context,
                 trait_,
                 wrap_before_or_after_bounds,
-                parameter_impl_trait_names,
+                parameter_impl_trait_cursor,
                 output,
             );
         }
@@ -528,7 +514,6 @@ fn format_generic_bound<'a>(
 fn format_scoped_generic_params<'a>(
     context: &FnNormalizationContext<'a>,
     params: &'a [GenericParamDef],
-    parameter_impl_trait_names: &mut Option<ParameterImplTraitNames<'_>>,
     output: &mut String,
 ) {
     if params.is_empty() {
@@ -540,7 +525,7 @@ fn format_scoped_generic_params<'a>(
         if index != 0 {
             output.push_str(", ");
         }
-        format_generic_param_def(context, param, parameter_impl_trait_names, output);
+        format_generic_param_def(context, param, output);
     }
     output.push_str("> ");
 }
@@ -548,7 +533,6 @@ fn format_scoped_generic_params<'a>(
 fn format_generic_param_def<'a>(
     context: &FnNormalizationContext<'a>,
     param: &'a GenericParamDef,
-    parameter_impl_trait_names: &mut Option<ParameterImplTraitNames<'_>>,
     output: &mut String,
 ) {
     match &param.kind {
@@ -557,15 +541,18 @@ fn format_generic_param_def<'a>(
             output.push_str(lifetime.as_ref());
         }
         GenericParamDefKind::Type { .. } => {
-            let name = context.names().type_name(&param.name);
-            output.push_str(name.as_ref());
+            // These generic params come from higher-ranked `for<...>` binders
+            // on `fn` pointers or trait bounds. As of Rust 1.96, hypothetical
+            // `for<T>` binders are rejected, so there is no normalized
+            // signature text to produce for such a parameter.
+            unreachable!("found type generic param definition in HRTB position: {param:?}");
         }
-        GenericParamDefKind::Const { type_, .. } => {
-            output.push_str("const ");
-            let name = context.names().const_name(&param.name);
-            output.push_str(name.as_ref());
-            output.push_str(": ");
-            format_type_inner(context, type_, false, parameter_impl_trait_names, output);
+        GenericParamDefKind::Const { .. } => {
+            // These generic params come from higher-ranked `for<...>` binders
+            // on `fn` pointers or trait bounds. As of Rust 1.96, hypothetical
+            // `for<const N: usize>` binders are rejected, so there is no
+            // normalized signature text to produce for such a parameter.
+            unreachable!("found const generic param definition in HRTB position: {param:?}");
         }
     }
 }
@@ -574,7 +561,7 @@ fn format_function_signature<'a>(
     context: &FnNormalizationContext<'a>,
     signature: &'a rustdoc_types::FunctionSignature,
     wrap_output_before_bounds: bool,
-    parameter_impl_trait_names: &mut Option<ParameterImplTraitNames<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
     output: &mut String,
 ) {
     output.push('(');
@@ -583,7 +570,7 @@ fn format_function_signature<'a>(
         if needs_separator {
             output.push_str(", ");
         }
-        format_type_inner(context, type_, false, parameter_impl_trait_names, output);
+        format_type_inner(context, type_, false, parameter_impl_trait_cursor, output);
         needs_separator = true;
     }
     if signature.is_c_variadic {
@@ -600,7 +587,7 @@ fn format_function_signature<'a>(
             context,
             return_type,
             wrap_output_before_bounds,
-            parameter_impl_trait_names,
+            parameter_impl_trait_cursor,
             output,
         );
     }
@@ -608,10 +595,16 @@ fn format_function_signature<'a>(
 
 fn format_function_header(header: &FunctionHeader, output: &mut String) {
     if header.is_const {
-        output.push_str("const ");
+        // As of Rust 1.96, function pointer types cannot use hypothetical
+        // `const fn(...)` syntax, so there is no normalized signature text to
+        // produce for this header shape.
+        unreachable!("found const function pointer header: {header:?}");
     }
     if header.is_async {
-        output.push_str("async ");
+        // As of Rust 1.96, function pointer types cannot use hypothetical
+        // `async fn(...)` syntax, so there is no normalized signature text to
+        // produce for this header shape.
+        unreachable!("found async function pointer header: {header:?}");
     }
     if header.is_unsafe {
         output.push_str("unsafe ");
@@ -657,14 +650,19 @@ fn format_constant<'a>(
 fn format_term<'a>(
     context: &FnNormalizationContext<'a>,
     term: &'a Term,
-    parameter_impl_trait_names: &mut Option<ParameterImplTraitNames<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
     output: &mut String,
 ) {
     match term {
         Term::Type(type_) => {
-            format_type_inner(context, type_, false, parameter_impl_trait_names, output);
+            format_type_inner(context, type_, false, parameter_impl_trait_cursor, output);
         }
-        Term::Constant(constant) => format_constant(context, constant, output),
+        Term::Constant(constant) => {
+            // As of Rust 1.96, associated const equality constraints such as
+            // `T: Trait<N = 3>` are incomplete and rejected, so there is no
+            // normalized signature text to produce for such a term.
+            unreachable!("found associated const equality constraint term: {constant:?}");
+        }
     }
 }
 

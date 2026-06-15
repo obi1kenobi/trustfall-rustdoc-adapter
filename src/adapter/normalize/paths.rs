@@ -1,4 +1,4 @@
-use super::context::FnNormalizationContext;
+use crate::PackageIndex;
 
 /// Return a normalized representation of the given rustdoc path.
 ///
@@ -6,11 +6,7 @@ use super::context::FnNormalizationContext;
 /// available so reexports normalize to the spelling downstream users can name.
 /// For other resolved items, fall back to rustdoc's path summary. The raw path
 /// fallback is only for rustdoc data that did not resolve to either source.
-pub(super) fn normalized_path(
-    context: &FnNormalizationContext<'_>,
-    path: &rustdoc_types::Path,
-) -> String {
-    let crate_ = context.crate_();
+pub(super) fn normalized_path(crate_: &PackageIndex<'_>, path: &rustdoc_types::Path) -> String {
     if crate_.own_crate.inner.index.contains_key(&path.id) {
         let importable_paths = crate_
             .own_crate
