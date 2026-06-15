@@ -9889,6 +9889,10 @@ fn function_parameters() {
             params: vec!["value".into(), "values".into()],
         },
         Output {
+            name: "lifetime_const_path_args".into(),
+            params: vec!["value".into()],
+        },
+        Output {
             name: "composite_types".into(),
             params: vec!["tuple".into(), "raw".into()],
         },
@@ -9903,6 +9907,14 @@ fn function_parameters() {
         Output {
             name: "dyn_trait_lifetime".into(),
             params: vec!["value".into()],
+        },
+        Output {
+            name: "dyn_fn_two_arg".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "dyn_fn_pointer_output".into(),
+            params: vec!["callback".into(), "callback_with_lifetime".into()],
         },
         Output {
             name: "impl_trait_param".into(),
@@ -9926,8 +9938,110 @@ fn function_parameters() {
             params: vec!["value".into(), "other".into()],
         },
         Output {
+            name: "impl_trait_numbering_baseline".into(),
+            params: vec!["first".into(), "second".into()],
+        },
+        Output {
+            name: "impl_trait_numbering_nested_first".into(),
+            params: vec!["first".into(), "second".into()],
+        },
+        Output {
+            name: "impl_trait_numbering_nested_second".into(),
+            params: vec!["first".into(), "second".into()],
+        },
+        Output {
+            name: "multiple_impl_traits_single_param".into(),
+            params: vec!["pair".into(), "later".into()],
+        },
+        Output {
+            name: "maybe_sized_impl_trait".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "impl_fn_bound".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "impl_fn_lifetime_bound".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "impl_fn_two_args_bound".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "impl_trait_lifetime_return".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "abi_variant_fn_pointers".into(),
+            params: vec![
+                "c_unwind".into(),
+                "system".into(),
+                "system_unwind".into(),
+                "win64".into(),
+                "sysv64".into(),
+            ],
+        },
+        Output {
+            name: "dyn_pointer_and_mut_ref".into(),
+            params: vec!["pointer".into(), "borrowed".into()],
+        },
+        Output {
+            name: "borrowed_opaque_return".into(),
+            params: vec![],
+        },
+        Output {
+            name: "raw_pointer_opaque_return".into(),
+            params: vec![],
+        },
+        Output {
+            name: "fn_bound_pointer_to_dyn_return".into(),
+            params: vec![],
+        },
+        Output {
+            name: "raw_pointer_impl_trait".into(),
+            params: vec!["value".into(), "mutable".into()],
+        },
+        Output {
+            name: "slice_and_array_impl_trait".into(),
+            params: vec!["value".into(), "array".into()],
+        },
+        Output {
+            name: "unit_and_single_tuple".into(),
+            params: vec!["unit".into(), "single".into()],
+        },
+        Output {
+            name: "higher_ranked_fn_pointer".into(),
+            params: vec!["callback".into()],
+        },
+        Output {
+            name: "unsafe_c_variadic_pointer".into(),
+            params: vec!["callback".into()],
+        },
+        Output {
             name: "impl_trait_return".into(),
             params: vec![],
+        },
+        Output {
+            name: "precise_capture_return".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "precise_capture_lifetime".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "precise_capture_const".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            name: "qualified_path_assoc_arg".into(),
+            params: vec!["pair".into()],
+        },
+        Output {
+            name: "generic_assoc_arg".into(),
+            params: vec!["pair".into()],
         },
         Output {
             name: "add_method".into(),
@@ -9954,8 +10068,20 @@ fn function_parameters() {
             params: vec!["self".into()],
         },
         Output {
+            name: "fn_output_dyn".into(),
+            params: vec!["self".into()],
+        },
+        Output {
+            name: "fn_output_dyn_single_bound".into(),
+            params: vec!["self".into()],
+        },
+        Output {
             name: "combine_trait".into(),
             params: vec!["self".into(), "owner".into(), "method".into()],
+        },
+        Output {
+            name: "self_qualified".into(),
+            params: vec!["pair".into()],
         },
         Output {
             name: "default_combine".into(),
@@ -10091,6 +10217,10 @@ fn function_return_value() {
             is_unit: false,
         },
         Output {
+            name: "lifetime_const_path_args".into(),
+            is_unit: true,
+        },
+        Output {
             name: "composite_types".into(),
             is_unit: false,
         },
@@ -10105,6 +10235,14 @@ fn function_return_value() {
         Output {
             name: "dyn_trait_lifetime".into(),
             is_unit: false,
+        },
+        Output {
+            name: "dyn_fn_two_arg".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "dyn_fn_pointer_output".into(),
+            is_unit: true,
         },
         Output {
             name: "impl_trait_param".into(),
@@ -10123,8 +10261,104 @@ fn function_return_value() {
             is_unit: false,
         },
         Output {
+            name: "impl_trait_numbering_baseline".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "impl_trait_numbering_nested_first".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "impl_trait_numbering_nested_second".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "multiple_impl_traits_single_param".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "maybe_sized_impl_trait".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "impl_fn_bound".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "impl_fn_lifetime_bound".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "impl_fn_two_args_bound".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "impl_trait_lifetime_return".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "abi_variant_fn_pointers".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "dyn_pointer_and_mut_ref".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "borrowed_opaque_return".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "raw_pointer_opaque_return".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "fn_bound_pointer_to_dyn_return".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "raw_pointer_impl_trait".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "slice_and_array_impl_trait".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "unit_and_single_tuple".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "higher_ranked_fn_pointer".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "unsafe_c_variadic_pointer".into(),
+            is_unit: true,
+        },
+        Output {
             name: "impl_trait_return".into(),
             is_unit: false,
+        },
+        Output {
+            name: "precise_capture_return".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "precise_capture_lifetime".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "precise_capture_const".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "qualified_path_assoc_arg".into(),
+            is_unit: true,
+        },
+        Output {
+            name: "generic_assoc_arg".into(),
+            is_unit: true,
         },
         Output {
             name: "add_method".into(),
@@ -10151,8 +10385,20 @@ fn function_return_value() {
             is_unit: true,
         },
         Output {
+            name: "fn_output_dyn".into(),
+            is_unit: false,
+        },
+        Output {
+            name: "fn_output_dyn_single_bound".into(),
+            is_unit: false,
+        },
+        Output {
             name: "combine_trait".into(),
             is_unit: false,
+        },
+        Output {
+            name: "self_qualified".into(),
+            is_unit: true,
         },
         Output {
             name: "default_combine".into(),
@@ -10279,6 +10525,12 @@ fn function_parameter_normalized_type_signatures() {
                 .into(),
         },
         Output {
+            name: "lifetime_const_path_args".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "::function_params_and_return_value::LifetimeConst<'a, C1>".into(),
+        },
+        Output {
             name: "composite_types".into(),
             position: 1,
             param_name: "tuple".into(),
@@ -10310,10 +10562,32 @@ fn function_parameter_normalized_type_signatures() {
                 .into(),
         },
         Output {
+            name: "dyn_fn_two_arg".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "::alloc::boxed::Box<dyn ::core::ops::function::Fn(u8, u16) -> u32>".into(),
+        },
+        Output {
+            name: "dyn_fn_pointer_output".into(),
+            position: 1,
+            param_name: "callback".into(),
+            signature:
+                "::alloc::boxed::Box<dyn ::core::ops::function::Fn() -> *const dyn ::core::marker::Send>"
+                    .into(),
+        },
+        Output {
+            name: "dyn_fn_pointer_output".into(),
+            position: 2,
+            param_name: "callback_with_lifetime".into(),
+            signature:
+                "::alloc::boxed::Box<dyn ::core::ops::function::Fn() -> *const (dyn ::core::marker::Send) + 'static>"
+                    .into(),
+        },
+        Output {
             name: "impl_trait_param".into(),
             position: 1,
             param_name: "value".into(),
-            signature: "IT1".into(),
+            signature: "IT1_1".into(),
         },
         Output {
             name: "generic_and_impl_trait_params".into(),
@@ -10325,13 +10599,13 @@ fn function_parameter_normalized_type_signatures() {
             name: "generic_and_impl_trait_params".into(),
             position: 2,
             param_name: "first".into(),
-            signature: "IT2".into(),
+            signature: "IT2_1".into(),
         },
         Output {
             name: "generic_and_impl_trait_params".into(),
             position: 3,
             param_name: "second".into(),
-            signature: "IT3".into(),
+            signature: "IT3_1".into(),
         },
         Output {
             name: "nested_impl_trait_params".into(),
@@ -10343,31 +10617,230 @@ fn function_parameter_normalized_type_signatures() {
             name: "nested_impl_trait_params".into(),
             position: 2,
             param_name: "borrowed".into(),
-            signature: "&IT2".into(),
+            signature: "&IT2_1".into(),
         },
         Output {
             name: "nested_impl_trait_params".into(),
             position: 3,
             param_name: "values".into(),
-            signature: "::alloc::vec::Vec<IT3>".into(),
+            signature: "::alloc::vec::Vec<IT3_1>".into(),
         },
         Output {
             name: "nested_impl_trait_params".into(),
             position: 4,
             param_name: "nested_tuple".into(),
-            signature: "(IT4, T1)".into(),
+            signature: "(IT4_1, T1)".into(),
         },
         Output {
             name: "nested_assoc_impl_trait_param".into(),
             position: 1,
             param_name: "value".into(),
-            signature: "IT2".into(),
+            signature: "IT1_2".into(),
         },
         Output {
             name: "nested_assoc_impl_trait_param".into(),
             position: 2,
             param_name: "other".into(),
-            signature: "IT3".into(),
+            signature: "IT2_1".into(),
+        },
+        Output {
+            name: "impl_trait_numbering_baseline".into(),
+            position: 1,
+            param_name: "first".into(),
+            signature: "IT1_1".into(),
+        },
+        Output {
+            name: "impl_trait_numbering_baseline".into(),
+            position: 2,
+            param_name: "second".into(),
+            signature: "IT2_1".into(),
+        },
+        Output {
+            name: "impl_trait_numbering_nested_first".into(),
+            position: 1,
+            param_name: "first".into(),
+            signature: "IT1_2".into(),
+        },
+        Output {
+            name: "impl_trait_numbering_nested_first".into(),
+            position: 2,
+            param_name: "second".into(),
+            signature: "IT2_1".into(),
+        },
+        Output {
+            name: "impl_trait_numbering_nested_second".into(),
+            position: 1,
+            param_name: "first".into(),
+            signature: "IT1_1".into(),
+        },
+        Output {
+            name: "impl_trait_numbering_nested_second".into(),
+            position: 2,
+            param_name: "second".into(),
+            signature: "IT2_2".into(),
+        },
+        Output {
+            name: "multiple_impl_traits_single_param".into(),
+            position: 1,
+            param_name: "pair".into(),
+            signature: "(IT1_1, IT1_2)".into(),
+        },
+        Output {
+            name: "multiple_impl_traits_single_param".into(),
+            position: 2,
+            param_name: "later".into(),
+            signature: "IT2_1".into(),
+        },
+        Output {
+            name: "maybe_sized_impl_trait".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "&IT1_1".into(),
+        },
+        Output {
+            name: "impl_fn_bound".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "IT1_1".into(),
+        },
+        Output {
+            name: "impl_fn_lifetime_bound".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "IT1_1".into(),
+        },
+        Output {
+            name: "impl_fn_two_args_bound".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "IT1_1".into(),
+        },
+        Output {
+            name: "impl_trait_lifetime_return".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "&'a u8".into(),
+        },
+        Output {
+            name: "abi_variant_fn_pointers".into(),
+            position: 1,
+            param_name: "c_unwind".into(),
+            signature: "extern \"C-unwind\" fn(u8) -> u8".into(),
+        },
+        Output {
+            name: "abi_variant_fn_pointers".into(),
+            position: 2,
+            param_name: "system".into(),
+            signature: "extern \"system\" fn(u8) -> u8".into(),
+        },
+        Output {
+            name: "abi_variant_fn_pointers".into(),
+            position: 3,
+            param_name: "system_unwind".into(),
+            signature: "extern \"system-unwind\" fn(u8) -> u8".into(),
+        },
+        Output {
+            name: "abi_variant_fn_pointers".into(),
+            position: 4,
+            param_name: "win64".into(),
+            signature: "extern \"win64\" fn(u8) -> u8".into(),
+        },
+        Output {
+            name: "abi_variant_fn_pointers".into(),
+            position: 5,
+            param_name: "sysv64".into(),
+            signature: "extern \"sysv64\" fn(u8) -> u8".into(),
+        },
+        Output {
+            name: "dyn_pointer_and_mut_ref".into(),
+            position: 1,
+            param_name: "pointer".into(),
+            signature: "*const (dyn ::core::marker::Send + ::core::marker::Sync + 'a)".into(),
+        },
+        Output {
+            name: "dyn_pointer_and_mut_ref".into(),
+            position: 2,
+            param_name: "borrowed".into(),
+            signature: "&'a mut (dyn ::core::marker::Send + ::core::marker::Sync)".into(),
+        },
+        Output {
+            name: "raw_pointer_impl_trait".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "*const IT1_1".into(),
+        },
+        Output {
+            name: "raw_pointer_impl_trait".into(),
+            position: 2,
+            param_name: "mutable".into(),
+            signature: "*mut IT2_1".into(),
+        },
+        Output {
+            name: "slice_and_array_impl_trait".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "&[IT1_1]".into(),
+        },
+        Output {
+            name: "slice_and_array_impl_trait".into(),
+            position: 2,
+            param_name: "array".into(),
+            signature: "[IT2_1; 3]".into(),
+        },
+        Output {
+            name: "unit_and_single_tuple".into(),
+            position: 1,
+            param_name: "unit".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "unit_and_single_tuple".into(),
+            position: 2,
+            param_name: "single".into(),
+            signature: "(IT2_1,)".into(),
+        },
+        Output {
+            name: "higher_ranked_fn_pointer".into(),
+            position: 1,
+            param_name: "callback".into(),
+            signature: "for<'a> fn(&'a u8) -> &'a u8".into(),
+        },
+        Output {
+            name: "unsafe_c_variadic_pointer".into(),
+            position: 1,
+            param_name: "callback".into(),
+            signature: "unsafe extern \"C\" fn(u8, ...) -> u8".into(),
+        },
+        Output {
+            name: "precise_capture_return".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "precise_capture_lifetime".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "&'a T1".into(),
+        },
+        Output {
+            name: "precise_capture_const".into(),
+            position: 1,
+            param_name: "value".into(),
+            signature: "[u8; C1]".into(),
+        },
+        Output {
+            name: "qualified_path_assoc_arg".into(),
+            position: 1,
+            param_name: "pair".into(),
+            signature:
+                "(<T1 as ::function_params_and_return_value::Provider>::Assoc<IT1_1>, IT1_2)".into(),
+        },
+        Output {
+            name: "generic_assoc_arg".into(),
+            position: 1,
+            param_name: "pair".into(),
+            signature: "(T1::Assoc<IT1_1>, IT1_2)".into(),
         },
     ];
     expected_results.sort_unstable();
@@ -10382,8 +10855,13 @@ fn function_parameter_normalized_type_signatures() {
     similar_asserts::assert_eq!(expected_results, results);
 }
 
+/// Query every function in `assoc_constraint_order` so new fixture examples
+/// require an expected output here by default. Associated-item constraints are
+/// sorted before parameter-position `impl Trait` names are assigned, while
+/// `impl Trait` occurrences in generic bounds are consumed but do not appear in
+/// the normalized parameter type signature.
 #[test]
-fn function_parameter_normalized_type_signature_sorts_assoc_constraints_before_impl_trait_names() {
+fn function_parameter_normalized_type_signature_handles_assoc_constraint_impl_trait() {
     get_test_data!(data, assoc_constraint_order);
     let adapter = RustdocAdapter::new(&data, None);
     let adapter = Arc::new(&adapter);
@@ -10393,7 +10871,7 @@ fn function_parameter_normalized_type_signature_sorts_assoc_constraints_before_i
     Crate {
         item {
             ... on Function {
-                name @filter(op: "one_of", value: ["$functions"]) @output
+                name @output
 
                 parameter {
                     normalized_type_signature {
@@ -10405,12 +10883,176 @@ fn function_parameter_normalized_type_signature_sorts_assoc_constraints_before_i
     }
 }
 "#;
-    let variables = btreemap! {
-        "functions" => FieldValue::List(vec![
-            FieldValue::String("a_then_b".into()),
-            FieldValue::String("b_then_a".into()),
-        ].into()),
-    };
+    let variables: BTreeMap<&str, bool> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        signature: String,
+    }
+
+    let expected_results = vec![
+        Output {
+            name: "a_then_b".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = IT1_1, B = IT1_2>>".into(),
+        },
+        Output {
+            name: "b_then_a".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = IT1_1, B = IT1_2>>".into(),
+        },
+        Output {
+            name: "bound_a_then_b".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "bound_b_then_a".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "same_synthetic_names".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = IT1_1, B = IT1_2>>".into(),
+        },
+        Output {
+            name: "gat_bound_u8_then_u16".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "repeated_gat_bound_u8_then_u16".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "generic_bound_before_input_impl_trait".into(),
+            signature: "IT1_1".into(),
+        },
+        Output {
+            name: "generic_bound_before_input_impl_trait".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "top_level_assoc_bound_counts_hidden_impls".into(),
+            signature: "(IT1_2, IT1_3)".into(),
+        },
+        Output {
+            name: "assoc_constraint_args_count_before_outer_impl".into(),
+            signature: "(IT1_3, IT1_4)".into(),
+        },
+        Output {
+            name: "hrtb_bound_counts_before_later_impl".into(),
+            signature: "(IT1_1, IT1_2)".into(),
+        },
+        Output {
+            name: "hrtb_two_lifetime_bound_counts_before_later_impl".into(),
+            signature: "(IT1_1, IT1_2)".into(),
+        },
+        Output {
+            name: "lifetime_const_generic_arg_counts_before_later_impl".into(),
+            signature: "(IT1_1, IT1_2)".into(),
+        },
+        Output {
+            name: "complex_constraint_a_then_b".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = ::alloc::boxed::Box<dyn for<'b> ::core::ops::function::Fn(&'b u8) -> &'b u8 + 'a>, B = IT1_1>>".into(),
+        },
+        Output {
+            name: "complex_constraint_b_then_a".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = ::alloc::boxed::Box<dyn for<'b> ::core::ops::function::Fn(&'b u8) -> &'b u8 + 'a>, B = IT1_1>>".into(),
+        },
+        Output {
+            name: "constraint_type_shapes".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = (&'a [u8], [u8; C1]), B = IT1_1>>".into(),
+        },
+        Output {
+            name: "constraint_function_pointer".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = fn(u8) -> u8, B = IT1_1>>".into(),
+        },
+        Output {
+            name: "constraint_higher_ranked_function_pointer".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = for<'a> fn(&'a u8) -> &'a u8, B = IT1_1>>".into(),
+        },
+        Output {
+            name: "constraint_two_lifetime_function_pointer".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = for<'a, 'b> fn(&'a u8, &'b u8) -> &'b u8, B = IT1_1>>".into(),
+        },
+        Output {
+            name: "constraint_dyn_fn_trait_two_args".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = ::alloc::boxed::Box<dyn ::core::ops::function::Fn(u8, u16) -> u32>, B = IT1_1>>".into(),
+        },
+        Output {
+            name: "constraint_qualified_path".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = <T1 as ::assoc_constraint_order::Provider>::Assoc<IT1_1>, B = IT1_2>>".into(),
+        },
+        Output {
+            name: "where_bound_after_input_impl_trait".into(),
+            signature: "IT1_1".into(),
+        },
+        Output {
+            name: "where_bound_after_input_impl_trait".into(),
+            signature: "T1".into(),
+        },
+        Output {
+            name: "constraint_multiple_bounds".into(),
+            signature: "IT1_2".into(),
+        },
+        Output {
+            name: "constraint_mutable_reference".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = &'static mut IT1_1, B = IT1_2>>".into(),
+        },
+        Output {
+            name: "constraint_raw_pointers".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = *const IT1_1, B = *mut IT1_2>>".into(),
+        },
+        Output {
+            name: "constraint_slice_and_array".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = &'static [IT1_1], B = [IT1_2; 3]>>".into(),
+        },
+        Output {
+            name: "constraint_single_tuple".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = (IT1_1,), B = IT1_2>>".into(),
+        },
+        Output {
+            name: "constraint_dyn_multi_trait".into(),
+            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = ::alloc::boxed::Box<dyn ::core::marker::Send + ::core::marker::Sync + 'a>, B = IT1_1>>".into(),
+        },
+    ];
+    let mut sorted_expected_results = expected_results.clone();
+    sorted_expected_results.sort_unstable();
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(sorted_expected_results, results);
+}
+
+#[test]
+fn function_return_normalized_type_signature_handles_assoc_constraint_bound() {
+    get_test_data!(data, assoc_constraint_order);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @output
+
+                return_value {
+                    normalized_type_signature {
+                        signature @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables: BTreeMap<&str, FieldValue> = BTreeMap::default();
 
     let schema =
         Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
@@ -10421,16 +11063,64 @@ fn function_parameter_normalized_type_signature_sorts_assoc_constraints_before_i
         signature: String,
     }
 
-    let mut expected_results = vec![
-        Output {
-            name: "a_then_b".into(),
-            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = IT1, B = IT2>>".into(),
-        },
-        Output {
-            name: "b_then_a".into(),
-            signature: "::alloc::boxed::Box<dyn ::assoc_constraint_order::AssocConstraintOrder<A = IT1, B = IT2>>".into(),
-        },
+    let unit_return_functions = [
+        "a_then_b",
+        "b_then_a",
+        "bound_a_then_b",
+        "bound_b_then_a",
+        "same_synthetic_names",
+        "gat_bound_u8_then_u16",
+        "repeated_gat_bound_u8_then_u16",
+        "generic_bound_before_input_impl_trait",
+        "top_level_assoc_bound_counts_hidden_impls",
+        "assoc_constraint_args_count_before_outer_impl",
+        "hrtb_bound_counts_before_later_impl",
+        "hrtb_two_lifetime_bound_counts_before_later_impl",
+        "lifetime_const_generic_arg_counts_before_later_impl",
+        "complex_constraint_a_then_b",
+        "complex_constraint_b_then_a",
+        "constraint_type_shapes",
+        "constraint_function_pointer",
+        "constraint_higher_ranked_function_pointer",
+        "constraint_two_lifetime_function_pointer",
+        "constraint_dyn_fn_trait_two_args",
+        "constraint_qualified_path",
+        "where_bound_after_input_impl_trait",
+        "constraint_multiple_bounds",
+        "constraint_raw_pointers",
+        "constraint_slice_and_array",
+        "constraint_mutable_reference",
+        "constraint_single_tuple",
+        "constraint_dyn_multi_trait",
     ];
+
+    let mut expected_results = unit_return_functions
+        .into_iter()
+        .map(|name| Output {
+            name: name.into(),
+            signature: "()".into(),
+        })
+        .chain([
+            Output {
+                name: "return_assoc_constraint_bound".into(),
+                signature:
+                    "impl ::assoc_constraint_order::AssocConstraintOrder<A: ::core::clone::Clone + ::core::marker::Copy, B = u8>"
+                        .into(),
+            },
+            Output {
+                name: "return_generic_assoc_constraint_bound".into(),
+                signature:
+                    "impl ::assoc_constraint_order::GenericAssoc<u8, A: ::core::clone::Clone + ::core::marker::Copy>"
+                        .into(),
+            },
+            Output {
+                name: "return_gat_assoc_constraint_bound".into(),
+                signature:
+                    "impl ::assoc_constraint_order::HasGenericItem<Item<u8>: ::core::clone::Clone + ::core::marker::Copy>"
+                        .into(),
+            },
+        ])
+        .collect::<Vec<_>>();
     expected_results.sort_unstable();
 
     let mut results: Vec<Output> =
@@ -10508,6 +11198,10 @@ fn function_return_normalized_type_signatures() {
                 .into(),
         },
         Output {
+            name: "lifetime_const_path_args".into(),
+            signature: "()".into(),
+        },
+        Output {
             name: "composite_types".into(),
             signature: "(&'a [T1], *mut T1)".into(),
         },
@@ -10523,6 +11217,14 @@ fn function_return_normalized_type_signatures() {
             name: "dyn_trait_lifetime".into(),
             signature: "::alloc::boxed::Box<dyn ::core::marker::Send + ::core::marker::Sync + 'a>"
                 .into(),
+        },
+        Output {
+            name: "dyn_fn_two_arg".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "dyn_fn_pointer_output".into(),
+            signature: "()".into(),
         },
         Output {
             name: "impl_trait_param".into(),
@@ -10541,8 +11243,106 @@ fn function_return_normalized_type_signatures() {
             signature: "usize".into(),
         },
         Output {
+            name: "impl_trait_numbering_baseline".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "impl_trait_numbering_nested_first".into(),
+            signature: "usize".into(),
+        },
+        Output {
+            name: "impl_trait_numbering_nested_second".into(),
+            signature: "usize".into(),
+        },
+        Output {
+            name: "multiple_impl_traits_single_param".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "maybe_sized_impl_trait".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "impl_fn_bound".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "impl_fn_lifetime_bound".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "impl_fn_two_args_bound".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "impl_trait_lifetime_return".into(),
+            signature: "impl 'a + ::core::clone::Clone".into(),
+        },
+        Output {
+            name: "abi_variant_fn_pointers".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "dyn_pointer_and_mut_ref".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "borrowed_opaque_return".into(),
+            signature: "&'static (impl ::core::clone::Clone + ::core::marker::Copy)".into(),
+        },
+        Output {
+            name: "raw_pointer_opaque_return".into(),
+            signature: "*const (impl ::core::clone::Clone + ::core::marker::Copy)".into(),
+        },
+        Output {
+            name: "fn_bound_pointer_to_dyn_return".into(),
+            signature:
+                "impl ::core::clone::Clone + ::core::ops::function::Fn() -> *const (dyn ::core::marker::Send + ::core::marker::Sync)"
+                    .into(),
+        },
+        Output {
+            name: "raw_pointer_impl_trait".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "slice_and_array_impl_trait".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "unit_and_single_tuple".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "higher_ranked_fn_pointer".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "unsafe_c_variadic_pointer".into(),
+            signature: "()".into(),
+        },
+        Output {
             name: "impl_trait_return".into(),
             signature: "impl ::core::iter::traits::iterator::Iterator<Item = u8>".into(),
+        },
+        Output {
+            name: "precise_capture_return".into(),
+            signature: "impl ::core::clone::Clone + use<T1>".into(),
+        },
+        Output {
+            name: "precise_capture_lifetime".into(),
+            signature: "impl ::core::clone::Clone + use<'a, T1>".into(),
+        },
+        Output {
+            name: "precise_capture_const".into(),
+            signature: "impl ::core::clone::Clone + use<C1>".into(),
+        },
+        Output {
+            name: "qualified_path_assoc_arg".into(),
+            signature: "()".into(),
+        },
+        Output {
+            name: "generic_assoc_arg".into(),
+            signature: "()".into(),
         },
     ];
     expected_results.sort_unstable();
@@ -10701,6 +11501,18 @@ fn method_normalized_type_signatures_include_parent_generics() {
         "trait_owner" => "GenericTrait",
         "trait_method" => "combine_trait",
     };
+    let provider_trait_variables = btreemap! {
+        "trait_owner" => "Provider",
+        "trait_method" => "self_qualified",
+    };
+    let fn_output_trait_variables = btreemap! {
+        "trait_owner" => "FnOutputTrait",
+        "trait_method" => "fn_output_dyn",
+    };
+    let fn_output_trait_single_bound_variables = btreemap! {
+        "trait_owner" => "FnOutputTrait",
+        "trait_method" => "fn_output_dyn_single_bound",
+    };
     let trait_impl_variables = btreemap! {
         "trait_owner" => "GenericTrait",
         "trait_method" => "combine_trait",
@@ -10783,6 +11595,34 @@ fn method_normalized_type_signatures_include_parent_generics() {
             return_signature: "(T1, T2)".into(),
         },
         Output {
+            owner: "Provider".into(),
+            method_name: "self_qualified".into(),
+            position: 1,
+            param_name: "pair".into(),
+            param_signature: "(Self::Assoc<IT1_1>, IT1_2)".into(),
+            return_signature: "()".into(),
+        },
+        Output {
+            owner: "FnOutputTrait".into(),
+            method_name: "fn_output_dyn".into(),
+            position: 1,
+            param_name: "self".into(),
+            param_signature: "&Self".into(),
+            return_signature:
+                "impl ::core::clone::Clone + ::core::ops::function::Fn() -> (dyn ::core::marker::Send + ::core::marker::Sync)"
+                    .into(),
+        },
+        Output {
+            owner: "FnOutputTrait".into(),
+            method_name: "fn_output_dyn_single_bound".into(),
+            position: 1,
+            param_name: "self".into(),
+            param_signature: "&Self".into(),
+            return_signature:
+                "impl ::core::ops::function::Fn() -> dyn ::core::marker::Send + ::core::marker::Sync"
+                    .into(),
+        },
+        Output {
             owner: "ImplementsGenericTrait".into(),
             method_name: "combine_trait".into(),
             position: 1,
@@ -10839,6 +11679,33 @@ fn method_normalized_type_signatures_include_parent_generics() {
             .chain(
                 trustfall::execute_query(&schema, adapter.clone(), trait_query, trait_variables)
                     .expect("failed to run trait method query"),
+            )
+            .chain(
+                trustfall::execute_query(
+                    &schema,
+                    adapter.clone(),
+                    trait_query,
+                    provider_trait_variables,
+                )
+                .expect("failed to run provider trait method query"),
+            )
+            .chain(
+                trustfall::execute_query(
+                    &schema,
+                    adapter.clone(),
+                    trait_query,
+                    fn_output_trait_variables,
+                )
+                .expect("failed to run FnOutputTrait method query"),
+            )
+            .chain(
+                trustfall::execute_query(
+                    &schema,
+                    adapter.clone(),
+                    trait_query,
+                    fn_output_trait_single_bound_variables,
+                )
+                .expect("failed to run FnOutputTrait single-bound method query"),
             )
             .chain(
                 trustfall::execute_query(
