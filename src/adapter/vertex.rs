@@ -1,4 +1,4 @@
-use std::{borrow::Cow, num::NonZeroUsize, rc::Rc};
+use std::{borrow::Cow, num::NonZeroUsize};
 
 use rustdoc_types::{
     Abi, Constant, Crate, Enum, Function, GenericBound, GenericParamDef, Impl, Item, Module, Path,
@@ -42,7 +42,7 @@ pub enum VertexKind<'a> {
     Path(&'a [String]),
 
     #[non_exhaustive]
-    ImportablePath(Rc<ImportablePath<'a>>),
+    ImportablePath(&'a ImportablePath<'a>),
 
     #[non_exhaustive]
     RawType(&'a Type),
