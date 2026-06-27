@@ -2,7 +2,7 @@ use std::{borrow::Borrow, collections::hash_map::Entry, sync::Arc};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
-use rustdoc_types::{Crate, Id, Item};
+use rustdoc_types::{Crate, Id, Item, Stability, StabilityLevel};
 
 #[allow(
     unused_imports,
@@ -924,6 +924,9 @@ struct ManualTraitItem {
     path: &'static [&'static str],
     is_auto: bool,
     is_unsafe: bool,
+    stability_feature: &'static str,
+    stability_since: &'static str,
+    const_stability_feature: Option<&'static str>,
 }
 
 /// Limiting the creation of manually inlined traits to only those that are used by the lints.
@@ -935,84 +938,126 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 14] = [
         path: &["core", "fmt", "Debug"],
         is_auto: false,
         is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: None,
     },
     ManualTraitItem {
         name: "Clone",
         path: &["core", "clone", "Clone"],
         is_auto: false,
         is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: Some("const_clone"),
     },
     ManualTraitItem {
         name: "Copy",
         path: &["core", "marker", "Copy"],
         is_auto: false,
         is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: None,
     },
     ManualTraitItem {
         name: "PartialOrd",
         path: &["core", "cmp", "PartialOrd"],
         is_auto: false,
         is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: Some("const_cmp"),
     },
     ManualTraitItem {
         name: "Ord",
         path: &["core", "cmp", "Ord"],
         is_auto: false,
         is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: Some("const_cmp"),
     },
     ManualTraitItem {
         name: "PartialEq",
         path: &["core", "cmp", "PartialEq"],
         is_auto: false,
         is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: Some("const_cmp"),
     },
     ManualTraitItem {
         name: "Eq",
         path: &["core", "cmp", "Eq"],
         is_auto: false,
         is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: Some("const_cmp"),
     },
     ManualTraitItem {
         name: "Hash",
         path: &["core", "hash", "Hash"],
         is_auto: false,
         is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: None,
     },
     ManualTraitItem {
         name: "Send",
         path: &["core", "marker", "Send"],
         is_auto: true,
         is_unsafe: true,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: None,
     },
     ManualTraitItem {
         name: "Sync",
         path: &["core", "marker", "Sync"],
         is_auto: true,
         is_unsafe: true,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: None,
     },
     ManualTraitItem {
         name: "Unpin",
         path: &["core", "marker", "Unpin"],
         is_auto: true,
         is_unsafe: false,
+        stability_feature: "pin",
+        stability_since: "1.33.0",
+        const_stability_feature: None,
     },
     ManualTraitItem {
         name: "RefUnwindSafe",
         path: &["core", "panic", "unwind_safe", "RefUnwindSafe"],
         is_auto: true,
         is_unsafe: false,
+        stability_feature: "catch_unwind",
+        stability_since: "1.9.0",
+        const_stability_feature: None,
     },
     ManualTraitItem {
         name: "UnwindSafe",
         path: &["core", "panic", "unwind_safe", "UnwindSafe"],
         is_auto: true,
         is_unsafe: false,
+        stability_feature: "catch_unwind",
+        stability_since: "1.9.0",
+        const_stability_feature: None,
     },
     ManualTraitItem {
         name: "Sized",
         path: &["core", "marker", "Sized"],
         is_auto: false,
         is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: None,
     },
 ];
 
@@ -1027,6 +1072,18 @@ fn new_trait(manual_trait_item: &ManualTraitItem, id: Id, crate_id: u32) -> Item
         links: HashMap::default(),
         attrs: Vec::new(),
         deprecation: None,
+        stability: Some(Box::new(Stability {
+            feature: manual_trait_item.stability_feature.to_string(),
+            level: StabilityLevel::Stable {
+                since: Some(manual_trait_item.stability_since.to_string()),
+            },
+        })),
+        const_stability: manual_trait_item.const_stability_feature.map(|feature| {
+            Box::new(Stability {
+                feature: feature.to_string(),
+                level: StabilityLevel::Unstable,
+            })
+        }),
         inner: rustdoc_types::ItemEnum::Trait(rustdoc_types::Trait {
             is_auto: manual_trait_item.is_auto,
             is_unsafe: manual_trait_item.is_unsafe,
