@@ -5,6 +5,7 @@ use crate::{
     hashtables::HashMap,
     indexed_crate::{Modifiers, Path},
     sealed_trait,
+    stability::PublicApiStabilityPolicy,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -22,24 +23,24 @@ impl Default for ItemFlag {
 /// +---+---+---+---+---+---+---+---+
 /// | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
 /// +---+---+---+---+---+---+---+---+
-/// | D | S | B | R | R | R | H | P |
+/// | D | S | B | R | R | R | N | P |
 /// +---+---+---+---+---+---+---+---+
 ///
 /// Key:
 /// P = pub reachable item: an item with a publicly importable name,
 ///     or a public API associated item of such an item
-/// H = item publicly importable via a `doc(hidden)` path or an associated item of such an item,
-///     or a `doc(hidden)` associated item of a pub reachable item
+/// N = item reachable through non-public API: either a `#[doc(hidden)]` non-deprecated
+///     path/item or, for Rust standard-library rustdoc, an explicitly unstable path/item
 /// R = reserved for future use
 /// B = trait with blanket impls (`impl<T> Trait for T`, possibly with some bounds on `T`)
 /// S = sealed trait, external crates cannot provide an impl for this trait
-/// D = `doc(hidden)`-sealed trait, providing an impl requires using `doc(hidden)` items
+/// D = public-API-sealed trait, providing an impl requires using non-public or unstable API
 impl ItemFlag {
     const PUB_REACHABLE: Self = Self(1 << 0);
-    const DOC_HIDDEN_REACHABLE: Self = Self(1 << 1);
+    const NON_PUB_API_REACHABLE: Self = Self(1 << 1);
     const TRAIT_BLANKET_IMPLS: Self = Self(1 << 5);
     const TRAIT_SEALED: Self = Self(1 << 6);
-    const TRAIT_DOC_HIDDEN_SEALED: Self = Self(1 << 7);
+    const TRAIT_PUB_API_SEALED: Self = Self(1 << 7);
 
     #[inline]
     pub(crate) fn new() -> Self {
@@ -52,7 +53,7 @@ impl ItemFlag {
     /// Their visibility does not allow them to be accessed, and doing so is a hard compiler error.
     #[inline]
     pub(crate) fn is_reachable(&self) -> bool {
-        (self.0 & (Self::PUB_REACHABLE.0 | Self::DOC_HIDDEN_REACHABLE.0)) != 0
+        (self.0 & (Self::PUB_REACHABLE.0 | Self::NON_PUB_API_REACHABLE.0)) != 0
     }
 
     /// Whether the item is reachable from another crate via the public API of this crate.
@@ -87,7 +88,7 @@ impl ItemFlag {
     /// ```
     #[inline]
     pub(crate) fn is_non_pub_api_reachable(&self) -> bool {
-        (self.0 & Self::DOC_HIDDEN_REACHABLE.0) != 0
+        (self.0 & Self::NON_PUB_API_REACHABLE.0) != 0
     }
 
     #[inline]
@@ -96,8 +97,8 @@ impl ItemFlag {
     }
 
     #[inline]
-    pub(crate) fn set_doc_hidden_reachable(&mut self) {
-        self.0 |= Self::DOC_HIDDEN_REACHABLE.0;
+    pub(crate) fn set_non_pub_api_reachable(&mut self) {
+        self.0 |= Self::NON_PUB_API_REACHABLE.0;
     }
 
     /// Whether the trait has impls like `impl<T> TheTrait for T`, with optional bounds on `T`.
@@ -124,7 +125,7 @@ impl ItemFlag {
     /// [`Self::is_unconditionally_sealed()`] returns `true`.
     #[inline]
     pub(crate) fn is_only_pub_api_sealed(&self) -> bool {
-        (self.0 & Self::TRAIT_DOC_HIDDEN_SEALED.0) != 0
+        (self.0 & Self::TRAIT_PUB_API_SEALED.0) != 0
     }
 
     /// Whether downstream crates can provide impls for this trait within public API.
@@ -132,7 +133,7 @@ impl ItemFlag {
     /// Such impls are then covered by SemVer stability guarantees.
     #[inline]
     pub(crate) fn is_pub_api_implementable(&self) -> bool {
-        (self.0 & (Self::TRAIT_DOC_HIDDEN_SEALED.0 | Self::TRAIT_SEALED.0)) == 0
+        (self.0 & (Self::TRAIT_PUB_API_SEALED.0 | Self::TRAIT_SEALED.0)) == 0
     }
 
     #[inline]
@@ -143,23 +144,23 @@ impl ItemFlag {
     #[inline]
     pub(crate) fn set_unconditionally_sealed(&mut self) {
         // Turn off the "public-API-sealed" bit, since sealed dominates.
-        self.0 &= !Self::TRAIT_DOC_HIDDEN_SEALED.0;
+        self.0 &= !Self::TRAIT_PUB_API_SEALED.0;
         self.0 |= Self::TRAIT_SEALED.0;
     }
 
     #[inline]
     pub(crate) fn set_pub_api_sealed(&mut self) {
         if !self.is_unconditionally_sealed() {
-            self.0 |= Self::TRAIT_DOC_HIDDEN_SEALED.0;
+            self.0 |= Self::TRAIT_PUB_API_SEALED.0;
         }
     }
 
     #[inline]
     fn get_reachability(&self) -> Reachability {
-        let mask = self.0 & (Self::PUB_REACHABLE.0 | Self::DOC_HIDDEN_REACHABLE.0);
+        let mask = self.0 & (Self::PUB_REACHABLE.0 | Self::NON_PUB_API_REACHABLE.0);
         if mask == 0 {
             Reachability::Unreachable
-        } else if mask == Self::DOC_HIDDEN_REACHABLE.0 {
+        } else if mask == Self::NON_PUB_API_REACHABLE.0 {
             Reachability::NonPublicAPI
         } else {
             Reachability::PublicAPI
@@ -170,7 +171,7 @@ impl ItemFlag {
     fn apply_reachability(&mut self, reachability: Reachability) {
         match reachability {
             Reachability::Unreachable => {}
-            Reachability::NonPublicAPI => self.set_doc_hidden_reachable(),
+            Reachability::NonPublicAPI => self.set_non_pub_api_reachable(),
             Reachability::PublicAPI => self.set_pub_reachable(),
         }
     }
@@ -184,7 +185,11 @@ enum Reachability {
 }
 
 impl Reachability {
-    fn from_parent(parent_reachability: Self, item: &Item) -> Self {
+    fn from_parent(
+        parent_reachability: Self,
+        item: &Item,
+        stability_policy: PublicApiStabilityPolicy,
+    ) -> Self {
         match parent_reachability {
             Reachability::Unreachable => parent_reachability,
             Reachability::NonPublicAPI => match item.visibility {
@@ -197,7 +202,9 @@ impl Reachability {
             },
             Reachability::PublicAPI => match item.visibility {
                 rustdoc_types::Visibility::Public | rustdoc_types::Visibility::Default => {
-                    if item.deprecation.is_none() && item.attrs.iter().any(Attribute::is_doc_hidden)
+                    if stability_policy.item_is_unstable(item)
+                        || (item.deprecation.is_none()
+                            && item.attrs.iter().any(Attribute::is_doc_hidden))
                     {
                         Reachability::NonPublicAPI
                     } else {
@@ -215,6 +222,7 @@ impl Reachability {
 pub(crate) fn build_flags_index(
     index: &HashMap<Id, Item>,
     imports_index: &HashMap<Path<'_>, Vec<(&Item, Modifiers)>>,
+    stability_policy: PublicApiStabilityPolicy,
 ) -> HashMap<Id, ItemFlag> {
     let mut flags: HashMap<Id, ItemFlag> =
         index.keys().map(|id| (*id, Default::default())).collect();
@@ -225,10 +233,10 @@ pub(crate) fn build_flags_index(
         .flatten()
         .for_each(|(item, modifiers)| {
             let flag = flags.entry(item.id).or_default();
-            if !modifiers.deprecated && modifiers.doc_hidden {
-                flag.set_doc_hidden_reachable();
-            } else {
+            if modifiers.public_api() {
                 flag.set_pub_reachable();
+            } else {
+                flag.set_non_pub_api_reachable();
             }
         });
 
@@ -241,12 +249,14 @@ pub(crate) fn build_flags_index(
                     inner.fields.iter().filter_map(|id| index.get(id)),
                     &mut flags,
                     parent_reachability,
+                    stability_policy,
                 );
                 set_impl_flags_index(
                     index,
                     inner.impls.iter().filter_map(|id| index.get(id)),
                     &mut flags,
                     parent_reachability,
+                    stability_policy,
                 );
             }
             rustdoc_types::ItemEnum::Struct(inner) => {
@@ -259,6 +269,7 @@ pub(crate) fn build_flags_index(
                                 .filter_map(|id| index.get(id)),
                             &mut flags,
                             parent_reachability,
+                            stability_policy,
                         );
                     }
                     rustdoc_types::StructKind::Plain { fields, .. } => {
@@ -266,6 +277,7 @@ pub(crate) fn build_flags_index(
                             fields.iter().filter_map(|id| index.get(id)),
                             &mut flags,
                             parent_reachability,
+                            stability_policy,
                         );
                     }
                 }
@@ -275,6 +287,7 @@ pub(crate) fn build_flags_index(
                     inner.impls.iter().filter_map(|id| index.get(id)),
                     &mut flags,
                     parent_reachability,
+                    stability_policy,
                 );
             }
             rustdoc_types::ItemEnum::Enum(inner) => {
@@ -283,12 +296,14 @@ pub(crate) fn build_flags_index(
                     inner.variants.iter().filter_map(|id| index.get(id)),
                     &mut flags,
                     parent_reachability,
+                    stability_policy,
                 );
                 set_impl_flags_index(
                     index,
                     inner.impls.iter().filter_map(|id| index.get(id)),
                     &mut flags,
                     parent_reachability,
+                    stability_policy,
                 );
             }
             rustdoc_types::ItemEnum::Trait(inner) => {
@@ -296,6 +311,7 @@ pub(crate) fn build_flags_index(
                     inner.items.iter().filter_map(|id| index.get(id)),
                     &mut flags,
                     parent_reachability,
+                    stability_policy,
                 );
             }
             _ => {}
@@ -311,9 +327,10 @@ fn set_field_flags_index<'a>(
     fields: impl Iterator<Item = &'a Item>,
     flags: &mut HashMap<Id, ItemFlag>,
     parent_reachability: Reachability,
+    stability_policy: PublicApiStabilityPolicy,
 ) {
     fields.for_each(|item| {
-        let reachability = Reachability::from_parent(parent_reachability, item);
+        let reachability = Reachability::from_parent(parent_reachability, item, stability_policy);
         let flag = flags.get_mut(&item.id).expect("missing flag for item");
         flag.apply_reachability(reachability);
     })
@@ -324,9 +341,10 @@ fn set_variant_flags_index<'a>(
     variants: impl Iterator<Item = &'a Item>,
     flags: &mut HashMap<Id, ItemFlag>,
     parent_reachability: Reachability,
+    stability_policy: PublicApiStabilityPolicy,
 ) {
     variants.for_each(|item| {
-        let reachability = Reachability::from_parent(parent_reachability, item);
+        let reachability = Reachability::from_parent(parent_reachability, item, stability_policy);
         let flag = flags.get_mut(&item.id).expect("missing flag for item");
         flag.apply_reachability(reachability);
 
@@ -340,6 +358,7 @@ fn set_variant_flags_index<'a>(
                             .filter_map(|id| index.get(id)),
                         flags,
                         reachability,
+                        stability_policy,
                     );
                 }
                 rustdoc_types::VariantKind::Struct { fields, .. } => {
@@ -347,6 +366,7 @@ fn set_variant_flags_index<'a>(
                         fields.iter().filter_map(|id| index.get(id)),
                         flags,
                         reachability,
+                        stability_policy,
                     );
                 }
             },
@@ -360,9 +380,10 @@ fn set_impl_flags_index<'a>(
     impls: impl Iterator<Item = &'a Item>,
     flags: &mut HashMap<Id, ItemFlag>,
     parent_reachability: Reachability,
+    stability_policy: PublicApiStabilityPolicy,
 ) {
     impls.for_each(|item| {
-        let reachability = Reachability::from_parent(parent_reachability, item);
+        let reachability = Reachability::from_parent(parent_reachability, item, stability_policy);
         let flag = flags.get_mut(&item.id).expect("missing flag for item");
         flag.apply_reachability(reachability);
 
@@ -372,6 +393,7 @@ fn set_impl_flags_index<'a>(
                     impl_inner.items.iter().filter_map(|id| index.get(id)),
                     flags,
                     reachability,
+                    stability_policy,
                 );
             }
             _ => unreachable!("not an impl item: {item:?}"),
@@ -383,9 +405,10 @@ fn set_assoc_item_flags_index<'a>(
     assoc_items: impl Iterator<Item = &'a Item>,
     flags: &mut HashMap<Id, ItemFlag>,
     parent_reachability: Reachability,
+    stability_policy: PublicApiStabilityPolicy,
 ) {
     assoc_items.for_each(|item| {
-        let reachability = Reachability::from_parent(parent_reachability, item);
+        let reachability = Reachability::from_parent(parent_reachability, item, stability_policy);
         let flag = flags.get_mut(&item.id).expect("missing flag for item");
         flag.apply_reachability(reachability);
     })

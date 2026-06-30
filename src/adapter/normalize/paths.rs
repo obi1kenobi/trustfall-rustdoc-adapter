@@ -8,16 +8,14 @@ use crate::PackageIndex;
 /// fallback is only for rustdoc data that did not resolve to either source.
 pub(super) fn normalized_path(crate_: &PackageIndex<'_>, path: &rustdoc_types::Path) -> String {
     if crate_.own_crate.inner.index.contains_key(&path.id) {
-        let importable_paths = crate_
-            .own_crate
-            .visibility_tracker
-            .collect_publicly_importable_names(path.id.0);
+        let importable_paths = crate_.own_crate.publicly_importable_names(&path.id);
         // Normalized signatures should use a public API spelling when one exists.
         // The `importable_path` edge has query-observable order, so choose here
         // without reordering that edge.
         let importable_path = importable_paths.iter().min_by_key(|importable_path| {
             (
                 !importable_path.public_api(),
+                importable_path.modifiers.unstable,
                 importable_path.modifiers.doc_hidden,
                 importable_path.modifiers.deprecated,
             )

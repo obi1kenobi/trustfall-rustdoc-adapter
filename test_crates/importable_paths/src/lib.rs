@@ -187,10 +187,8 @@ mod nested_glob_layer {
     pub use super::nested_glob_source::*;
 }
 
-// Everything re-exported here is public API.
-// It doesn't matter that the names within the module
-// are imported with `#[doc(hidden)]`.
-// The external user is not relying on those -- they are using a public API item only.
+// Everything re-exported here is reachable but not public API: the hidden glob
+// inside `nested_glob_layer` is what makes the names visible to this glob.
 pub use nested_glob_layer::*;
 
 mod nested_hidden_deprecated_glob_source {
@@ -203,10 +201,8 @@ mod nested_hidden_deprecated_glob_layer {
     pub use super::nested_hidden_deprecated_glob_source::*;
 }
 
-// Everything re-exported here is public API.
-// It doesn't matter that the names within the module
-// are imported with `#[doc(hidden)]` nor `#[deprecated]`.
-// The external user is not relying on those -- they are using a public API item only.
+// Everything re-exported here is still public API because the hidden glob inside
+// `nested_hidden_deprecated_glob_layer` is also deprecated.
 pub use nested_hidden_deprecated_glob_layer::*;
 
 mod plain_glob_source {
@@ -215,13 +211,12 @@ mod plain_glob_source {
 
 pub use plain_glob_source::*;
 
-// A non-hidden re-export of an internally-hidden re-export is public API.
+// A non-hidden per-item re-export of an internally-hidden per-item re-export is public API.
 //
-// For this next batch of re-exports, the fact that the intermediate re-export
-// may be `#[doc(hidden)]` doesn't matter. Items can be made to be non-public API
-// if *either* the item's definition itself is `#[doc(hidden)]`
-// *or* if the path that an external (downstream) user might type involves a `#[doc(hidden)]` name,
-// in each case also accounting for `#[deprecated]` exceptions of course.
+// Glob re-exports are different: the glob `Use` item supplies names without
+// becoming a path component, but its `#[doc(hidden)]` still applies to the path
+// it creates. This next batch covers both cases, including the usual
+// `#[deprecated]` exceptions.
 
 mod top_level_public_api_per_item_sources {
     pub struct HiddenPerItemThenRootPerItem;
@@ -262,6 +257,8 @@ mod hidden_glob_for_root_glob {
     pub use super::hidden_glob_then_root_glob_source::*;
 }
 
+// This glob creates a top-level path, but only because the target module exposes
+// the name via a hidden glob, so the top-level path is not public API.
 pub use hidden_glob_for_root_glob::*;
 
 // Our doc-hidden analysis works even when `#[doc(hidden)]` does not appear verbatim

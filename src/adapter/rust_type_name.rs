@@ -22,12 +22,19 @@ pub(crate) fn implemented_trait_instantiated_name(
 }
 
 /// Serializes a [`Function`] to a `String` containing the function signature,
-/// including generic parameter definitions, to be as close to the original code
-/// as possible.
+/// including generic parameter definitions, to be as close to the signature this
+/// adapter should expose as possible.
+///
+/// `effective_constness` may differ from `func.header.is_const` if rustdoc JSON
+/// says the function is syntactically `const` but its const facet is unstable.
 ///
 /// [`Function`]: rustdoc_types::Function
-pub(crate) fn function_signature(func: &rustdoc_types::Function, name: &str) -> String {
-    Function(func, name).to_string()
+pub(crate) fn function_signature_with_constness(
+    func: &rustdoc_types::Function,
+    name: &str,
+    effective_constness: bool,
+) -> String {
+    Function(func, name, effective_constness).to_string()
 }
 
 fn rustdoc_path_instantiated_name(path: &rustdoc_types::Path) -> String {
@@ -242,7 +249,7 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
             write!(
                 f,
                 "{}fn{}",
-                FunctionHeader(&fnp.header),
+                FunctionHeader(&fnp.header, fnp.header.is_const),
                 FunctionSignature(&fnp.sig, this.1)
             )?;
 
@@ -367,8 +374,11 @@ fn fmt_generic_bound(this: &GenericBound, f: &mut Formatter<'_>) -> Result {
 
             match modifier {
                 rustdoc_types::TraitBoundModifier::Maybe => write!(f, "?")?,
-                // TODO: check this/find a good reference.  it's currently unstable
-                rustdoc_types::TraitBoundModifier::MaybeConst => write!(f, "~const ")?,
+                // The schema has no separate const-trait facet. Render the stable
+                // ordinary-bound view instead of leaking nightly-only `[const]` syntax.
+                //
+                // TODO: If and when `[const]` becomes stable, we'll likely need to revisit this.
+                rustdoc_types::TraitBoundModifier::MaybeConst => (),
                 rustdoc_types::TraitBoundModifier::None => (),
             };
 
@@ -491,7 +501,10 @@ fn fmt_path(this: &Path, f: &mut Formatter<'_>) -> Result {
 display_wrapper!(Path, fmt_path, bool);
 
 fn fmt_function_header(this: &FunctionHeader, f: &mut Formatter<'_>) -> Result {
-    if this.0.is_const {
+    // `this.1` is the effective constness selected by the caller.
+    // For std library JSON, an unstable const facet is rendered as non-const
+    // even though the raw rustdoc header still has `is_const = true`.
+    if this.1 {
         write!(f, "const ")?;
     }
 
@@ -531,7 +544,10 @@ fn fmt_function_header(this: &FunctionHeader, f: &mut Formatter<'_>) -> Result {
     Ok(())
 }
 
-display_wrapper!(FunctionHeader, fmt_function_header);
+// The extra `bool` here is the effective constness of the function,
+// in case the function is declared to be `const` but that facet is not stable
+// and should not be leaked in the function signature.
+display_wrapper!(FunctionHeader, fmt_function_header, bool);
 
 fn fmt_function_signature(this: &FunctionSignature, f: &mut Formatter<'_>) -> Result {
     write!(f, "(")?;
@@ -614,7 +630,9 @@ fn fmt_where_predicate(this: &WherePredicate, f: &mut Formatter<'_>) -> Result {
 display_wrapper!(WherePredicate, fmt_where_predicate);
 
 fn fmt_function(this: &Function, f: &mut Formatter<'_>) -> Result {
-    write!(f, "{}fn {}", FunctionHeader(&this.0.header), this.1)?;
+    // Pass effective constness into `FunctionHeader` so the rendered signature
+    // agrees with the schema-level `const` property.
+    write!(f, "{}fn {}", FunctionHeader(&this.0.header, this.2), this.1)?;
     if !GenericParamDefs(&this.0.generics.params).is_empty() {
         write!(f, "<{}>", GenericParamDefs(&this.0.generics.params))?;
     }
@@ -629,7 +647,10 @@ fn fmt_function(this: &Function, f: &mut Formatter<'_>) -> Result {
     Ok(())
 }
 
-display_wrapper!(Function, fmt_function, &'a str);
+// The extra `bool` here is the effective constness of the function,
+// in case the function is declared to be `const` but that facet is not stable
+// and should not be leaked in the function signature.
+display_wrapper!(Function, fmt_function, &'a str, bool);
 
 #[cfg(test)]
 mod tests {
@@ -908,7 +929,7 @@ mod tests {
 
             similar_asserts::assert_eq!(
                 "fn is_synthetic(x: impl std::any::Any) -> impl std::any::Any",
-                super::function_signature(func, name),
+                super::function_signature_with_constness(func, name, func.header.is_const),
             );
         });
     }
@@ -1001,8 +1022,53 @@ mod tests {
                 + 'static, \
                 e: <U as GAT<T>>::Type<'a, &'static *const ()>\
                 ) -> impl std::future::Future<Output: Iterator<Item: 'a + Send> + for<'z> FnMut(&'z ()) -> &'z &'a ()>",
-                super::function_signature(func, name),
+                super::function_signature_with_constness(func, name, func.header.is_const),
             );
         });
+    }
+
+    #[test]
+    fn maybe_const_generic_bound() {
+        let test_case = "maybe_const_function_signature";
+
+        let rustdoc_path = format!("./localdata/test_data/{test_case}/rustdoc.json");
+        let content = std::fs::read_to_string(&rustdoc_path)
+            .with_context(|| format!("could not load {rustdoc_path} file, did you forget to run ./scripts/regenerate_test_rustdocs.sh ?"))
+            .expect("failed to load rustdoc");
+        let crate_: rustdoc_types::Crate =
+            serde_json::from_str(&content).expect("failed to parse rustdoc");
+
+        let module = crate_.index.get(&crate_.root).expect("no root");
+
+        let rustdoc_types::ItemEnum::Module(module) = &module.inner else {
+            panic!("root is not a module");
+        };
+
+        let func = module
+            .items
+            .iter()
+            .find_map(|id| {
+                let item = crate_.index.get(id)?;
+                if item.name.as_ref()? == "maybe_const_function_signature" {
+                    if let rustdoc_types::ItemEnum::Function(func) = &item.inner {
+                        return Some(func);
+                    }
+                }
+
+                None
+            })
+            .expect("couldn't find `maybe_const_function_signature`");
+
+        // The fixture uses `impl [const] MaybeConst`, which rustdoc JSON stores
+        // as `TraitBoundModifier::MaybeConst` inside an `impl Trait` type.
+        let (param_name, param_type) = func.sig.inputs.first().expect("expected one parameter");
+        similar_asserts::assert_eq!("arg", param_name);
+
+        // Stable-facing type rendering should hide that nightly-only `[const]` marker
+        // and render the ordinary trait bound only.
+        similar_asserts::assert_eq!("impl MaybeConst", rust_type_name(param_type));
+
+        let return_type = func.sig.output.as_ref().expect("expected a return type");
+        similar_asserts::assert_eq!("impl MaybeConst", rust_type_name(return_type));
     }
 }
