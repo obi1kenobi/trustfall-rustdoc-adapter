@@ -13,6 +13,7 @@ use crate::{
     adapter::supported_item_kind,
     hashtables::{HashMap, HashSet, IndexMap},
     item_flags::{ItemFlag, build_flags_index},
+    stability::PublicApiStabilityPolicy,
     visibility_tracker::VisibilityTracker,
 };
 
@@ -131,50 +132,94 @@ impl<'a> PackageIndex<'a> {
         }
     }
 
+    /// Create a new [`PackageIndex`] for Rust standard-library rustdoc JSON.
+    ///
+    /// This constructor treats rustdoc stability data as part of the public-API analysis.
+    /// Use this for rustup-provided standard-library component crates such as `std`, `core`,
+    /// `alloc`, `proc_macro`, `std_detect`, and `test`.
+    pub fn from_rust_std_component_crate(crate_: &'a Crate) -> Self {
+        Self {
+            own_crate: IndexedCrate::new_with_stability_policy(
+                crate_,
+                PublicApiStabilityPolicy::RustStandardLibrary,
+            ),
+            features: None,
+            dependencies: Default::default(),
+        }
+    }
+
     /// Create a new [`PackageIndex`] for a given crate, in order to query it with Trustfall.
     pub fn from_storage(storage: &'a PackageStorage) -> Self {
+        Self {
+            own_crate: IndexedCrate::new(&storage.own_crate),
+            features: Self::features_from_storage(storage),
+            dependencies: Self::dependencies_from_storage(storage),
+        }
+    }
+
+    /// Create a new [`PackageIndex`] for Rust standard-library rustdoc JSON stored with metadata.
+    ///
+    /// This applies Rust standard-library stability rules only to `storage`'s own crate. Its
+    /// dependency crates still use the default indexing mode.
+    pub fn from_rust_std_component_storage(storage: &'a PackageStorage) -> Self {
+        // TODO: future multi-std-component indexing should assign stability policies per component,
+        // since `std` depends on `core` and `alloc` and can re-export their items.
+        Self {
+            own_crate: IndexedCrate::new_with_stability_policy(
+                &storage.own_crate,
+                PublicApiStabilityPolicy::RustStandardLibrary,
+            ),
+            features: Self::features_from_storage(storage),
+            dependencies: Self::dependencies_from_storage(storage),
+        }
+    }
+
+    fn features_from_storage(
+        storage: &'a PackageStorage,
+    ) -> Option<cargo_toml::features::Features<'a, 'a>> {
+        storage.package_data.as_ref().map(|data| {
+            let resolver = cargo_toml::features::Resolver::new();
+
+            let dependencies = data
+                .package
+                .dependencies
+                .iter()
+                .zip(data.dependency_info.iter())
+                .filter_map(|(dep, (dep_data, platform))| {
+                    Some(cargo_toml::features::ParseDependency {
+                        key: dep.rename.as_deref().unwrap_or(dep.name.as_ref()),
+                        kind: match dep.kind {
+                            cargo_metadata::DependencyKind::Normal => {
+                                cargo_toml::features::Kind::Normal
+                            }
+                            cargo_metadata::DependencyKind::Development => {
+                                cargo_toml::features::Kind::Dev
+                            }
+                            cargo_metadata::DependencyKind::Build => {
+                                cargo_toml::features::Kind::Build
+                            }
+                            _ => return None,
+                        },
+                        target: platform.as_deref(),
+                        dep: dep_data,
+                    })
+                });
+
+            resolver.parse_custom(&data.features, dependencies)
+        })
+    }
+
+    fn dependencies_from_storage(
+        storage: &'a PackageStorage,
+    ) -> HashMap<DependencyKey, IndexedCrate<'a>> {
         #[cfg(not(feature = "rayon"))]
         let dependencies_iter = storage.dependencies.iter();
         #[cfg(feature = "rayon")]
         let dependencies_iter = storage.dependencies.par_iter();
 
-        Self {
-            own_crate: IndexedCrate::new(&storage.own_crate),
-            features: storage.package_data.as_ref().map(|data| {
-                let resolver = cargo_toml::features::Resolver::new();
-
-                let dependencies = data
-                    .package
-                    .dependencies
-                    .iter()
-                    .zip(data.dependency_info.iter())
-                    .filter_map(|(dep, (dep_data, platform))| {
-                        Some(cargo_toml::features::ParseDependency {
-                            key: dep.rename.as_deref().unwrap_or(dep.name.as_ref()),
-                            kind: match dep.kind {
-                                cargo_metadata::DependencyKind::Normal => {
-                                    cargo_toml::features::Kind::Normal
-                                }
-                                cargo_metadata::DependencyKind::Development => {
-                                    cargo_toml::features::Kind::Dev
-                                }
-                                cargo_metadata::DependencyKind::Build => {
-                                    cargo_toml::features::Kind::Build
-                                }
-                                _ => return None,
-                            },
-                            target: platform.as_deref(),
-                            dep: dep_data,
-                        })
-                    });
-
-                resolver.parse_custom(&data.features, dependencies)
-            }),
-
-            dependencies: dependencies_iter
-                .map(|(k, v)| (k.clone(), IndexedCrate::new(v)))
-                .collect(),
-        }
+        dependencies_iter
+            .map(|(k, v)| (k.clone(), IndexedCrate::new(v)))
+            .collect()
     }
 }
 
@@ -189,6 +234,10 @@ pub struct IndexedCrate<'a> {
 
     /// Track which items are publicly visible and under which names.
     pub(crate) visibility_tracker: VisibilityTracker<'a>,
+
+    /// Whether we should consider stability attributes (which are themselves unstable and only
+    /// used by the standard library) when determining the public API.
+    pub(crate) stability_policy: PublicApiStabilityPolicy,
 
     /// index: importable name (in any namespace) -> list of items under that name
     pub(crate) imports_index: Option<HashMap<Path<'a>, Vec<(&'a Item, Modifiers)>>>,
@@ -539,6 +588,13 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
 
 impl<'a> IndexedCrate<'a> {
     pub fn new(crate_: &'a Crate) -> Self {
+        Self::new_with_stability_policy(crate_, PublicApiStabilityPolicy::Ignore)
+    }
+
+    pub(crate) fn new_with_stability_policy(
+        crate_: &'a Crate,
+        stability_policy: PublicApiStabilityPolicy,
+    ) -> Self {
         let fn_owner_index = build_fn_owner_index(&crate_.index);
         let pub_item_kind_index = PubItemKindIndex::from_crate(crate_, &fn_owner_index);
 
@@ -554,7 +610,8 @@ impl<'a> IndexedCrate<'a> {
 
         let mut value = Self {
             inner: crate_,
-            visibility_tracker: VisibilityTracker::from_crate(crate_),
+            visibility_tracker: VisibilityTracker::from_crate(crate_, stability_policy),
+            stability_policy,
             manually_inlined_builtin_traits,
             sized_trait,
             flags: None,
@@ -600,7 +657,11 @@ impl<'a> IndexedCrate<'a> {
             .flatten()
             .collect::<MapList<_, _>>()
             .into_inner();
-        value.flags = Some(build_flags_index(&crate_.index, &imports_index));
+        value.flags = Some(build_flags_index(
+            &crate_.index,
+            &imports_index,
+            value.stability_policy,
+        ));
         value.imports_index = Some(imports_index);
 
         value.impl_method_index = Some(build_impl_index(&crate_.index).into_inner());
@@ -619,6 +680,19 @@ impl<'a> IndexedCrate<'a> {
         } else {
             Default::default()
         }
+    }
+
+    pub(crate) fn public_api_eligible(&self, item: &Item) -> bool {
+        self.stability_policy.public_api_eligible(item)
+    }
+
+    pub(crate) fn effective_function_constness(
+        &self,
+        item: &'a Item,
+        function: &rustdoc_types::Function,
+    ) -> bool {
+        self.stability_policy
+            .effective_constness(item, function.header.is_const)
     }
 
     /// Return `true` if our analysis indicates the trait is sealed, and `false` otherwise.
@@ -850,6 +924,13 @@ impl<'a> Path<'a> {
 pub struct Modifiers {
     pub(crate) doc_hidden: bool,
     pub(crate) deprecated: bool,
+    pub(crate) unstable: bool,
+}
+
+impl Modifiers {
+    pub(crate) fn public_api(&self) -> bool {
+        !self.unstable && (self.deprecated || !self.doc_hidden)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -860,18 +941,24 @@ pub struct ImportablePath<'a> {
 }
 
 impl<'a> ImportablePath<'a> {
-    pub(crate) fn new(components: Vec<&'a str>, doc_hidden: bool, deprecated: bool) -> Self {
+    pub(crate) fn new(
+        components: Vec<&'a str>,
+        doc_hidden: bool,
+        deprecated: bool,
+        unstable: bool,
+    ) -> Self {
         Self {
             path: Path::new(components),
             modifiers: Modifiers {
                 doc_hidden,
                 deprecated,
+                unstable,
             },
         }
     }
 
     pub(crate) fn public_api(&self) -> bool {
-        self.modifiers.deprecated || !self.modifiers.doc_hidden
+        self.modifiers.public_api()
     }
 }
 
@@ -1111,6 +1198,211 @@ mod tests {
             .expect("exactly one matching name")
     }
 
+    // These tests stay at the indexing layer when they assert rustdoc JSON
+    // invariants or path/reachability facts. Schema-visible behavior belongs
+    // in `src/adapter/tests.rs`.
+    mod rust_std_stability {
+        use super::{ImportablePath, find_item_id};
+        use crate::{PackageIndex, test_util::load_pregenerated_rustdoc};
+
+        const STABILITY_FIXTURE: &str = "rust_std_stability";
+        const CRATE_ROOT: &str = "rust_std_stability";
+
+        fn public_path<'a>(
+            paths: &'a [ImportablePath<'a>],
+            components: &[&str],
+        ) -> &'a ImportablePath<'a> {
+            paths
+                .iter()
+                .find(|path| path.path.components == components)
+                .expect("expected importable path not found")
+        }
+
+        #[test]
+        fn default_policy_has_no_rust_std_structured_stability_to_apply() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "unstable_function");
+            let package_index = PackageIndex::from_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            assert_eq!(paths.len(), 1);
+            assert!(paths[0].public_api()); // stability info is not present in this rustdoc version
+            assert!(
+                package_index
+                    .own_crate
+                    .public_api_eligible(&rustdoc.index[item_id])
+            );
+        }
+
+        #[test]
+        fn rust_std_policy_treats_items_as_public_when_stability_info_is_absent() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "unstable_function");
+            let package_index = PackageIndex::from_rust_std_component_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            assert_eq!(paths.len(), 1);
+            assert!(!paths[0].modifiers.unstable); // stability info is not present in this rustdoc version
+            assert!(paths[0].public_api()); // stability info is not present in this rustdoc version
+            assert!(
+                package_index
+                    .own_crate
+                    .public_api_eligible(&rustdoc.index[item_id]) // stability info is not present in this rustdoc version
+            );
+
+            let flags = package_index
+                .own_crate
+                .flags
+                .as_ref()
+                .expect("flags index should exist");
+            assert!(flags[item_id].is_reachable());
+            assert!(flags[item_id].is_pub_reachable()); // stability info is not present in this rustdoc version
+            assert!(!flags[item_id].is_non_pub_api_reachable()); // stability info is not present in this rustdoc version
+        }
+
+        #[test]
+        fn rust_std_storage_constructor_applies_stability_to_own_crate() {
+            let storage =
+                crate::PackageStorage::from_rustdoc(load_pregenerated_rustdoc(STABILITY_FIXTURE));
+            let item_id = find_item_id(&storage.own_crate, "unstable_function");
+            let package_index = PackageIndex::from_rust_std_component_storage(&storage);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            assert_eq!(paths.len(), 1);
+            assert!(paths[0].public_api()); // stability info is not present in this rustdoc version
+            assert!(!paths[0].modifiers.unstable); // stability info is not present in this rustdoc version
+        }
+
+        #[test]
+        fn rust_std_policy_treats_stable_item_under_unstable_module_as_non_public_api() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "stable_inside_unstable_module");
+            let package_index = PackageIndex::from_rust_std_component_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            let path = public_path(
+                &paths,
+                &[
+                    CRATE_ROOT,
+                    "unstable_module",
+                    "stable_inside_unstable_module",
+                ],
+            );
+            assert!(!path.modifiers.unstable); // stability info is not present in this rustdoc version
+            assert!(path.public_api()); // stability info is not present in this rustdoc version
+            assert!(
+                package_index
+                    .own_crate
+                    .public_api_eligible(&rustdoc.index[item_id])
+            );
+        }
+
+        #[test]
+        fn rust_std_policy_allows_stable_reexport_from_unstable_module() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "stable_reexported_from_unstable_module");
+            let package_index = PackageIndex::from_rust_std_component_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            let stable_reexport_path = public_path(
+                &paths,
+                &[CRATE_ROOT, "stable_reexport_from_unstable_module"],
+            );
+            let unstable_definition_path = public_path(
+                &paths,
+                &[
+                    CRATE_ROOT,
+                    "unstable_reexport_source",
+                    "stable_reexported_from_unstable_module",
+                ],
+            );
+            assert!(stable_reexport_path.public_api());
+            assert!(!stable_reexport_path.modifiers.unstable);
+            assert!(unstable_definition_path.public_api()); // stability info is not present in this rustdoc version
+            assert!(!unstable_definition_path.modifiers.unstable); // stability info is not present in this rustdoc version
+            assert!(
+                package_index
+                    .own_crate
+                    .public_api_eligible(&rustdoc.index[item_id])
+            );
+        }
+
+        #[test]
+        fn rust_std_policy_keeps_public_and_non_public_paths_for_same_item() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "reexport_target");
+            let package_index = PackageIndex::from_rust_std_component_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            let stable_path = public_path(&paths, &[CRATE_ROOT, "stable_reexport_target"]);
+            let unstable_path = public_path(&paths, &[CRATE_ROOT, "unstable_reexport_target"]);
+            assert!(stable_path.public_api());
+            assert!(!stable_path.modifiers.unstable);
+            assert!(unstable_path.public_api()); // stability info is not present in this rustdoc version
+            assert!(!unstable_path.modifiers.unstable); // stability info is not present in this rustdoc version
+        }
+
+        #[test]
+        fn rust_std_policy_applies_direct_glob_use_stability_to_importable_path() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "direct_glob_target");
+            let package_index = PackageIndex::from_rust_std_component_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            let module_path = public_path(
+                &paths,
+                &[CRATE_ROOT, "direct_glob_source", "direct_glob_target"],
+            );
+            let glob_path = public_path(&paths, &[CRATE_ROOT, "direct_glob_target"]);
+            assert!(module_path.public_api());
+            assert!(!module_path.modifiers.unstable);
+            assert!(glob_path.public_api()); // stability info is not present in this rustdoc version
+            assert!(!glob_path.modifiers.unstable); // stability info is not present in this rustdoc version
+        }
+
+        #[test]
+        fn rust_std_policy_applies_nested_glob_stability_to_synthesized_paths() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "nested_glob_target");
+            let package_index = PackageIndex::from_rust_std_component_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            let root_glob_path = public_path(&paths, &[CRATE_ROOT, "nested_glob_target"]);
+            let outer_path =
+                public_path(&paths, &[CRATE_ROOT, "nested_outer", "nested_glob_target"]);
+            let inner_path = public_path(
+                &paths,
+                &[
+                    CRATE_ROOT,
+                    "nested_outer",
+                    "nested_inner",
+                    "nested_glob_target",
+                ],
+            );
+            assert!(root_glob_path.public_api()); // stability info is not present in this rustdoc version
+            assert!(!root_glob_path.modifiers.unstable); // stability info is not present in this rustdoc version
+            assert!(outer_path.public_api()); // stability info is not present in this rustdoc version
+            assert!(!outer_path.modifiers.unstable); // stability info is not present in this rustdoc version
+            assert!(inner_path.public_api());
+            assert!(!inner_path.modifiers.unstable);
+        }
+
+        #[test]
+        fn rust_std_policy_preserves_non_glob_reexport_stability_through_glob() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "non_glob_target");
+            let package_index = PackageIndex::from_rust_std_component_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            let stable_glob_path = public_path(&paths, &[CRATE_ROOT, "non_glob_target"]);
+            let unstable_glob_path = public_path(&paths, &[CRATE_ROOT, "non_glob_unstable_alias"]);
+            assert!(stable_glob_path.public_api());
+            assert!(!stable_glob_path.modifiers.unstable);
+            assert!(unstable_glob_path.public_api()); // stability info is not present in this rustdoc version
+            assert!(!unstable_glob_path.modifiers.unstable); // stability info is not present in this rustdoc version
+        }
+    }
+
     /// Ensure that methods, consts, and fields within structs are not importable.
     #[test]
     fn structs_are_not_modules() {
@@ -1159,6 +1451,7 @@ mod tests {
         assert_eq!(
             vec![ImportablePath::new(
                 vec!["structs_are_not_modules", "top_level_function"],
+                false,
                 false,
                 false,
             )],
@@ -1233,12 +1526,14 @@ mod tests {
                 vec!["enums_are_not_modules", "top_level_function"],
                 false,
                 false,
+                false,
             )],
             indexed_crate.publicly_importable_names(top_level_function)
         );
         assert_eq!(
             vec![ImportablePath::new(
                 vec!["enums_are_not_modules", "Foo", "Variant"],
+                false,
                 false,
                 false,
             )],
@@ -1313,6 +1608,7 @@ mod tests {
         assert_eq!(
             vec![ImportablePath::new(
                 vec!["unions_are_not_modules", "top_level_function"],
+                false,
                 false,
                 false,
             )],
@@ -2307,6 +2603,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                     vec!["overlapping_glob_of_enum_with_local_item", "Foo", "First"],
                     false,
                     false,
+                    false,
                 )],
                 indexed_crate.publicly_importable_names(&variant_item.id),
             );
@@ -2314,6 +2611,7 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
                 // The struct definition overrides the glob-imported variant here.
                 vec![ImportablePath::new(
                     vec!["overlapping_glob_of_enum_with_local_item", "inner", "First"],
+                    false,
                     false,
                     false,
                 )],
