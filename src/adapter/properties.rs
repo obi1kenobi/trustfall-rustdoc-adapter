@@ -1,4 +1,4 @@
-use rustdoc_types::{ItemEnum, Visibility, WherePredicate};
+use rustdoc_types::{ItemEnum, WherePredicate};
 use trustfall::{
     FieldValue,
     provider::{
@@ -35,6 +35,7 @@ pub(super) fn resolve_crate_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(super) fn resolve_item_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "id" => resolve_property_with(
@@ -65,19 +66,12 @@ pub(super) fn resolve_item_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             }),
         ),
         "public_api_eligible" => resolve_property_with(contexts, move |vertex| {
-            // Items are eligible for public API if both:
-            // - The item is public, either explicitly (`pub`) or implicitly (like enum variants).
-            // - The item is deprecated, or not `#[doc(hidden)]`.
-            //
-            // This does not mean that the item is necessarily part of the public API!
-            // An item that is not eligible by itself cannot be part of the public API,
-            // but eligible items might not be public API -- for example, pub-in-priv items
-            // (public items in a private module) are eligible but not public API.
             let item = vertex.as_item().expect("vertex was not an Item");
-            let is_public = matches!(item.visibility, Visibility::Public | Visibility::Default);
-            (is_public
-                && (item.deprecation.is_some() || !item.attrs.iter().any(Attribute::is_doc_hidden)))
-            .into()
+            adapter
+                .crate_at_origin(vertex.origin)
+                .own_crate
+                .public_api_eligible(item)
+                .into()
         }),
         "visibility_limit" => resolve_property_with(contexts, |vertex| {
             let item = vertex.as_item().expect("not an item");
@@ -264,12 +258,19 @@ pub(super) fn resolve_importable_path_property<'a, V: AsVertex<Vertex<'a>> + 'a>
 pub(super) fn resolve_function_like_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
-        "const" => resolve_property_with(
-            contexts,
-            field_property!(as_function, header, { header.is_const.into() }),
-        ),
+        "const" => resolve_property_with(contexts, move |vertex| {
+            let item = vertex.as_item().expect("FunctionLike not an item");
+            let func = vertex.as_function().expect("FunctionLike not a function");
+
+            adapter
+                .crate_at_origin(vertex.origin)
+                .own_crate
+                .effective_function_constness(item, func)
+                .into()
+        }),
         "async" => resolve_property_with(
             contexts,
             field_property!(as_function, header, { header.is_async.into() }),
@@ -286,11 +287,17 @@ pub(super) fn resolve_function_like_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let item = vertex.as_item().expect("FunctionLike not an item");
             let func = vertex.as_function().expect("FunctionLike not a function");
 
-            rust_type_name::function_signature(
+            let effective_constness = adapter
+                .crate_at_origin(vertex.origin)
+                .own_crate
+                .effective_function_constness(item, func);
+
+            rust_type_name::function_signature_with_constness(
                 func,
                 item.name
                     .as_ref()
                     .expect("FunctionLike does not have a name"),
+                effective_constness,
             )
             .into()
         }),
