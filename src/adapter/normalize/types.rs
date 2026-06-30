@@ -475,7 +475,9 @@ fn format_generic_bound<'a>(
             match modifier {
                 TraitBoundModifier::None => {}
                 TraitBoundModifier::Maybe => output.push('?'),
-                TraitBoundModifier::MaybeConst => output.push_str("~const "),
+                // The schema has no separate const-trait facet. Render the stable
+                // ordinary-bound view instead of leaking nightly-only `[const]` syntax.
+                TraitBoundModifier::MaybeConst => {}
             }
             format_path(
                 &context,
