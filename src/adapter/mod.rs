@@ -117,7 +117,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
             match type_name.as_ref() {
                 "Crate" => properties::resolve_crate_property(contexts, property_name),
                 "Item" | "Importable" | "GenericItem" => {
-                    properties::resolve_item_property(contexts, property_name)
+                    properties::resolve_item_property(contexts, property_name, self)
                 }
                 "ImplOwner"
                 | "Struct"
@@ -157,7 +157,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                     ) =>
                 {
                     // properties inherited from Item, accesssed on Item subtypes
-                    properties::resolve_item_property(contexts, property_name)
+                    properties::resolve_item_property(contexts, property_name, self)
                 }
                 "Module" => properties::resolve_module_property(contexts, property_name),
                 "Struct" => properties::resolve_struct_property(contexts, property_name),
@@ -178,7 +178,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                         "const" | "unsafe" | "async" | "has_body" | "signature"
                     ) =>
                 {
-                    properties::resolve_function_like_property(contexts, property_name)
+                    properties::resolve_function_like_property(contexts, property_name, self)
                 }
                 "ExportableFunction" | "Function" | "Method"
                     if matches!(property_name.as_ref(), "export_name") =>
