@@ -190,6 +190,38 @@ pub trait DefaultStabilityTrait {
     type RequiredType;
 }
 
+#[stable(feature = "default_stability_impl_omitting_defaults", since = "1.0.0")]
+pub struct DefaultStabilityImplOmittingDefaults;
+
+#[stable(
+    feature = "default_stability_impl_omitting_defaults_impl",
+    since = "1.0.0"
+)]
+impl DefaultStabilityTrait for DefaultStabilityImplOmittingDefaults {
+    fn required_method() {}
+
+    const REQUIRED_CONST: usize = 3;
+
+    type RequiredType = u32;
+}
+
+#[stable(feature = "default_stability_impl_overriding_default", since = "1.0.0")]
+pub struct DefaultStabilityImplOverridingDefault;
+
+#[stable(
+    feature = "default_stability_impl_overriding_default_impl",
+    since = "1.0.0"
+)]
+impl DefaultStabilityTrait for DefaultStabilityImplOverridingDefault {
+    fn unstable_default_method() {}
+
+    fn required_method() {}
+
+    const REQUIRED_CONST: usize = 4;
+
+    type RequiredType = u64;
+}
+
 #[stable(feature = "stable_hidden_default_is_not_sealed", since = "1.0.0")]
 pub trait StableHiddenDefaultIsNotSealed {
     #[doc(hidden)]

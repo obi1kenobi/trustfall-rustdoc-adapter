@@ -7106,6 +7106,322 @@ fn default_policy_ignores_rust_std_default_stability() {
 }
 
 #[test]
+fn rust_std_impl_methods_hide_omitted_unstable_defaults() {
+    get_rust_std_test_data!(data, rust_std_stability);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    // This query has no `method.name` filter, so both `ImplOwner.impl`
+    // and nested `Impl.method` use their unfiltered paths.
+    // It checks the complete std-mode method list for an impl that
+    // omits an unstable default and one that overrides it.
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                owner: name @filter(op: "one_of", value: ["$owners"]) @output
+
+                impl {
+                    implemented_trait {
+                        bare_name @filter(op: "=", value: ["$trait"])
+                    }
+
+                    method {
+                        method_name: name @output
+                        has_body @output
+                    }
+                }
+            }
+        }
+    }
+}
+    "#;
+    let variables = btreemap! {
+        "owners" => FieldValue::List(vec![
+            FieldValue::String("DefaultStabilityImplOmittingDefaults".into()),
+            FieldValue::String("DefaultStabilityImplOverridingDefault".into()),
+        ].into()),
+        "trait" => FieldValue::String("DefaultStabilityTrait".into()),
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        owner: String,
+        method_name: String,
+        has_body: bool,
+    }
+
+    let mut results: Vec<Output> = trustfall::execute_query(&schema, adapter, query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            owner: "DefaultStabilityImplOmittingDefaults".into(),
+            method_name: "required_method".into(),
+            has_body: true,
+        },
+        Output {
+            owner: "DefaultStabilityImplOmittingDefaults".into(),
+            method_name: "stable_default_method".into(),
+            has_body: true,
+        },
+        Output {
+            owner: "DefaultStabilityImplOverridingDefault".into(),
+            method_name: "required_method".into(),
+            has_body: true,
+        },
+        Output {
+            owner: "DefaultStabilityImplOverridingDefault".into(),
+            method_name: "stable_default_method".into(),
+            has_body: true,
+        },
+        Output {
+            owner: "DefaultStabilityImplOverridingDefault".into(),
+            method_name: "unstable_default_method".into(),
+            has_body: true,
+        },
+    ];
+    expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn rust_std_impl_method_lookup_hides_omitted_unstable_default() {
+    get_rust_std_test_data!(data, rust_std_stability);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    // This uses a mandatory `method.name` filter, so the owner-side
+    // `ImplOwner.impl` method-name optimization may discard impls whose
+    // matching method is absent before the nested `Impl.method` resolver runs.
+    // Under std mode, the impl that omits the unstable default should disappear.
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                owner: name @filter(op: "one_of", value: ["$owners"]) @output
+
+                impl {
+                    implemented_trait {
+                        bare_name @filter(op: "=", value: ["$trait"])
+                    }
+
+                    method {
+                        method_name: name @filter(op: "=", value: ["$method"]) @output
+                    }
+                }
+            }
+        }
+    }
+}
+    "#;
+    let variables = btreemap! {
+        "owners" => FieldValue::List(vec![
+            FieldValue::String("DefaultStabilityImplOmittingDefaults".into()),
+            FieldValue::String("DefaultStabilityImplOverridingDefault".into()),
+        ].into()),
+        "trait" => FieldValue::String("DefaultStabilityTrait".into()),
+        "method" => FieldValue::String("unstable_default_method".into()),
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        owner: String,
+        method_name: String,
+    }
+
+    let results: Vec<Output> = trustfall::execute_query(&schema, adapter, query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+
+    similar_asserts::assert_eq!(
+        vec![Output {
+            owner: "DefaultStabilityImplOverridingDefault".into(),
+            method_name: "unstable_default_method".into(),
+        }],
+        results,
+    );
+}
+
+#[test]
+fn default_policy_impl_method_lookup_includes_omitted_unstable_default() {
+    let rustdoc = crate::test_util::load_pregenerated_rustdoc("rust_std_stability");
+    let data = PackageIndex::from_crate(&rustdoc);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    // This is the same owner-side method-name optimization shape as
+    // the std-policy test above, but under the default indexing policy.
+    // Ordinary crates should ignore std default-body stability and keep the
+    // omitted unstable default visible.
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                owner: name @filter(op: "one_of", value: ["$owners"]) @output
+
+                impl {
+                    implemented_trait {
+                        bare_name @filter(op: "=", value: ["$trait"])
+                    }
+
+                    method {
+                        method_name: name @filter(op: "=", value: ["$method"]) @output
+                    }
+                }
+            }
+        }
+    }
+}
+    "#;
+    let variables = btreemap! {
+        "owners" => FieldValue::List(vec![
+            FieldValue::String("DefaultStabilityImplOmittingDefaults".into()),
+            FieldValue::String("DefaultStabilityImplOverridingDefault".into()),
+        ].into()),
+        "trait" => FieldValue::String("DefaultStabilityTrait".into()),
+        "method" => FieldValue::String("unstable_default_method".into()),
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        owner: String,
+        method_name: String,
+    }
+
+    let mut results: Vec<Output> = trustfall::execute_query(&schema, adapter, query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            owner: "DefaultStabilityImplOmittingDefaults".into(),
+            method_name: "unstable_default_method".into(),
+        },
+        Output {
+            owner: "DefaultStabilityImplOverridingDefault".into(),
+            method_name: "unstable_default_method".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn impl_method_name_lookup_applies_default_body_stability_policy() {
+    let rustdoc = crate::test_util::load_pregenerated_rustdoc("rust_std_stability");
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    // The folded `method` edge keeps impls whose matching-method count is zero,
+    // so the owner-side `ImplOwner.impl` method-name optimization cannot remove
+    // those impls before the nested `Impl.method` resolver runs.
+    // This pins down the behavior of the name-filtered `Impl.method` path itself:
+    // std mode hides omitted unstable defaults, while default mode keeps them visible.
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                owner: name @filter(op: "one_of", value: ["$owners"]) @output
+
+                impl {
+                    implemented_trait {
+                        bare_name @filter(op: "=", value: ["$trait"])
+                    }
+
+                    method @fold @transform(op: "count") @output(name: "matching_methods") {
+                        name @filter(op: "=", value: ["$method"])
+                    }
+                }
+            }
+        }
+    }
+}
+    "#;
+    let variables = btreemap! {
+        "owners" => FieldValue::List(vec![
+            FieldValue::String("DefaultStabilityImplOmittingDefaults".into()),
+            FieldValue::String("DefaultStabilityImplOverridingDefault".into()),
+        ].into()),
+        "trait" => FieldValue::String("DefaultStabilityTrait".into()),
+        "method" => FieldValue::String("unstable_default_method".into()),
+    };
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        owner: String,
+        matching_methods: u64,
+    }
+
+    let data = PackageIndex::from_rust_std_component_crate(&rustdoc);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+    let mut rust_std_results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter, query, variables.clone())
+            .expect("failed to run std policy query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    rust_std_results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![
+            Output {
+                owner: "DefaultStabilityImplOmittingDefaults".into(),
+                matching_methods: 0,
+            },
+            Output {
+                owner: "DefaultStabilityImplOverridingDefault".into(),
+                matching_methods: 1,
+            },
+        ],
+        rust_std_results,
+    );
+
+    let data = PackageIndex::from_crate(&rustdoc);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+    let mut default_results: Vec<Output> =
+        trustfall::execute_query(&schema, adapter, query, variables)
+            .expect("failed to run default policy query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    default_results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![
+            Output {
+                owner: "DefaultStabilityImplOmittingDefaults".into(),
+                matching_methods: 1,
+            },
+            Output {
+                owner: "DefaultStabilityImplOverridingDefault".into(),
+                matching_methods: 1,
+            },
+        ],
+        default_results,
+    );
+}
+
+#[test]
 fn rust_std_unstable_defaults_affect_public_api_sealing() {
     get_rust_std_test_data!(data, rust_std_stability);
     let adapter = RustdocAdapter::new(&data, None);

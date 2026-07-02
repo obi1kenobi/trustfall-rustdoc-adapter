@@ -1151,7 +1151,12 @@ type Impl implements Item & GenericItem {
   # blanket: GenericType
 
   """
-  Methods defined in this impl.
+  Methods defined directly in this impl, plus trait-provided default methods that this impl uses
+  without overriding.
+
+  When indexing Rust standard-library rustdoc JSON with standard-library stability rules,
+  unstable trait-provided default methods are reported as absent unless this impl provides
+  its own implementations for them.
   """
   method: [Method!]
 
