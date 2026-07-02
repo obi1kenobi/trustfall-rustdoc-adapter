@@ -12,6 +12,7 @@ use crate::{
     adapter::{Origin, Vertex},
     hashtables::{HashMap, HashSet},
     indexed_crate::ImplEntry,
+    stability::PublicApiStabilityPolicy,
 };
 
 pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
@@ -38,11 +39,18 @@ pub(crate) fn resolve_impl_methods<'a, V: AsVertex<Vertex<'a>> + 'a>(
     } else {
         resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
+            let indexed_crate = &adapter.crate_at_origin(origin).own_crate;
+            let item_index = &indexed_crate.inner.index;
 
             let impl_item = vertex.as_item().expect("not an Impl item");
             let impl_vertex = vertex.as_impl().expect("not an Impl vertex");
-            resolve_methods_slow_path(impl_item, impl_vertex, origin, item_index)
+            resolve_methods_slow_path(
+                impl_item,
+                impl_vertex,
+                origin,
+                item_index,
+                indexed_crate.stability_policy,
+            )
         })
     }
 }
@@ -81,10 +89,9 @@ fn resolve_method_from_candidate_value<'a>(
     method_name: CandidateValue<FieldValue>,
 ) -> VertexIterator<'a, Vertex<'a>> {
     let origin = vertex.origin;
-    let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
-    let impl_index = adapter
-        .crate_at_origin(origin)
-        .own_crate
+    let indexed_crate = &adapter.crate_at_origin(origin).own_crate;
+    let item_index = &indexed_crate.inner.index;
+    let impl_index = indexed_crate
         .impl_method_index
         .as_ref()
         .expect("no impl index provided");
@@ -120,14 +127,26 @@ fn resolve_method_from_candidate_value<'a>(
             _ => {
                 // Fall back to the default slow path.
                 let impl_item = vertex.as_item().expect("not an Impl item");
-                resolve_methods_slow_path(impl_item, impl_vertex, origin, item_index)
+                resolve_methods_slow_path(
+                    impl_item,
+                    impl_vertex,
+                    origin,
+                    item_index,
+                    indexed_crate.stability_policy,
+                )
             }
         }
     } else {
         // We couldn't determine the Id of the item that owns this method.
         // Fall back to the default slow path.
         let impl_item = vertex.as_item().expect("not an Impl item");
-        resolve_methods_slow_path(impl_item, impl_vertex, origin, item_index)
+        resolve_methods_slow_path(
+            impl_item,
+            impl_vertex,
+            origin,
+            item_index,
+            indexed_crate.stability_policy,
+        )
     }
 }
 
@@ -205,6 +224,7 @@ fn resolve_methods_slow_path<'a>(
     impl_vertex: &'a Impl,
     origin: Origin,
     item_index: &'a HashMap<Id, Item>,
+    stability_policy: PublicApiStabilityPolicy,
 ) -> VertexIterator<'a, Vertex<'a>> {
     let provided_methods: Box<dyn Iterator<Item = &Id>> =
         if impl_vertex.provided_trait_methods.is_empty() {
@@ -225,12 +245,18 @@ fn resolve_methods_slow_path<'a>(
             if let Some(trait_item) = trait_item {
                 if let ItemEnum::Trait(trait_item) = &trait_item.inner {
                     Box::new(trait_item.items.iter().filter(move |item_id| {
-                        let next_item = item_index.get(item_id);
-                        if let Some(name) = next_item.and_then(|x| x.name.as_deref()) {
-                            method_names.contains(name)
-                        } else {
-                            false
-                        }
+                        let Some(next_item) = item_index.get(item_id) else {
+                            return false;
+                        };
+                        let rustdoc_types::ItemEnum::Function(function) = &next_item.inner else {
+                            return false;
+                        };
+                        let Some(name) = next_item.name.as_deref() else {
+                            return false;
+                        };
+
+                        method_names.contains(name)
+                            && stability_policy.effective_function_has_body(function)
                     }))
                 } else {
                     unreachable!("found a non-trait type {trait_item:?}");

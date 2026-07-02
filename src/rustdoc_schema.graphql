@@ -1151,7 +1151,12 @@ type Impl implements Item & GenericItem {
   # blanket: GenericType
 
   """
-  Methods defined in this impl.
+  Methods defined directly in this impl, plus trait-provided default methods that this impl uses
+  without overriding.
+
+  When indexing Rust standard-library rustdoc JSON with standard-library stability rules,
+  unstable trait-provided default methods are reported as absent unless this impl provides
+  its own implementations for them.
   """
   method: [Method!]
 
@@ -1372,6 +1377,9 @@ interface FunctionLike {
   For example, `fn example() {}` has a body (an empty one), whereas a trait function that
   does not supply a default implementation does not have a body. If the trait function includes
   a default implementation, that implementation is the body.
+
+  When indexing Rust standard-library rustdoc JSON with standard-library stability rules,
+  an unstable provided default implementation is reported as absent.
   """
   has_body: Boolean!
 
@@ -1482,6 +1490,9 @@ interface ExportableFunction implements Item & FunctionLike {
   For example, `fn example() {}` has a body (an empty one), whereas a trait function that
   does not supply a default implementation does not have a body. If the trait function includes
   a default implementation, that implementation is the body.
+
+  When indexing Rust standard-library rustdoc JSON with standard-library stability rules,
+  an unstable provided default implementation is reported as absent.
   """
   has_body: Boolean!
 
@@ -1730,6 +1741,9 @@ type Function implements Item & FunctionLike & Importable & ExportableFunction &
   For example, `fn example() {}` has a body (an empty one), whereas a trait function that
   does not supply a default implementation does not have a body. If the trait function includes
   a default implementation, that implementation is the body.
+
+  When indexing Rust standard-library rustdoc JSON with standard-library stability rules,
+  an unstable provided default implementation is reported as absent.
   """
   has_body: Boolean!
 
@@ -1898,6 +1912,9 @@ type Method implements Item & FunctionLike & GenericItem {
   For example, `fn example() {}` has a body (an empty one), whereas a trait function that
   does not supply a default implementation does not have a body. If the trait function includes
   a default implementation, that implementation is the body.
+
+  When indexing Rust standard-library rustdoc JSON with standard-library stability rules,
+  an unstable provided default implementation is reported as absent.
   """
   has_body: Boolean!
 
@@ -2575,6 +2592,9 @@ type AssociatedType implements Item {
   ```
 
   Associated type defaults are currently unstable: https://github.com/rust-lang/rust/issues/29661
+
+  When indexing Rust standard-library rustdoc JSON with standard-library stability rules,
+  an unstable associated type default is reported as absent.
   """
   has_default: Boolean!
 
@@ -2658,6 +2678,9 @@ type AssociatedConstant implements Item {
   ```
 
   If the associated constant is on a type's inherent impl, `default` is always required to be set.
+
+  When indexing Rust standard-library rustdoc JSON with standard-library stability rules,
+  an unstable associated constant default is reported as absent.
 
   If the associated constant is set:
 

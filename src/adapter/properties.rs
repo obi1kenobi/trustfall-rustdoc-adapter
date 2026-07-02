@@ -279,10 +279,15 @@ pub(super) fn resolve_function_like_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             contexts,
             field_property!(as_function, header, { header.is_unsafe.into() }),
         ),
-        "has_body" => resolve_property_with(
-            contexts,
-            field_property!(as_function, has_body, { (*has_body).into() }),
-        ),
+        "has_body" => resolve_property_with(contexts, move |vertex| {
+            let function = vertex.as_function().expect("FunctionLike not a function");
+
+            adapter
+                .crate_at_origin(vertex.origin)
+                .own_crate
+                .effective_function_has_body(function)
+                .into()
+        }),
         "signature" => resolve_property_with(contexts, move |vertex| {
             let item = vertex.as_item().expect("FunctionLike not an item");
             let func = vertex.as_function().expect("FunctionLike not a function");
@@ -677,17 +682,18 @@ pub(crate) fn resolve_static_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 pub(crate) fn resolve_associated_type_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
-        "has_default" => resolve_property_with(
-            contexts,
-            field_property!(as_item, inner, {
-                let ItemEnum::AssocType { type_, .. } = &inner else {
-                    unreachable!("expected to have a AssocType")
-                };
-                type_.is_some().into()
-            }),
-        ),
+        "has_default" => resolve_property_with(contexts, move |vertex| {
+            let item = vertex.as_item().expect("AssociatedType not an item");
+
+            adapter
+                .crate_at_origin(vertex.origin)
+                .own_crate
+                .effective_assoc_type_has_default(item)
+                .into()
+        }),
         _ => unreachable!("AssociatedType property {property_name}"),
     }
 }
@@ -695,17 +701,19 @@ pub(crate) fn resolve_associated_type_property<'a, V: AsVertex<Vertex<'a>> + 'a>
 pub(crate) fn resolve_associated_constant_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
-        "default" => resolve_property_with(
-            contexts,
-            field_property!(as_item, inner, {
-                let ItemEnum::AssocConst { value: default, .. } = &inner else {
-                    unreachable!("expected to have a AssocConst")
-                };
-                default.clone().into()
-            }),
-        ),
+        "default" => resolve_property_with(contexts, move |vertex| {
+            let item = vertex.as_item().expect("AssociatedConstant not an item");
+
+            adapter
+                .crate_at_origin(vertex.origin)
+                .own_crate
+                .effective_assoc_const_default(item)
+                .map(ToString::to_string)
+                .into()
+        }),
         _ => unreachable!("AssociatedConstant property {property_name}"),
     }
 }
