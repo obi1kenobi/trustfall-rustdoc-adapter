@@ -1,0 +1,3156 @@
+use std::{borrow::Borrow, collections::hash_map::Entry, sync::Arc};
+
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+use rustdoc_types::{Crate, Id, Item, Stability, StabilityLevel};
+
+#[allow(
+    unused_imports,
+    reason = "used when the `rustc-hash` feature is enabled"
+)]
+use crate::hashtables::HashMapExt as _;
+use crate::{
+    adapter::supported_item_kind,
+    hashtables::{HashMap, HashSet, IndexMap},
+    item_flags::{ItemFlag, build_flags_index},
+    stability::PublicApiStabilityPolicy,
+    visibility_tracker::VisibilityTracker,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct DependencyKey(Arc<str>);
+
+impl Borrow<str> for DependencyKey {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Borrow<Arc<str>> for DependencyKey {
+    fn borrow(&self) -> &Arc<str> {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PackageData {
+    pub(crate) package: cargo_metadata::Package,
+
+    features: HashMap<String, Vec<String>>,
+
+    // (dependency, target selector), parallel to `package.dependencies`
+    dependency_info: Vec<(cargo_toml::Dependency, Option<String>)>,
+}
+
+impl From<cargo_metadata::Package> for PackageData {
+    fn from(value: cargo_metadata::Package) -> Self {
+        let features = value
+            .features
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let dependency_info: Vec<_> = value
+            .dependencies
+            .iter()
+            .map(|dep| {
+                let dependency = if dep.features.is_empty() {
+                    cargo_toml::Dependency::Simple(dep.req.to_string())
+                } else {
+                    cargo_toml::Dependency::Detailed(Box::new(cargo_toml::DependencyDetail {
+                        package: dep.rename.is_none().then(|| dep.name.clone()),
+                        version: (dep.req != cargo_metadata::semver::VersionReq::STAR)
+                            .then(|| dep.req.to_string()),
+                        features: dep.features.clone(),
+                        default_features: dep.uses_default_features,
+                        optional: dep.optional,
+                        path: dep.path.as_ref().map(|p| p.to_string()),
+                        ..Default::default()
+                    }))
+                };
+
+                (dependency, dep.target.as_ref().map(|p| p.to_string()))
+            })
+            .collect();
+
+        Self {
+            package: value,
+            features,
+            dependency_info,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PackageStorage {
+    pub(crate) own_crate: Crate,
+    pub(crate) package_data: Option<PackageData>,
+    pub(crate) dependencies: HashMap<DependencyKey, Crate>,
+}
+
+impl PackageStorage {
+    pub fn crate_version(&self) -> Option<&str> {
+        self.own_crate.crate_version.as_deref()
+    }
+
+    pub fn from_rustdoc(own_crate: Crate) -> Self {
+        Self {
+            own_crate,
+            package_data: None,
+            dependencies: Default::default(),
+        }
+    }
+
+    pub fn from_rustdoc_and_package(own_crate: Crate, package: cargo_metadata::Package) -> Self {
+        Self {
+            own_crate,
+            package_data: Some(package.into()),
+            dependencies: Default::default(),
+        }
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct PackageIndex<'a> {
+    pub(crate) own_crate: IndexedCrate<'a>,
+    pub(crate) features: Option<cargo_toml::features::Features<'a, 'a>>,
+    #[allow(dead_code)]
+    pub(crate) dependencies: HashMap<DependencyKey, IndexedCrate<'a>>,
+}
+
+impl<'a> PackageIndex<'a> {
+    /// Create a new [`PackageIndex`] for a given crate, in order to query it with Trustfall.
+    ///
+    /// Prefer the [`PackageIndex::from_storage`] function when possible, since it makes features
+    /// information available as well. Values constructed with the [`PackageIndex::from_crate`]
+    /// function will appear to have no information on features or other manifest data.
+    pub fn from_crate(crate_: &'a Crate) -> Self {
+        Self {
+            own_crate: IndexedCrate::new(crate_),
+            features: None,
+            dependencies: Default::default(),
+        }
+    }
+
+    /// Create a new [`PackageIndex`] for Rust standard-library rustdoc JSON.
+    ///
+    /// This constructor treats rustdoc stability data as part of the public-API analysis.
+    /// Use this for rustup-provided standard-library component crates such as `std`, `core`,
+    /// `alloc`, `proc_macro`, `std_detect`, and `test`.
+    pub fn from_rust_std_component_crate(crate_: &'a Crate) -> Self {
+        Self {
+            own_crate: IndexedCrate::new_with_stability_policy(
+                crate_,
+                PublicApiStabilityPolicy::RustStandardLibrary,
+            ),
+            features: None,
+            dependencies: Default::default(),
+        }
+    }
+
+    /// Create a new [`PackageIndex`] for a given crate, in order to query it with Trustfall.
+    pub fn from_storage(storage: &'a PackageStorage) -> Self {
+        Self {
+            own_crate: IndexedCrate::new(&storage.own_crate),
+            features: Self::features_from_storage(storage),
+            dependencies: Self::dependencies_from_storage(storage),
+        }
+    }
+
+    /// Create a new [`PackageIndex`] for Rust standard-library rustdoc JSON stored with metadata.
+    ///
+    /// This applies Rust standard-library stability rules only to `storage`'s own crate. Its
+    /// dependency crates still use the default indexing mode.
+    pub fn from_rust_std_component_storage(storage: &'a PackageStorage) -> Self {
+        // TODO: future multi-std-component indexing should assign stability policies per component,
+        // since `std` depends on `core` and `alloc` and can re-export their items.
+        Self {
+            own_crate: IndexedCrate::new_with_stability_policy(
+                &storage.own_crate,
+                PublicApiStabilityPolicy::RustStandardLibrary,
+            ),
+            features: Self::features_from_storage(storage),
+            dependencies: Self::dependencies_from_storage(storage),
+        }
+    }
+
+    fn features_from_storage(
+        storage: &'a PackageStorage,
+    ) -> Option<cargo_toml::features::Features<'a, 'a>> {
+        storage.package_data.as_ref().map(|data| {
+            let resolver = cargo_toml::features::Resolver::new();
+
+            let dependencies = data
+                .package
+                .dependencies
+                .iter()
+                .zip(data.dependency_info.iter())
+                .filter_map(|(dep, (dep_data, platform))| {
+                    Some(cargo_toml::features::ParseDependency {
+                        key: dep.rename.as_deref().unwrap_or(dep.name.as_ref()),
+                        kind: match dep.kind {
+                            cargo_metadata::DependencyKind::Normal => {
+                                cargo_toml::features::Kind::Normal
+                            }
+                            cargo_metadata::DependencyKind::Development => {
+                                cargo_toml::features::Kind::Dev
+                            }
+                            cargo_metadata::DependencyKind::Build => {
+                                cargo_toml::features::Kind::Build
+                            }
+                            _ => return None,
+                        },
+                        target: platform.as_deref(),
+                        dep: dep_data,
+                    })
+                });
+
+            resolver.parse_custom(&data.features, dependencies)
+        })
+    }
+
+    fn dependencies_from_storage(
+        storage: &'a PackageStorage,
+    ) -> HashMap<DependencyKey, IndexedCrate<'a>> {
+        #[cfg(not(feature = "rayon"))]
+        let dependencies_iter = storage.dependencies.iter();
+        #[cfg(feature = "rayon")]
+        let dependencies_iter = storage.dependencies.par_iter();
+
+        dependencies_iter
+            .map(|(k, v)| (k.clone(), IndexedCrate::new(v)))
+            .collect()
+    }
+}
+
+/// The rustdoc for a crate, together with associated indexed data to speed up common operations.
+///
+/// Besides the parsed rustdoc, it also contains some manually-inlined `rustdoc_types::Trait`s
+/// of the most common built-in traits.
+/// This is a temporary step, until we're able to combine rustdocs of multiple crates.
+#[derive(Debug, Clone)]
+pub struct IndexedCrate<'a> {
+    pub(crate) inner: &'a Crate,
+
+    /// Track which items are publicly visible and under which names.
+    pub(crate) visibility_tracker: VisibilityTracker<'a>,
+
+    /// Whether we should consider stability attributes (which are themselves unstable and only
+    /// used by the standard library) when determining the public API.
+    pub(crate) stability_policy: PublicApiStabilityPolicy,
+
+    /// index: importable name (in any namespace) -> list of items under that name
+    pub(crate) imports_index: Option<HashMap<Path<'a>, Vec<(&'a Item, Modifiers)>>>,
+
+    /// index: item ID -> bit flags recording yes-no indicators for various item states
+    pub(crate) flags: Option<HashMap<Id, ItemFlag>>,
+
+    /// index: impl owner + impl'd method item name -> list of (impl itself, the named item));
+    /// only holds associated function ("method") items!
+    pub(crate) impl_method_index: Option<HashMap<ImplEntry<'a>, Vec<(&'a Item, &'a Item)>>>,
+
+    /// index: method ("owned function") `Id` -> the struct/enum/union/trait that defines it;
+    /// functions at top level will not have an index entry here
+    pub(crate) fn_owner_index: Option<HashMap<Id, &'a Item>>,
+
+    /// index: function export name (`#[no_mangle]` or `#[export_name = "..."]` attribute)
+    /// -> function item with that export name; exported symbol names must be unique.
+    pub(crate) export_name_index: Option<HashMap<&'a str, &'a Item>>,
+
+    /// index: kind of public top-level item -> `IndexMap<Id, &'a Item>` of that kind
+    pub(crate) pub_item_kind_index: PubItemKindIndex<'a>,
+
+    /// index: enum id + variant name -> variant, index of variant inside enum.
+    #[expect(clippy::type_complexity)]
+    pub(crate) variant_name_index: Option<HashMap<(Id, &'a str), (&'a Item, usize)>>,
+
+    /// Trait items defined in external crates are not present in the `inner: &Crate` field,
+    /// even if they are implemented by a type in that crate. This also includes
+    /// Rust's built-in traits like `Debug, Send, Eq` etc.
+    ///
+    /// This change is approximately as of rustdoc v23,
+    /// in <https://github.com/rust-lang/rust/pull/105182>
+    ///
+    /// As a temporary workaround, we manually create the trait items
+    /// for the most common Rust built-in traits and link to those items
+    /// as if they were still part of the rustdoc JSON file.
+    ///
+    /// A more complete future solution may generate multiple crates' rustdoc JSON
+    /// and link to the external crate's trait items as necessary.
+    pub(crate) manually_inlined_builtin_traits: HashMap<Id, Item>,
+
+    /// The ID of the built-in `core::marker::Sized` trait.
+    /// Used for analyzing `?Sized` generic types.
+    pub(crate) sized_trait: Id,
+
+    /// Target feature information about our current target triple.
+    pub(crate) target_features: HashMap<&'a str, &'a rustdoc_types::TargetFeature>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PubItemKindIndex<'a> {
+    pub(crate) free_functions: IndexMap<Id, &'a Item>,
+    pub(crate) structs: IndexMap<Id, &'a Item>,
+    pub(crate) enums: IndexMap<Id, &'a Item>,
+    pub(crate) unions: IndexMap<Id, &'a Item>,
+    pub(crate) traits: IndexMap<Id, &'a Item>,
+    pub(crate) modules: IndexMap<Id, &'a Item>,
+    pub(crate) statics: IndexMap<Id, &'a Item>,
+    pub(crate) free_consts: IndexMap<Id, &'a Item>,
+    pub(crate) decl_macros: IndexMap<Id, &'a Item>,
+    pub(crate) proc_macros: IndexMap<Id, &'a Item>,
+}
+
+impl<'a> PubItemKindIndex<'a> {
+    fn with_capacity_hint(hint: usize) -> Self {
+        let capacity = if hint < 128 * 128 { 128 } else { hint / 128 };
+        Self {
+            // Most top-level items in a crate are functions, structs, enums, or traits.
+            // We want indexing to be fast, and it's okay if we waste a bit of memory.
+            free_functions: IndexMap::with_capacity(capacity),
+            structs: IndexMap::with_capacity(capacity),
+            enums: IndexMap::with_capacity(capacity),
+            traits: IndexMap::with_capacity(capacity),
+            unions: IndexMap::new(),
+            modules: IndexMap::with_capacity(64),
+            statics: IndexMap::new(),
+            free_consts: IndexMap::new(),
+            decl_macros: IndexMap::new(),
+            proc_macros: IndexMap::new(),
+        }
+    }
+
+    fn from_crate(crate_: &'a Crate, fn_owner_index: &HashMap<Id, &'a Item>) -> Self {
+        // Parallel construction takes significantly longer than single-threaded.
+        // See https://github.com/obi1kenobi/trustfall-rustdoc-adapter/pull/902#issuecomment-3054606032
+        // for a comparison of the runtimes.
+        let iter = crate_.index.values();
+        let init = PubItemKindIndex::with_capacity_hint(crate_.index.len());
+
+        iter.fold(init, |mut acc, item| {
+            if item.visibility == rustdoc_types::Visibility::Public {
+                match &item.inner {
+                    rustdoc_types::ItemEnum::Module { .. } => {
+                        acc.modules.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::Union { .. } => {
+                        acc.unions.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::Struct { .. } => {
+                        acc.structs.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::Enum { .. } => {
+                        acc.enums.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::Function { .. }
+                        if !fn_owner_index.contains_key(&item.id) =>
+                    {
+                        // This is a free function.
+                        acc.free_functions.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::Trait { .. } => {
+                        acc.traits.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::Constant { .. } => {
+                        acc.free_consts.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::Static { .. } => {
+                        acc.statics.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::Macro { .. } => {
+                        acc.decl_macros.insert(item.id, item);
+                    }
+                    rustdoc_types::ItemEnum::ProcMacro { .. } => {
+                        acc.proc_macros.insert(item.id, item);
+                    }
+                    _ => {}
+                }
+            }
+
+            acc
+        })
+    }
+}
+
+/// Map a Key to a List (Vec) of values
+///
+/// It also has some nice operations for pushing a value to the list, or extending the list with
+/// many values.
+struct MapList<K, V>(HashMap<K, Vec<V>>);
+
+#[cfg(feature = "rayon")]
+impl<K: std::cmp::Eq + std::hash::Hash + Send, V: Send> FromParallelIterator<(K, V)>
+    for MapList<K, V>
+{
+    #[inline]
+    fn from_par_iter<I>(par_iter: I) -> Self
+    where
+        I: IntoParallelIterator<Item = (K, V)>,
+    {
+        par_iter
+            .into_par_iter()
+            .fold(Self::new, |mut map, (key, value)| {
+                map.insert(key, value);
+                map
+            })
+            // Reduce left is faster than reduce right (about 19% less time in our benchmarks)
+            .reduce(Self::new, |mut l, r| {
+                l.merge(r);
+                l
+            })
+    }
+}
+
+impl<K: std::cmp::Eq + std::hash::Hash, V> FromIterator<(K, V)> for MapList<K, V> {
+    #[inline]
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        // We could use Iterator::size_hint here to preallocate some space, but I couldn't measure
+        // a perf inprovement from that.
+        let mut map = Self::new();
+        for (key, value) in iter {
+            map.insert(key, value);
+        }
+        map
+    }
+}
+
+impl<K: std::cmp::Eq + std::hash::Hash, V> Extend<(K, V)> for MapList<K, V> {
+    #[inline]
+    fn extend<T: IntoIterator<Item = (K, V)>>(&mut self, iter: T) {
+        // We could use Iterator::size_hint here to reserve some space, but I measured a 2%-3%
+        // regression when doing that.
+        for (key, value) in iter.into_iter() {
+            self.insert(key, value);
+        }
+    }
+}
+
+impl<K: std::cmp::Eq + std::hash::Hash, V> MapList<K, V> {
+    #[inline]
+    pub fn new() -> Self {
+        Self(HashMap::default())
+    }
+
+    #[inline]
+    pub fn into_inner(self) -> HashMap<K, Vec<V>> {
+        self.0
+    }
+
+    #[inline]
+    pub fn insert(&mut self, key: K, value: V) {
+        match self.0.entry(key) {
+            Entry::Occupied(mut entry) => entry.get_mut().push(value),
+            Entry::Vacant(entry) => {
+                entry.insert(vec![value]);
+            }
+        }
+    }
+
+    #[inline]
+    #[cfg(feature = "rayon")]
+    pub fn insert_many(&mut self, key: K, mut value: Vec<V>) {
+        match self.0.entry(key) {
+            Entry::Occupied(mut entry) => entry.get_mut().append(&mut value),
+            Entry::Vacant(entry) => {
+                entry.insert(value);
+            }
+        }
+    }
+
+    #[inline]
+    #[cfg(feature = "rayon")]
+    pub fn merge(&mut self, other: Self) {
+        self.0.reserve(other.0.len());
+        for (key, value) in other.0 {
+            self.insert_many(key, value);
+        }
+    }
+}
+
+/// Build the impl index
+///
+/// When compiled using the `rayon` feature, build it in parallel. Specifically, this paralelizes
+/// the work of gathering all of the impls for the items in the index.
+fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item, &Item)> {
+    #[cfg(feature = "rayon")]
+    let iter = index.par_iter();
+    #[cfg(not(feature = "rayon"))]
+    let iter = index.iter();
+    iter.filter_map(|(id, item)| {
+        let impls = match &item.inner {
+            rustdoc_types::ItemEnum::Struct(s) => s.impls.as_slice(),
+            rustdoc_types::ItemEnum::Enum(e) => e.impls.as_slice(),
+            rustdoc_types::ItemEnum::Union(u) => u.impls.as_slice(),
+            _ => return None,
+        };
+
+        #[cfg(feature = "rayon")]
+        let iter = impls.par_iter();
+        #[cfg(not(feature = "rayon"))]
+        let iter = impls.iter();
+
+        Some((id, iter.filter_map(|impl_id| index.get(impl_id))))
+    })
+    .flat_map(|(id, impl_items)| {
+        impl_items.flat_map(move |impl_item| {
+            let impl_inner = match &impl_item.inner {
+                rustdoc_types::ItemEnum::Impl(impl_inner) => impl_inner,
+                _ => unreachable!("expected impl but got another item type: {impl_item:?}"),
+            };
+
+            #[cfg(feature = "rayon")]
+            let impl_items = impl_inner.items.par_iter();
+            #[cfg(not(feature = "rayon"))]
+            let impl_items = impl_inner.items.iter();
+
+            let impl_entries = impl_items.filter_map(move |item_id| {
+                let item = index.get(item_id)?;
+                let item_name = item.name.as_deref()?;
+
+                // The `impl_index` contains only methods, discard other item types.
+                if matches!(item.inner, rustdoc_types::ItemEnum::Function { .. }) {
+                    Some((ImplEntry::new(id, item_name), (impl_item, item)))
+                } else {
+                    None
+                }
+            });
+
+            #[cfg(feature = "rayon")]
+            let impl_items = impl_inner.items.par_iter();
+            #[cfg(not(feature = "rayon"))]
+            let impl_items = impl_inner.items.iter();
+
+            let impl_item_names: HashSet<_> = impl_items
+                .filter_map(move |item_id| {
+                    let item = index.get(item_id)?;
+                    let item_name = item.name.as_deref()?;
+
+                    if matches!(item.inner, rustdoc_types::ItemEnum::Function { .. }) {
+                        Some(item_name)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            let trait_provided_methods: HashSet<_> = impl_inner
+                .provided_trait_methods
+                .iter()
+                .map(|x| x.as_str())
+                .collect();
+
+            let trait_items = impl_inner
+                .trait_
+                .as_ref()
+                .and_then(|trait_path| index.get(&trait_path.id))
+                .map(move |trait_item| {
+                    if let rustdoc_types::ItemEnum::Trait(trait_item) = &trait_item.inner {
+                        trait_item.items.as_slice()
+                    } else {
+                        &[]
+                    }
+                })
+                .unwrap_or(&[]);
+
+            #[cfg(feature = "rayon")]
+            let trait_items = trait_items.par_iter();
+            #[cfg(not(feature = "rayon"))]
+            let trait_items = trait_items.iter();
+
+            let trait_provided_items = trait_items
+                .filter_map(|id| index.get(id))
+                .filter(move |item| {
+                    item.name
+                        .as_deref()
+                        .map(|name| {
+                            trait_provided_methods.contains(name) && !impl_item_names.contains(name)
+                        })
+                        .unwrap_or_default()
+                })
+                .map(move |provided_item| {
+                    (
+                        ImplEntry::new(
+                            id,
+                            provided_item
+                                .name
+                                .as_deref()
+                                .expect("item should have had a name"),
+                        ),
+                        (impl_item, provided_item),
+                    )
+                });
+
+            impl_entries.chain(trait_provided_items)
+        })
+    })
+    .collect()
+}
+
+impl<'a> IndexedCrate<'a> {
+    pub fn new(crate_: &'a Crate) -> Self {
+        Self::new_with_stability_policy(crate_, PublicApiStabilityPolicy::Ignore)
+    }
+
+    pub(crate) fn new_with_stability_policy(
+        crate_: &'a Crate,
+        stability_policy: PublicApiStabilityPolicy,
+    ) -> Self {
+        let fn_owner_index = build_fn_owner_index(&crate_.index);
+        let pub_item_kind_index = PubItemKindIndex::from_crate(crate_, &fn_owner_index);
+
+        let (manually_inlined_builtin_traits, sized_trait) =
+            create_manually_inlined_builtin_traits(crate_);
+
+        let target_features = crate_
+            .target
+            .target_features
+            .iter()
+            .map(|feat| (feat.name.as_str(), feat))
+            .collect();
+
+        let mut value = Self {
+            inner: crate_,
+            visibility_tracker: VisibilityTracker::from_crate(crate_, stability_policy),
+            stability_policy,
+            manually_inlined_builtin_traits,
+            sized_trait,
+            flags: None,
+            imports_index: None,
+            impl_method_index: None,
+            fn_owner_index: None,
+            export_name_index: None,
+            variant_name_index: None,
+            target_features,
+            pub_item_kind_index,
+        };
+
+        debug_assert!(
+            !value.manually_inlined_builtin_traits.is_empty(),
+            "failed to find any traits to manually inline",
+        );
+
+        // Build the imports index
+        //
+        // This is inlined because we need access to `value`, but `value` is not a valid
+        // `IndexedCrate` yet. Do not extract into a separate function.
+        #[cfg(feature = "rayon")]
+        let iter = crate_.index.par_iter();
+        #[cfg(not(feature = "rayon"))]
+        let iter = crate_.index.iter();
+
+        let imports_index = iter
+            .filter_map(|(_id, item)| {
+                if !supported_item_kind(item) {
+                    return None;
+                }
+                let importable_paths = value.publicly_importable_names(&item.id);
+
+                #[cfg(feature = "rayon")]
+                let iter = importable_paths.into_par_iter();
+                #[cfg(not(feature = "rayon"))]
+                let iter = importable_paths.into_iter();
+
+                Some(iter.map(move |importable_path| {
+                    (importable_path.path, (item, importable_path.modifiers))
+                }))
+            })
+            .flatten()
+            .collect::<MapList<_, _>>()
+            .into_inner();
+        value.flags = Some(build_flags_index(
+            &crate_.index,
+            &imports_index,
+            value.stability_policy,
+        ));
+        value.imports_index = Some(imports_index);
+
+        value.impl_method_index = Some(build_impl_index(&crate_.index).into_inner());
+        value.fn_owner_index = Some(fn_owner_index);
+        value.export_name_index = Some(build_export_name_index(&crate_.index));
+        value.variant_name_index = Some(build_variant_name_index(&crate_.index));
+
+        value
+    }
+
+    /// Return all the paths with which the given item can be imported from this crate.
+    pub fn publicly_importable_names(&self, id: &'a Id) -> Vec<ImportablePath<'a>> {
+        if self.inner.index.contains_key(id) {
+            self.visibility_tracker
+                .collect_publicly_importable_names(id.0)
+        } else {
+            Default::default()
+        }
+    }
+
+    pub(crate) fn public_api_eligible(&self, item: &Item) -> bool {
+        self.stability_policy.public_api_eligible(item)
+    }
+
+    pub(crate) fn effective_function_constness(
+        &self,
+        item: &'a Item,
+        function: &rustdoc_types::Function,
+    ) -> bool {
+        self.stability_policy
+            .effective_constness(item, function.header.is_const)
+    }
+
+    /// Return `true` if our analysis indicates the trait is sealed, and `false` otherwise.
+    ///
+    /// Our analysis is conservative: it has false-negatives but no false-positives.
+    /// If this method returns `true`, the trait is *definitely* sealed or else you've found a bug.
+    /// It may be possible to construct traits that *technically* are sealed for which our analysis
+    /// returns `false`.
+    ///
+    /// The goal of this method is to reflect author intent, not technicalities.
+    /// When Rustaceans seal traits on purpose, they do so with a limited number of techniques
+    /// that are well-defined and immediately recognizable to readers in the community:
+    /// <https://predr.ag/blog/definitive-guide-to-sealed-traits-in-rust/>
+    ///
+    /// The analysis here looks for such techniques, which are always applied at the type signature
+    /// level. It does not inspect function bodies or do interprocedural analysis.
+    ///
+    /// ## Panics
+    ///
+    /// This method will panic if the provided `Id` is not an item in this crate.
+    ///
+    /// If the provided `Id` is not a trait, the result is sound but not specified.
+    /// It could be any return value or a panic, but not undefined behavior.
+    pub fn is_trait_sealed(&self, id: &'a Id) -> bool {
+        self.flags
+            .as_ref()
+            .expect("flags index was never constructed")[id]
+            .is_unconditionally_sealed()
+    }
+
+    /// Report whether our analysis indicates the trait can be implemented within public API.
+    ///
+    /// A trait can be implemented within public API if the trait is not sealed, and implementing it
+    /// does not require using any non-public-API items in the `impl`. A non-public-API item is
+    /// one that is `#[doc(hidden)]` but not `#[deprecated]`.
+    ///
+    /// Our analysis is conservative: it has false-negatives but no false-positives.
+    /// If this method returns `true`, the trait is *definitely* not implementable within public API
+    /// or else you've found a bug. It may be possible to construct traits that *technically*
+    /// are not implementable within public API for which our analysis returns `false`.
+    ///
+    /// Our analysis does not inspect function bodies or do interprocedural analysis.
+    /// The same caveats apply as for the [`Self::is_trait_sealed`] function above.
+    ///
+    /// ## Panics
+    ///
+    /// This method will panic if the provided `Id` is not an item in this crate.
+    ///
+    /// If the provided `Id` is not a trait, the result is sound but not specified.
+    /// It could be any return value or a panic, but not undefined behavior.
+    pub fn is_trait_public_api_sealed(&self, id: &'a Id) -> bool {
+        !self
+            .flags
+            .as_ref()
+            .expect("flags index was never constructed")[id]
+            .is_pub_api_implementable()
+    }
+}
+
+fn build_fn_owner_index(index: &HashMap<Id, Item>) -> HashMap<Id, &Item> {
+    #[cfg(feature = "rayon")]
+    let iter = index.par_iter().map(|(_, value)| value);
+    #[cfg(not(feature = "rayon"))]
+    let iter = index.values();
+
+    iter.flat_map(|owner_item| {
+        if let rustdoc_types::ItemEnum::Trait(value) = &owner_item.inner {
+            #[cfg(feature = "rayon")]
+            let trait_items = value.items.par_iter();
+            #[cfg(not(feature = "rayon"))]
+            let trait_items = value.items.iter();
+
+            let output = trait_items
+                // Try to resolve each trait item ID to an item in the index.
+                // In principle, this *should* always find a match, but we don't want to crash
+                // if rustdoc happens to omit an item due to a bug.
+                .filter_map(|id| index.get(id))
+                // Only keep the functions inside.
+                .filter_map(move |inner_item| match &inner_item.inner {
+                    rustdoc_types::ItemEnum::Function(..) => Some((inner_item.id, owner_item)),
+                    _ => None,
+                });
+
+            #[cfg(feature = "rayon")]
+            let return_value = rayon::iter::Either::Left(output);
+            #[cfg(not(feature = "rayon"))]
+            let return_value: Box<dyn Iterator<Item = (Id, &Item)>> = Box::new(output);
+
+            return_value
+        } else {
+            let impls = match &owner_item.inner {
+                rustdoc_types::ItemEnum::Union(value) => value.impls.as_slice(),
+                rustdoc_types::ItemEnum::Struct(value) => value.impls.as_slice(),
+                rustdoc_types::ItemEnum::Enum(value) => value.impls.as_slice(),
+                _ => &[],
+            };
+
+            #[cfg(feature = "rayon")]
+            let impl_iter = impls.par_iter();
+            #[cfg(not(feature = "rayon"))]
+            let impl_iter = impls.iter();
+
+            // Resolve the impl block, if we can find it in the index.
+            // In principle, this *should* always find a match, but we don't want to crash
+            // if rustdoc happens to omit an item due to a bug.
+            let output = impl_iter
+                .filter_map(|id| index.get(id))
+                // Get the IDs of the items inside it.
+                .flat_map(|impl_item| match &impl_item.inner {
+                    rustdoc_types::ItemEnum::Impl(contents) => contents.items.as_slice(),
+                    _ => &[],
+                })
+                // Resolve each item, if we can find it in the index.
+                // In principle, this *should* always find a match, but we don't want to crash
+                // if rustdoc happens to omit an item due to a bug.
+                .filter_map(|id| index.get(id))
+                // Only keep the functions inside.
+                .filter_map(move |item| match &item.inner {
+                    rustdoc_types::ItemEnum::Function(..) => Some((item.id, owner_item)),
+                    _ => None,
+                });
+
+            #[cfg(feature = "rayon")]
+            let return_value = rayon::iter::Either::Right(output);
+            #[cfg(not(feature = "rayon"))]
+            let return_value: Box<dyn Iterator<Item = (Id, &Item)>> = Box::new(output);
+
+            return_value
+        }
+    })
+    .collect()
+}
+
+fn build_export_name_index(index: &HashMap<Id, Item>) -> HashMap<&str, &Item> {
+    #[cfg(feature = "rayon")]
+    let iter = index.par_iter().map(|(_, value)| value);
+    #[cfg(not(feature = "rayon"))]
+    let iter = index.values();
+
+    iter.filter_map(|item| {
+        if !matches!(
+            item.inner,
+            rustdoc_types::ItemEnum::Function(..) | rustdoc_types::ItemEnum::Static(..)
+        ) {
+            return None;
+        }
+
+        crate::exported_name::item_export_name(item).map(move |name| (name, item))
+    })
+    .collect()
+}
+
+fn build_variant_name_index(item_index: &HashMap<Id, Item>) -> HashMap<(Id, &str), (&Item, usize)> {
+    #[cfg(feature = "rayon")]
+    let iter = item_index.par_iter().map(|(_, value)| value);
+    #[cfg(not(feature = "rayon"))]
+    let iter = item_index.values();
+
+    let intermediate_iter = iter.filter_map(|item| match &item.inner {
+        rustdoc_types::ItemEnum::Enum(e) => Some((item.id, e)),
+        _ => None,
+    });
+
+    #[cfg(feature = "rayon")]
+    return intermediate_iter
+        .flat_map_iter(|(enum_id, enum_item)| {
+            // Since the variant index order needs to be deterministic, we don't
+            // iterate over variants in parallel.
+            let base_iter = enum_item.variants.iter();
+
+            // Since bugs in rustdoc sometimes result in dangling ids, we filter out any
+            // variants that are not part of the item index.
+            base_iter
+                .copied()
+                .filter_map(|variant_id| item_index.get(&variant_id))
+                .enumerate()
+                .map(move |(variant_index, variant_item)| {
+                    let variant_name = variant_item
+                        .name
+                        .as_ref()
+                        .expect("Variant should have a name.")
+                        .as_str();
+
+                    ((enum_id, variant_name), (variant_item, variant_index))
+                })
+        })
+        .collect();
+
+    #[cfg(not(feature = "rayon"))]
+    return intermediate_iter
+        .flat_map(|(enum_id, enum_item)| {
+            // Since the variant index order needs to be deterministic, we don't
+            // iterate over variants in parallel.
+            let base_iter = enum_item.variants.iter();
+
+            // Since bugs in rustdoc sometimes result in dangling ids, we filter out any
+            // variants that are not part of the item index.
+            base_iter
+                .copied()
+                .filter_map(|variant_id| item_index.get(&variant_id))
+                .enumerate()
+                .map(move |(variant_index, variant_item)| {
+                    let variant_name = variant_item
+                        .name
+                        .as_ref()
+                        .expect("Variant should have a name.")
+                        .as_str();
+
+                    ((enum_id, variant_name), (variant_item, variant_index))
+                })
+        })
+        .collect();
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub struct Path<'a> {
+    pub(crate) components: Vec<&'a str>,
+}
+
+impl<'a> Path<'a> {
+    fn new(components: Vec<&'a str>) -> Self {
+        Self { components }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub struct Modifiers {
+    pub(crate) doc_hidden: bool,
+    pub(crate) deprecated: bool,
+    pub(crate) unstable: bool,
+}
+
+impl Modifiers {
+    pub(crate) fn public_api(&self) -> bool {
+        !self.unstable && (self.deprecated || !self.doc_hidden)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub struct ImportablePath<'a> {
+    pub(crate) path: Path<'a>,
+    pub(crate) modifiers: Modifiers,
+}
+
+impl<'a> ImportablePath<'a> {
+    pub(crate) fn new(
+        components: Vec<&'a str>,
+        doc_hidden: bool,
+        deprecated: bool,
+        unstable: bool,
+    ) -> Self {
+        Self {
+            path: Path::new(components),
+            modifiers: Modifiers {
+                doc_hidden,
+                deprecated,
+                unstable,
+            },
+        }
+    }
+
+    pub(crate) fn public_api(&self) -> bool {
+        self.modifiers.public_api()
+    }
+}
+
+impl<'a: 'b, 'b> Borrow<[&'b str]> for Path<'a> {
+    fn borrow(&self) -> &[&'b str] {
+        &self.components
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct ImplEntry<'a> {
+    /// Tuple of:
+    /// - the Id of the struct/enum/union that owns the item,
+    /// - the name of the item in the owner's `impl` block.
+    ///
+    /// Stored as a tuple to make the `Borrow` impl work.
+    pub(crate) data: (&'a Id, &'a str),
+}
+
+impl<'a> ImplEntry<'a> {
+    #[inline]
+    fn new(owner_id: &'a Id, item_name: &'a str) -> Self {
+        Self {
+            data: (owner_id, item_name),
+        }
+    }
+
+    #[allow(dead_code)]
+    #[inline]
+    pub(crate) fn owner_id(&self) -> &'a Id {
+        self.data.0
+    }
+
+    #[allow(dead_code)]
+    #[inline]
+    pub(crate) fn item_name(&self) -> &'a str {
+        self.data.1
+    }
+}
+
+impl<'a: 'b, 'b> Borrow<(&'b Id, &'b str)> for ImplEntry<'a> {
+    fn borrow(&self) -> &(&'b Id, &'b str) {
+        &(self.data)
+    }
+}
+
+#[derive(Debug)]
+struct ManualTraitItem {
+    name: &'static str,
+    path: &'static [&'static str],
+    is_auto: bool,
+    is_unsafe: bool,
+    stability_feature: &'static str,
+    stability_since: &'static str,
+    const_stability_feature: Option<&'static str>,
+}
+
+/// Limiting the creation of manually inlined traits to only those that are used by the lints.
+/// There are other foreign traits, but it is not obvious how the manually inlined traits
+/// should look like for them.
+const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 14] = [
+    ManualTraitItem {
+        name: "Debug",
+        path: &["core", "fmt", "Debug"],
+        is_auto: false,
+        is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: None,
+    },
+    ManualTraitItem {
+        name: "Clone",
+        path: &["core", "clone", "Clone"],
+        is_auto: false,
+        is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: Some("const_clone"),
+    },
+    ManualTraitItem {
+        name: "Copy",
+        path: &["core", "marker", "Copy"],
+        is_auto: false,
+        is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: None,
+    },
+    ManualTraitItem {
+        name: "PartialOrd",
+        path: &["core", "cmp", "PartialOrd"],
+        is_auto: false,
+        is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: Some("const_cmp"),
+    },
+    ManualTraitItem {
+        name: "Ord",
+        path: &["core", "cmp", "Ord"],
+        is_auto: false,
+        is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: Some("const_cmp"),
+    },
+    ManualTraitItem {
+        name: "PartialEq",
+        path: &["core", "cmp", "PartialEq"],
+        is_auto: false,
+        is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: Some("const_cmp"),
+    },
+    ManualTraitItem {
+        name: "Eq",
+        path: &["core", "cmp", "Eq"],
+        is_auto: false,
+        is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: Some("const_cmp"),
+    },
+    ManualTraitItem {
+        name: "Hash",
+        path: &["core", "hash", "Hash"],
+        is_auto: false,
+        is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: None,
+    },
+    ManualTraitItem {
+        name: "Send",
+        path: &["core", "marker", "Send"],
+        is_auto: true,
+        is_unsafe: true,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: None,
+    },
+    ManualTraitItem {
+        name: "Sync",
+        path: &["core", "marker", "Sync"],
+        is_auto: true,
+        is_unsafe: true,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: None,
+    },
+    ManualTraitItem {
+        name: "Unpin",
+        path: &["core", "marker", "Unpin"],
+        is_auto: true,
+        is_unsafe: false,
+        stability_feature: "pin",
+        stability_since: "1.33.0",
+        const_stability_feature: None,
+    },
+    ManualTraitItem {
+        name: "RefUnwindSafe",
+        path: &["core", "panic", "unwind_safe", "RefUnwindSafe"],
+        is_auto: true,
+        is_unsafe: false,
+        stability_feature: "catch_unwind",
+        stability_since: "1.9.0",
+        const_stability_feature: None,
+    },
+    ManualTraitItem {
+        name: "UnwindSafe",
+        path: &["core", "panic", "unwind_safe", "UnwindSafe"],
+        is_auto: true,
+        is_unsafe: false,
+        stability_feature: "catch_unwind",
+        stability_since: "1.9.0",
+        const_stability_feature: None,
+    },
+    ManualTraitItem {
+        name: "Sized",
+        path: &["core", "marker", "Sized"],
+        is_auto: false,
+        is_unsafe: false,
+        stability_feature: "rust1",
+        stability_since: "1.0.0",
+        const_stability_feature: None,
+    },
+];
+
+fn new_trait(manual_trait_item: &ManualTraitItem, id: Id, crate_id: u32) -> Item {
+    Item {
+        id,
+        crate_id,
+        name: Some(manual_trait_item.name.to_string()),
+        span: None,
+        visibility: rustdoc_types::Visibility::Public,
+        docs: None,
+        links: HashMap::default(),
+        attrs: Vec::new(),
+        deprecation: None,
+        stability: Some(Box::new(Stability {
+            feature: manual_trait_item.stability_feature.to_string(),
+            level: StabilityLevel::Stable {
+                since: Some(manual_trait_item.stability_since.to_string()),
+            },
+        })),
+        const_stability: manual_trait_item.const_stability_feature.map(|feature| {
+            Box::new(Stability {
+                feature: feature.to_string(),
+                level: StabilityLevel::Unstable,
+            })
+        }),
+        inner: rustdoc_types::ItemEnum::Trait(rustdoc_types::Trait {
+            is_auto: manual_trait_item.is_auto,
+            is_unsafe: manual_trait_item.is_unsafe,
+            is_dyn_compatible: matches!(
+                manual_trait_item.name,
+                "Debug"
+                    | "PartialEq"
+                    | "PartialOrd"
+                    | "Send"
+                    | "Sync"
+                    | "Unpin"
+                    | "UnwindSafe"
+                    | "RefUnwindSafe"
+            ),
+            // The `item`, `generics`, `bounds` and `implementations`
+            // are not currently present in the schema,
+            // so it is safe to fill them with empty containers,
+            // even though some traits in reality have some values in them.
+            items: Vec::new(),
+            generics: rustdoc_types::Generics {
+                params: Vec::new(),
+                where_predicates: Vec::new(),
+            },
+            bounds: Vec::new(),
+            implementations: Vec::new(),
+        }),
+    }
+}
+
+fn create_manually_inlined_builtin_traits(crate_: &Crate) -> (HashMap<Id, Item>, Id) {
+    let paths = &crate_.paths;
+
+    // `paths` may have thousands of items.
+    #[cfg(feature = "rayon")]
+    let iter = paths.par_iter();
+    #[cfg(not(feature = "rayon"))]
+    let iter = paths.iter();
+
+    let manually_inlined_builtin_traits: HashMap<Id, Item> = iter
+        .filter_map(|(id, entry)| {
+            if entry.kind != rustdoc_types::ItemKind::Trait {
+                return None;
+            }
+
+            // This is a linear scan, but across a tiny array.
+            // It isn't worth doing anything fancier here.
+            MANUAL_TRAIT_ITEMS
+                .iter()
+                .find(|t| t.path == entry.path)
+                .map(|manual| (*id, new_trait(manual, *id, entry.crate_id)))
+        })
+        .collect();
+
+    assert_eq!(
+        manually_inlined_builtin_traits.len(),
+        MANUAL_TRAIT_ITEMS.len(),
+        "failed to find some expected built-in traits: found only {manually_inlined_builtin_traits:?} and expected {MANUAL_TRAIT_ITEMS:?}",
+    );
+
+    let sized_id = manually_inlined_builtin_traits
+        .iter()
+        .find(|(_, item)| item.name.as_deref() == Some("Sized"))
+        .map(|(id, _)| *id)
+        .expect("failed to find `Sized` trait");
+
+    (manually_inlined_builtin_traits, sized_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use itertools::Itertools;
+    use rustdoc_types::{Crate, Id};
+
+    use crate::{ImportablePath, IndexedCrate, test_util::load_pregenerated_rustdoc};
+
+    fn find_item_id<'a>(crate_: &'a Crate, name: &str) -> &'a Id {
+        crate_
+            .index
+            .iter()
+            .filter_map(|(id, item)| (item.name.as_deref() == Some(name)).then_some(id))
+            .exactly_one()
+            .expect("exactly one matching name")
+    }
+
+    // These tests stay at the indexing layer when they assert rustdoc JSON
+    // invariants or path/reachability facts. Schema-visible behavior belongs
+    // in `src/adapter/tests.rs`.
+    mod rust_std_stability {
+        use rustdoc_types::{Item, ItemEnum, StabilityLevel};
+
+        use super::{ImportablePath, find_item_id};
+        use crate::{PackageIndex, test_util::load_pregenerated_rustdoc};
+
+        const STABILITY_FIXTURE: &str = "rust_std_stability";
+        const CRATE_ROOT: &str = "rust_std_stability";
+
+        fn public_path<'a>(
+            paths: &'a [ImportablePath<'a>],
+            components: &[&str],
+        ) -> &'a ImportablePath<'a> {
+            paths
+                .iter()
+                .find(|path| path.path.components == components)
+                .expect("expected importable path not found")
+        }
+
+        fn assert_const_unstable_feature(item: &Item, expected_feature: &str) {
+            let const_stability = item
+                .const_stability
+                .as_deref()
+                .expect("expected const stability");
+            assert!(matches!(const_stability.level, StabilityLevel::Unstable));
+            assert_eq!(expected_feature, const_stability.feature);
+        }
+
+        fn assert_unstable_feature(item: &Item, expected_feature: &str) {
+            let stability = item.stability.as_deref().expect("expected stability");
+            assert!(matches!(stability.level, StabilityLevel::Unstable));
+            assert_eq!(expected_feature, stability.feature);
+        }
+
+        #[test]
+        fn rustdoc_fixture_propagates_inherited_const_stability_to_child_items() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+
+            let const_impl_method_id = find_item_id(&rustdoc, "const_impl_method");
+            let const_impl_method = &rustdoc.index[const_impl_method_id];
+            let ItemEnum::Function(function) = &const_impl_method.inner else {
+                panic!("expected function item");
+            };
+            assert!(function.header.is_const);
+            assert_const_unstable_feature(const_impl_method, "const_inherent_impl_unstable");
+
+            let provided_method_id = find_item_id(&rustdoc, "provided");
+            let provided_method = &rustdoc.index[provided_method_id];
+            let ItemEnum::Function(function) = &provided_method.inner else {
+                panic!("expected function item");
+            };
+            assert!(!function.header.is_const);
+            assert_const_unstable_feature(provided_method, "fixture_const_trait_unstable");
+        }
+
+        #[test]
+        fn rustdoc_fixture_propagates_inherited_item_stability_to_child_items() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+
+            for (name, expected_feature) in [
+                (
+                    "unannotated_method_in_unstable_trait",
+                    "unstable_trait_with_unannotated_method",
+                ),
+                (
+                    "method_inside_unstable_inherent_impl",
+                    "unstable_inherent_impl",
+                ),
+            ] {
+                let item_id = find_item_id(&rustdoc, name);
+                let item = &rustdoc.index[item_id];
+                let ItemEnum::Function(_) = &item.inner else {
+                    panic!("expected function item");
+                };
+                assert_unstable_feature(item, expected_feature);
+            }
+        }
+
+        #[test]
+        fn default_policy_ignores_rust_std_structured_stability() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "unstable_function");
+            let package_index = PackageIndex::from_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            assert_eq!(paths.len(), 1);
+            assert!(paths[0].public_api());
+            assert!(
+                package_index
+                    .own_crate
+                    .public_api_eligible(&rustdoc.index[item_id])
+            );
+        }
+
+        #[test]
+        fn rust_std_policy_treats_unstable_item_as_non_public_api() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "unstable_function");
+            let package_index = PackageIndex::from_rust_std_component_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            assert_eq!(paths.len(), 1);
+            assert!(paths[0].modifiers.unstable);
+            assert!(!paths[0].public_api());
+            assert!(
+                !package_index
+                    .own_crate
+                    .public_api_eligible(&rustdoc.index[item_id])
+            );
+
+            let flags = package_index
+                .own_crate
+                .flags
+                .as_ref()
+                .expect("flags index should exist");
+            assert!(flags[item_id].is_reachable());
+            assert!(!flags[item_id].is_pub_reachable());
+            assert!(flags[item_id].is_non_pub_api_reachable());
+        }
+
+        #[test]
+        fn rust_std_storage_constructor_applies_stability_to_own_crate() {
+            let storage =
+                crate::PackageStorage::from_rustdoc(load_pregenerated_rustdoc(STABILITY_FIXTURE));
+            let item_id = find_item_id(&storage.own_crate, "unstable_function");
+            let package_index = PackageIndex::from_rust_std_component_storage(&storage);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            assert_eq!(paths.len(), 1);
+            assert!(!paths[0].public_api());
+            assert!(paths[0].modifiers.unstable);
+        }
+
+        #[test]
+        fn rust_std_policy_treats_stable_item_under_unstable_module_as_non_public_api() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "stable_inside_unstable_module");
+            let package_index = PackageIndex::from_rust_std_component_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            let path = public_path(
+                &paths,
+                &[
+                    CRATE_ROOT,
+                    "unstable_module",
+                    "stable_inside_unstable_module",
+                ],
+            );
+            assert!(path.modifiers.unstable);
+            assert!(!path.public_api());
+            assert!(
+                package_index
+                    .own_crate
+                    .public_api_eligible(&rustdoc.index[item_id])
+            );
+        }
+
+        #[test]
+        fn rust_std_policy_allows_stable_reexport_from_unstable_module() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "stable_reexported_from_unstable_module");
+            let package_index = PackageIndex::from_rust_std_component_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            let stable_reexport_path = public_path(
+                &paths,
+                &[CRATE_ROOT, "stable_reexport_from_unstable_module"],
+            );
+            let unstable_definition_path = public_path(
+                &paths,
+                &[
+                    CRATE_ROOT,
+                    "unstable_reexport_source",
+                    "stable_reexported_from_unstable_module",
+                ],
+            );
+            assert!(stable_reexport_path.public_api());
+            assert!(!stable_reexport_path.modifiers.unstable);
+            assert!(!unstable_definition_path.public_api());
+            assert!(unstable_definition_path.modifiers.unstable);
+            assert!(
+                package_index
+                    .own_crate
+                    .public_api_eligible(&rustdoc.index[item_id])
+            );
+        }
+
+        #[test]
+        fn rust_std_policy_keeps_public_and_non_public_paths_for_same_item() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "reexport_target");
+            let package_index = PackageIndex::from_rust_std_component_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            let stable_path = public_path(&paths, &[CRATE_ROOT, "stable_reexport_target"]);
+            let unstable_path = public_path(&paths, &[CRATE_ROOT, "unstable_reexport_target"]);
+            assert!(stable_path.public_api());
+            assert!(!stable_path.modifiers.unstable);
+            assert!(!unstable_path.public_api());
+            assert!(unstable_path.modifiers.unstable);
+        }
+
+        #[test]
+        fn rust_std_policy_applies_direct_glob_use_stability_to_importable_path() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "direct_glob_target");
+            let package_index = PackageIndex::from_rust_std_component_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            let module_path = public_path(
+                &paths,
+                &[CRATE_ROOT, "direct_glob_source", "direct_glob_target"],
+            );
+            let glob_path = public_path(&paths, &[CRATE_ROOT, "direct_glob_target"]);
+            assert!(module_path.public_api());
+            assert!(!module_path.modifiers.unstable);
+            assert!(!glob_path.public_api());
+            assert!(glob_path.modifiers.unstable);
+        }
+
+        #[test]
+        fn rust_std_policy_applies_nested_glob_stability_to_synthesized_paths() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "nested_glob_target");
+            let package_index = PackageIndex::from_rust_std_component_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            let root_glob_path = public_path(&paths, &[CRATE_ROOT, "nested_glob_target"]);
+            let outer_path =
+                public_path(&paths, &[CRATE_ROOT, "nested_outer", "nested_glob_target"]);
+            let inner_path = public_path(
+                &paths,
+                &[
+                    CRATE_ROOT,
+                    "nested_outer",
+                    "nested_inner",
+                    "nested_glob_target",
+                ],
+            );
+            assert!(!root_glob_path.public_api());
+            assert!(root_glob_path.modifiers.unstable);
+            assert!(!outer_path.public_api());
+            assert!(outer_path.modifiers.unstable);
+            assert!(inner_path.public_api());
+            assert!(!inner_path.modifiers.unstable);
+        }
+
+        #[test]
+        fn rust_std_policy_preserves_non_glob_reexport_stability_through_glob() {
+            let rustdoc = load_pregenerated_rustdoc(STABILITY_FIXTURE);
+            let item_id = find_item_id(&rustdoc, "non_glob_target");
+            let package_index = PackageIndex::from_rust_std_component_crate(&rustdoc);
+            let paths = package_index.own_crate.publicly_importable_names(item_id);
+
+            let stable_glob_path = public_path(&paths, &[CRATE_ROOT, "non_glob_target"]);
+            let unstable_glob_path = public_path(&paths, &[CRATE_ROOT, "non_glob_unstable_alias"]);
+            assert!(stable_glob_path.public_api());
+            assert!(!stable_glob_path.modifiers.unstable);
+            assert!(!unstable_glob_path.public_api());
+            assert!(unstable_glob_path.modifiers.unstable);
+        }
+    }
+
+    /// Ensure that methods, consts, and fields within structs are not importable.
+    #[test]
+    fn structs_are_not_modules() {
+        let rustdoc = load_pregenerated_rustdoc("structs_are_not_modules");
+        let indexed_crate = IndexedCrate::new(&rustdoc);
+
+        let top_level_function = find_item_id(&rustdoc, "top_level_function");
+        let method = find_item_id(&rustdoc, "method");
+        let associated_fn = find_item_id(&rustdoc, "associated_fn");
+        let field = find_item_id(&rustdoc, "field");
+        let const_item = find_item_id(&rustdoc, "THE_ANSWER");
+
+        // All the items are public.
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&top_level_function.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&method.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&associated_fn.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&field.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&const_item.0)
+        );
+
+        // But only `top_level_function` is importable.
+        assert_eq!(
+            vec![ImportablePath::new(
+                vec!["structs_are_not_modules", "top_level_function"],
+                false,
+                false,
+                false,
+            )],
+            indexed_crate.publicly_importable_names(top_level_function)
+        );
+        assert_eq!(
+            Vec::<ImportablePath<'_>>::new(),
+            indexed_crate.publicly_importable_names(method)
+        );
+        assert_eq!(
+            Vec::<ImportablePath<'_>>::new(),
+            indexed_crate.publicly_importable_names(associated_fn)
+        );
+        assert_eq!(
+            Vec::<ImportablePath<'_>>::new(),
+            indexed_crate.publicly_importable_names(field)
+        );
+        assert_eq!(
+            Vec::<ImportablePath<'_>>::new(),
+            indexed_crate.publicly_importable_names(const_item)
+        );
+    }
+
+    /// Ensure that methods and consts within enums are not importable.
+    /// However, enum variants are the exception: they are importable!
+    #[test]
+    fn enums_are_not_modules() {
+        let rustdoc = load_pregenerated_rustdoc("enums_are_not_modules");
+        let indexed_crate = IndexedCrate::new(&rustdoc);
+
+        let top_level_function = find_item_id(&rustdoc, "top_level_function");
+        let variant = find_item_id(&rustdoc, "Variant");
+        let method = find_item_id(&rustdoc, "method");
+        let associated_fn = find_item_id(&rustdoc, "associated_fn");
+        let const_item = find_item_id(&rustdoc, "THE_ANSWER");
+
+        // All the items are public.
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&top_level_function.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&variant.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&method.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&associated_fn.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&const_item.0)
+        );
+
+        // But only `top_level_function` and `Foo::variant` is importable.
+        assert_eq!(
+            vec![ImportablePath::new(
+                vec!["enums_are_not_modules", "top_level_function"],
+                false,
+                false,
+                false,
+            )],
+            indexed_crate.publicly_importable_names(top_level_function)
+        );
+        assert_eq!(
+            vec![ImportablePath::new(
+                vec!["enums_are_not_modules", "Foo", "Variant"],
+                false,
+                false,
+                false,
+            )],
+            indexed_crate.publicly_importable_names(variant)
+        );
+        assert_eq!(
+            Vec::<ImportablePath<'_>>::new(),
+            indexed_crate.publicly_importable_names(method)
+        );
+        assert_eq!(
+            Vec::<ImportablePath<'_>>::new(),
+            indexed_crate.publicly_importable_names(associated_fn)
+        );
+        assert_eq!(
+            Vec::<ImportablePath<'_>>::new(),
+            indexed_crate.publicly_importable_names(const_item)
+        );
+    }
+
+    /// Ensure that methods, consts, and fields within unions are not importable.
+    #[test]
+    fn unions_are_not_modules() {
+        let rustdoc = load_pregenerated_rustdoc("unions_are_not_modules");
+        let indexed_crate = IndexedCrate::new(&rustdoc);
+
+        let top_level_function = find_item_id(&rustdoc, "top_level_function");
+        let method = find_item_id(&rustdoc, "method");
+        let associated_fn = find_item_id(&rustdoc, "associated_fn");
+        let left_field = find_item_id(&rustdoc, "left");
+        let right_field = find_item_id(&rustdoc, "right");
+        let const_item = find_item_id(&rustdoc, "THE_ANSWER");
+
+        // All the items are public.
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&top_level_function.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&method.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&associated_fn.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&left_field.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&right_field.0)
+        );
+        assert!(
+            indexed_crate
+                .visibility_tracker
+                .visible_parent_edges()
+                .contains_key(&const_item.0)
+        );
+
+        // But only `top_level_function` is importable.
+        assert_eq!(
+            vec![ImportablePath::new(
+                vec!["unions_are_not_modules", "top_level_function"],
+                false,
+                false,
+                false,
+            )],
+            indexed_crate.publicly_importable_names(top_level_function)
+        );
+        assert_eq!(
+            Vec::<ImportablePath<'_>>::new(),
+            indexed_crate.publicly_importable_names(method)
+        );
+        assert_eq!(
+            Vec::<ImportablePath<'_>>::new(),
+            indexed_crate.publicly_importable_names(associated_fn)
+        );
+        assert_eq!(
+            Vec::<ImportablePath<'_>>::new(),
+            indexed_crate.publicly_importable_names(left_field)
+        );
+        assert_eq!(
+            Vec::<ImportablePath<'_>>::new(),
+            indexed_crate.publicly_importable_names(right_field)
+        );
+        assert_eq!(
+            Vec::<ImportablePath<'_>>::new(),
+            indexed_crate.publicly_importable_names(const_item)
+        );
+    }
+
+    mod reexports {
+        use std::collections::{BTreeMap, BTreeSet};
+
+        use itertools::Itertools;
+        use maplit::{btreemap, btreeset};
+        use rustdoc_types::{ItemEnum, Visibility};
+
+        use crate::{ImportablePath, IndexedCrate, test_util::load_pregenerated_rustdoc};
+
+        fn assert_exported_items_match(
+            test_crate: &str,
+            expected_items: &BTreeMap<&str, BTreeSet<&str>>,
+        ) {
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            for (&expected_item_name, expected_importable_paths) in expected_items {
+                assert!(
+                    !expected_item_name.contains(':'),
+                    "only direct item names can be checked at the moment: {expected_item_name}"
+                );
+
+                let item_id_candidates = rustdoc
+                    .index
+                    .iter()
+                    .filter_map(|(id, item)| {
+                        (item.name.as_deref() == Some(expected_item_name)).then_some(id)
+                    })
+                    .collect_vec();
+                if item_id_candidates.len() != 1 {
+                    panic!(
+                        "Expected to find exactly one item with name {expected_item_name}, \
+                        but found these matching IDs: {item_id_candidates:?}"
+                    );
+                }
+                let item_id = item_id_candidates[0];
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|importable| importable.path.components.into_iter().join("::"))
+                    .collect();
+                let deduplicated_actual_items: BTreeSet<_> =
+                    actual_items.iter().map(|x| x.as_str()).collect();
+                assert_eq!(
+                    actual_items.len(),
+                    deduplicated_actual_items.len(),
+                    "duplicates found: {actual_items:?}"
+                );
+
+                assert_eq!(
+                    expected_importable_paths, &deduplicated_actual_items,
+                    "mismatch for item name {expected_item_name}",
+                );
+            }
+        }
+
+        /// Allows testing for items with overlapping names, such as a function and a type
+        /// with the same name (which Rust considers in separate namespaces).
+        fn assert_duplicated_exported_items_match(
+            test_crate: &str,
+            expected_items_and_counts: &BTreeMap<&str, (usize, BTreeSet<&str>)>,
+        ) {
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            for (&expected_item_name, (expected_count, expected_importable_paths)) in
+                expected_items_and_counts
+            {
+                assert!(
+                    !expected_item_name.contains(':'),
+                    "only direct item names can be checked at the moment: {expected_item_name}"
+                );
+
+                let item_id_candidates = rustdoc
+                    .index
+                    .iter()
+                    .filter_map(|(id, item)| {
+                        (item.name.as_deref() == Some(expected_item_name)).then_some(id)
+                    })
+                    .collect_vec();
+                if item_id_candidates.len() != *expected_count {
+                    panic!(
+                        "Expected to find exactly {expected_count} items with name \
+                        {expected_item_name}, but found these matching IDs: {item_id_candidates:?}"
+                    );
+                }
+                for item_id in item_id_candidates {
+                    let actual_items: Vec<_> = indexed_crate
+                        .publicly_importable_names(item_id)
+                        .into_iter()
+                        .map(|importable| importable.path.components.into_iter().join("::"))
+                        .collect();
+                    let deduplicated_actual_items: BTreeSet<_> =
+                        actual_items.iter().map(|x| x.as_str()).collect();
+                    assert_eq!(
+                        actual_items.len(),
+                        deduplicated_actual_items.len(),
+                        "duplicates found: {actual_items:?}"
+                    );
+                    assert_eq!(expected_importable_paths, &deduplicated_actual_items);
+                }
+            }
+        }
+
+        #[test]
+        fn pub_inside_pub_crate_mod() {
+            let test_crate = "pub_inside_pub_crate_mod";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![],
+                "Bar" => btreeset![
+                    "pub_inside_pub_crate_mod::Bar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn reexport() {
+            let test_crate = "reexport";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    "reexport::foo",
+                    "reexport::inner::foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn reexport_from_private_module() {
+            let test_crate = "reexport_from_private_module";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    "reexport_from_private_module::foo",
+                ],
+                "Bar" => btreeset![
+                    "reexport_from_private_module::Bar",
+                ],
+                "Baz" => btreeset![
+                    "reexport_from_private_module::nested::Baz",
+                ],
+                "quux" => btreeset![
+                    "reexport_from_private_module::quux",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn renaming_reexport() {
+            let test_crate = "renaming_reexport";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    "renaming_reexport::bar",
+                    "renaming_reexport::inner::foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn renaming_reexport_of_reexport() {
+            let test_crate = "renaming_reexport_of_reexport";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    "renaming_reexport_of_reexport::bar",
+                    "renaming_reexport_of_reexport::foo",
+                    "renaming_reexport_of_reexport::inner::foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn renaming_mod_reexport() {
+            let test_crate = "renaming_mod_reexport";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    "renaming_mod_reexport::inner::a::foo",
+                    "renaming_mod_reexport::inner::b::foo",
+                    "renaming_mod_reexport::direct::foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_reexport() {
+            let test_crate = "glob_reexport";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    "glob_reexport::foo",
+                    "glob_reexport::inner::foo",
+                ],
+                "Bar" => btreeset![
+                    "glob_reexport::Bar",
+                    "glob_reexport::inner::Bar",
+                ],
+                "nested" => btreeset![
+                    "glob_reexport::nested",
+                ],
+                "Baz" => btreeset![
+                    "glob_reexport::Baz",
+                ],
+                "First" => btreeset![
+                    "glob_reexport::First",
+                    "glob_reexport::Baz::First",
+                ],
+                "Second" => btreeset![
+                    "glob_reexport::Second",
+                    "glob_reexport::Baz::Second",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_of_glob_reexport() {
+            let test_crate = "glob_of_glob_reexport";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    "glob_of_glob_reexport::foo",
+                ],
+                "Bar" => btreeset![
+                    "glob_of_glob_reexport::Bar",
+                ],
+                "Baz" => btreeset![
+                    "glob_of_glob_reexport::Baz",
+                ],
+                "Onion" => btreeset![
+                    "glob_of_glob_reexport::Onion",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_of_renamed_reexport() {
+            let test_crate = "glob_of_renamed_reexport";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    "glob_of_renamed_reexport::renamed_foo",
+                ],
+                "Bar" => btreeset![
+                    "glob_of_renamed_reexport::RenamedBar",
+                ],
+                "First" => btreeset![
+                    "glob_of_renamed_reexport::RenamedFirst",
+                ],
+                "Onion" => btreeset![
+                    "glob_of_renamed_reexport::RenamedOnion",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_reexport_enum_variants() {
+            let test_crate = "glob_reexport_enum_variants";
+            let expected_items = btreemap! {
+                "First" => btreeset![
+                    "glob_reexport_enum_variants::First",
+                ],
+                "Second" => btreeset![
+                    "glob_reexport_enum_variants::Second",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_reexport_cycle() {
+            let test_crate = "glob_reexport_cycle";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    "glob_reexport_cycle::first::foo",
+                    "glob_reexport_cycle::second::foo",
+                ],
+                "Bar" => btreeset![
+                    "glob_reexport_cycle::first::Bar",
+                    "glob_reexport_cycle::second::Bar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn infinite_recursive_reexport() {
+            let test_crate = "infinite_recursive_reexport";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    // We don't want to expand all infinitely-many names here.
+                    // We only return cycle-free paths, which are the following:
+                    "infinite_recursive_reexport::foo",
+                    "infinite_recursive_reexport::inner::foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn infinite_indirect_recursive_reexport() {
+            let test_crate = "infinite_indirect_recursive_reexport";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    // We don't want to expand all infinitely-many names here.
+                    // We only return cycle-free paths, which are the following:
+                    "infinite_indirect_recursive_reexport::foo",
+                    "infinite_indirect_recursive_reexport::nested::foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn infinite_corecursive_reexport() {
+            let test_crate = "infinite_corecursive_reexport";
+            let expected_items = btreemap! {
+                "foo" => btreeset![
+                    // We don't want to expand all infinitely-many names here.
+                    // We only return cycle-free paths, which are the following:
+                    "infinite_corecursive_reexport::a::foo",
+                    "infinite_corecursive_reexport::b::a::foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_type_alias_reexport() {
+            let test_crate = "pub_type_alias_reexport";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "pub_type_alias_reexport::Exported",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_generic_type_alias_reexport() {
+            let test_crate = "pub_generic_type_alias_reexport";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    // Only `Exported` and `ExportedRenamedParams` are re-exports.
+                    //
+                    //`ExportedRenamedParams` renames the generic parameters
+                    // but does not change their meaning.
+                    //
+                    // `ExportedWithDefaults` is not a re-export because it adds
+                    //
+                    // The other type aliases are not equivalent since they constrain
+                    // some of the underlying type's generic parameters.
+                    "pub_generic_type_alias_reexport::Exported",
+                    "pub_generic_type_alias_reexport::ExportedRenamedParams",
+                ],
+                "Exported" => btreeset![
+                    // The type alias itself is also a visible item.
+                    "pub_generic_type_alias_reexport::Exported",
+                ],
+                "ExportedWithDefaults" => btreeset![
+                    // The type alias itself is also a visible item.
+                    "pub_generic_type_alias_reexport::ExportedWithDefaults",
+                ],
+                "ExportedRenamedParams" => btreeset![
+                    // The type alias itself is also a visible item.
+                    "pub_generic_type_alias_reexport::ExportedRenamedParams",
+                ],
+                "ExportedSpecificLifetime" => btreeset![
+                    "pub_generic_type_alias_reexport::ExportedSpecificLifetime",
+                ],
+                "ExportedSpecificType" => btreeset![
+                    "pub_generic_type_alias_reexport::ExportedSpecificType",
+                ],
+                "ExportedSpecificConst" => btreeset![
+                    "pub_generic_type_alias_reexport::ExportedSpecificConst",
+                ],
+                "ExportedFullySpecified" => btreeset![
+                    "pub_generic_type_alias_reexport::ExportedFullySpecified",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_generic_type_alias_shuffled_order() {
+            let test_crate = "pub_generic_type_alias_shuffled_order";
+            let expected_items = btreemap! {
+                // The type aliases reverse the generic parameters' orders,
+                // so they are not re-exports of the underlying types.
+                "GenericFoo" => btreeset![
+                    "pub_generic_type_alias_shuffled_order::inner::GenericFoo",
+                ],
+                "LifetimeFoo" => btreeset![
+                    "pub_generic_type_alias_shuffled_order::inner::LifetimeFoo",
+                ],
+                "ConstFoo" => btreeset![
+                    "pub_generic_type_alias_shuffled_order::inner::ConstFoo",
+                ],
+                "ReversedGenericFoo" => btreeset![
+                    "pub_generic_type_alias_shuffled_order::ReversedGenericFoo",
+                ],
+                "ReversedLifetimeFoo" => btreeset![
+                    "pub_generic_type_alias_shuffled_order::ReversedLifetimeFoo",
+                ],
+                "ReversedConstFoo" => btreeset![
+                    "pub_generic_type_alias_shuffled_order::ReversedConstFoo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_generic_type_alias_added_defaults() {
+            let test_crate = "pub_generic_type_alias_added_defaults";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "pub_generic_type_alias_added_defaults::inner::Foo",
+                ],
+                "Bar" => btreeset![
+                    "pub_generic_type_alias_added_defaults::inner::Bar",
+                ],
+                "DefaultFoo" => btreeset![
+                    "pub_generic_type_alias_added_defaults::DefaultFoo",
+                ],
+                "DefaultBar" => btreeset![
+                    "pub_generic_type_alias_added_defaults::DefaultBar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_generic_type_alias_changed_defaults() {
+            let test_crate = "pub_generic_type_alias_changed_defaults";
+            let expected_items = btreemap! {
+                // The type aliases change the default values of the generic parameters,
+                // so they are not re-exports of the underlying types.
+                "Foo" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::inner::Foo",
+                ],
+                "Bar" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::inner::Bar",
+                ],
+                "ExportedWithoutTypeDefault" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::ExportedWithoutTypeDefault",
+                ],
+                "ExportedWithoutConstDefault" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::ExportedWithoutConstDefault",
+                ],
+                "ExportedWithoutDefaults" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::ExportedWithoutDefaults",
+                ],
+                "ExportedWithDifferentTypeDefault" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::ExportedWithDifferentTypeDefault",
+                ],
+                "ExportedWithDifferentConstDefault" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::ExportedWithDifferentConstDefault",
+                ],
+                "ExportedWithDifferentDefaults" => btreeset![
+                    "pub_generic_type_alias_changed_defaults::ExportedWithDifferentDefaults",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_generic_type_alias_same_signature_but_not_equivalent() {
+            let test_crate = "pub_generic_type_alias_same_signature_but_not_equivalent";
+            let expected_items = btreemap! {
+                "GenericFoo" => btreeset![
+                    "pub_generic_type_alias_same_signature_but_not_equivalent::inner::GenericFoo",
+                ],
+                "ChangedFoo" => btreeset![
+                    "pub_generic_type_alias_same_signature_but_not_equivalent::ChangedFoo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_type_alias_of_type_alias() {
+            let test_crate = "pub_type_alias_of_type_alias";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "pub_type_alias_of_type_alias::inner::Foo",
+                    "pub_type_alias_of_type_alias::inner::AliasedFoo",
+                    "pub_type_alias_of_type_alias::ExportedFoo",
+                ],
+                "Bar" => btreeset![
+                    "pub_type_alias_of_type_alias::inner::Bar",
+                    "pub_type_alias_of_type_alias::inner::AliasedBar",
+                    "pub_type_alias_of_type_alias::ExportedBar",
+                ],
+                "AliasedFoo" => btreeset![
+                    "pub_type_alias_of_type_alias::inner::AliasedFoo",
+                    "pub_type_alias_of_type_alias::ExportedFoo",
+                ],
+                "AliasedBar" => btreeset![
+                    "pub_type_alias_of_type_alias::inner::AliasedBar",
+                    "pub_type_alias_of_type_alias::ExportedBar",
+                ],
+                "ExportedFoo" => btreeset![
+                    "pub_type_alias_of_type_alias::ExportedFoo",
+                ],
+                "ExportedBar" => btreeset![
+                    "pub_type_alias_of_type_alias::ExportedBar",
+                ],
+                "DifferentLifetimeBar" => btreeset![
+                    "pub_type_alias_of_type_alias::DifferentLifetimeBar",
+                ],
+                "DifferentGenericBar" => btreeset![
+                    "pub_type_alias_of_type_alias::DifferentGenericBar",
+                ],
+                "DifferentConstBar" => btreeset![
+                    "pub_type_alias_of_type_alias::DifferentConstBar",
+                ],
+                "ReorderedBar" => btreeset![
+                    "pub_type_alias_of_type_alias::ReorderedBar",
+                ],
+                "DefaultValueBar" => btreeset![
+                    "pub_type_alias_of_type_alias::DefaultValueBar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_type_alias_of_composite_type() {
+            let test_crate = "pub_type_alias_of_composite_type";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "pub_type_alias_of_composite_type::inner::Foo",
+                ],
+                "I64Tuple" => btreeset![
+                    "pub_type_alias_of_composite_type::I64Tuple",
+                ],
+                "MixedTuple" => btreeset![
+                    "pub_type_alias_of_composite_type::MixedTuple",
+                ],
+                "GenericTuple" => btreeset![
+                    "pub_type_alias_of_composite_type::GenericTuple",
+                ],
+                "LifetimeTuple" => btreeset![
+                    "pub_type_alias_of_composite_type::LifetimeTuple",
+                ],
+                "ConstTuple" => btreeset![
+                    "pub_type_alias_of_composite_type::ConstTuple",
+                ],
+                "DefaultGenericTuple" => btreeset![
+                    "pub_type_alias_of_composite_type::DefaultGenericTuple",
+                ],
+                "DefaultConstTuple" => btreeset![
+                    "pub_type_alias_of_composite_type::DefaultConstTuple",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn pub_generic_type_alias_omitted_default() {
+            let test_crate = "pub_generic_type_alias_omitted_default";
+            let expected_items = btreemap! {
+                "DefaultConst" => btreeset![
+                    "pub_generic_type_alias_omitted_default::inner::DefaultConst",
+                ],
+                "DefaultType" => btreeset![
+                    "pub_generic_type_alias_omitted_default::inner::DefaultType",
+                ],
+                "ConstOnly" => btreeset![
+                    "pub_generic_type_alias_omitted_default::inner::ConstOnly",
+                ],
+                "TypeOnly" => btreeset![
+                    "pub_generic_type_alias_omitted_default::inner::TypeOnly",
+                ],
+                "OmittedConst" => btreeset![
+                    "pub_generic_type_alias_omitted_default::OmittedConst",
+                ],
+                "OmittedType" => btreeset![
+                    "pub_generic_type_alias_omitted_default::OmittedType",
+                ],
+                "NonGenericConst" => btreeset![
+                    "pub_generic_type_alias_omitted_default::NonGenericConst",
+                ],
+                "NonGenericType" => btreeset![
+                    "pub_generic_type_alias_omitted_default::NonGenericType",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn swapping_names() {
+            let test_crate = "swapping_names";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "swapping_names::Foo",
+                    "swapping_names::inner::Bar",
+                    "swapping_names::inner::nested::Foo",
+                ],
+                "Bar" => btreeset![
+                    "swapping_names::Bar",
+                    "swapping_names::inner::Foo",
+                    "swapping_names::inner::nested::Bar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn overlapping_glob_and_local_module() {
+            let test_crate = "overlapping_glob_and_local_module";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "overlapping_glob_and_local_module::sibling::duplicated::Foo",
+                ],
+                "Bar" => btreeset![
+                    "overlapping_glob_and_local_module::inner::duplicated::Bar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn overlapping_glob_and_renamed_module() {
+            let test_crate = "overlapping_glob_and_renamed_module";
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "overlapping_glob_and_renamed_module::sibling::duplicated::Foo",
+                ],
+                "Bar" => btreeset![
+                    "overlapping_glob_and_renamed_module::inner::duplicated::Bar",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn type_and_value_with_matching_names() {
+            let test_crate = "type_and_value_with_matching_names";
+            let expected_items = btreemap! {
+                "Foo" => (2, btreeset![
+                    "type_and_value_with_matching_names::Foo",
+                    "type_and_value_with_matching_names::nested::Foo",
+                ]),
+                "Bar" => (2, btreeset![
+                    "type_and_value_with_matching_names::Bar",
+                    "type_and_value_with_matching_names::nested::Bar",
+                ]),
+            };
+
+            assert_duplicated_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn no_shadowing_across_namespaces() {
+            let test_crate = "no_shadowing_across_namespaces";
+            let expected_items = btreemap! {
+                "Foo" => (2, btreeset![
+                    "no_shadowing_across_namespaces::Foo",
+                    "no_shadowing_across_namespaces::nested::Foo",
+                ]),
+            };
+
+            assert_duplicated_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn explicit_reexport_of_matching_names() {
+            let test_crate = "explicit_reexport_of_matching_names";
+            let expected_items = btreemap! {
+                "Foo" => (2, btreeset![
+                    "explicit_reexport_of_matching_names::Bar",
+                    "explicit_reexport_of_matching_names::Foo",
+                    "explicit_reexport_of_matching_names::nested::Foo",
+                ]),
+            };
+
+            assert_duplicated_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn overlapping_glob_and_local_item() {
+            let test_crate = "overlapping_glob_and_local_item";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let foo_ids = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if foo_ids.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    Foo, but found these matching IDs: {foo_ids:?}"
+                );
+            }
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| {
+                    (matches!(item.name.as_deref(), Some("Foo" | "Bar"))).then_some(id)
+                })
+                .collect_vec();
+            if item_id_candidates.len() != 3 {
+                panic!(
+                    "Expected to find exactly 3 items named Foo or Bar, \
+                    but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            let mut all_importable_paths = Vec::new();
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|importable| importable.path.components.into_iter().join("::"))
+                    .collect();
+                let deduplicated_actual_items: BTreeSet<_> =
+                    actual_items.iter().map(|x| x.as_str()).collect();
+                assert_eq!(
+                    actual_items.len(),
+                    deduplicated_actual_items.len(),
+                    "duplicates found: {actual_items:?}"
+                );
+
+                if deduplicated_actual_items
+                    .first()
+                    .expect("no names")
+                    .ends_with("::Foo")
+                {
+                    assert_eq!(
+                        deduplicated_actual_items.len(),
+                        1,
+                        "\
+expected exactly one importable path for `Foo` items in this crate but got: {actual_items:?}"
+                    );
+                } else {
+                    assert_eq!(
+                        deduplicated_actual_items,
+                        btreeset! {
+                            "overlapping_glob_and_local_item::Bar",
+                            "overlapping_glob_and_local_item::inner::Bar",
+                        }
+                    );
+                }
+
+                all_importable_paths.extend(actual_items);
+            }
+
+            all_importable_paths.sort_unstable();
+            assert_eq!(
+                vec![
+                    "overlapping_glob_and_local_item::Bar",
+                    "overlapping_glob_and_local_item::Foo",
+                    "overlapping_glob_and_local_item::inner::Bar",
+                    "overlapping_glob_and_local_item::inner::Foo",
+                ],
+                all_importable_paths,
+            );
+        }
+
+        #[test]
+        fn nested_overlapping_glob_and_local_item() {
+            let test_crate = "nested_overlapping_glob_and_local_item";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            let mut all_importable_paths = Vec::new();
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|importable| importable.path.components.into_iter().join("::"))
+                    .collect();
+                let deduplicated_actual_items: BTreeSet<_> =
+                    actual_items.iter().map(|x| x.as_str()).collect();
+
+                assert_eq!(
+                    actual_items.len(),
+                    deduplicated_actual_items.len(),
+                    "duplicates found: {actual_items:?}"
+                );
+
+                match deduplicated_actual_items.len() {
+                    1 => assert_eq!(
+                        deduplicated_actual_items,
+                        btreeset! { "nested_overlapping_glob_and_local_item::Foo" },
+                    ),
+                    2 => assert_eq!(
+                        deduplicated_actual_items,
+                        btreeset! {
+                            "nested_overlapping_glob_and_local_item::inner::Foo",
+                            "nested_overlapping_glob_and_local_item::inner::nested::Foo",
+                        }
+                    ),
+                    _ => unreachable!("unexpected value for {deduplicated_actual_items:?}"),
+                };
+
+                all_importable_paths.extend(actual_items);
+            }
+
+            all_importable_paths.sort_unstable();
+            assert_eq!(
+                vec![
+                    "nested_overlapping_glob_and_local_item::Foo",
+                    "nested_overlapping_glob_and_local_item::inner::Foo",
+                    "nested_overlapping_glob_and_local_item::inner::nested::Foo",
+                ],
+                all_importable_paths,
+            );
+        }
+
+        #[test]
+        fn cyclic_overlapping_glob_and_local_item() {
+            let test_crate = "cyclic_overlapping_glob_and_local_item";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            let mut all_importable_paths = Vec::new();
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|importable| importable.path.components.into_iter().join("::"))
+                    .collect();
+                let deduplicated_actual_items: BTreeSet<_> =
+                    actual_items.iter().map(|x| x.as_str()).collect();
+
+                assert_eq!(
+                    actual_items.len(),
+                    deduplicated_actual_items.len(),
+                    "duplicates found: {actual_items:?}"
+                );
+
+                match deduplicated_actual_items.len() {
+                    1 => assert_eq!(
+                        btreeset! { "cyclic_overlapping_glob_and_local_item::Foo" },
+                        deduplicated_actual_items,
+                    ),
+                    4 => assert_eq!(
+                        btreeset! {
+                            "cyclic_overlapping_glob_and_local_item::inner::Foo",
+                            "cyclic_overlapping_glob_and_local_item::inner::nested::Foo",
+                            "cyclic_overlapping_glob_and_local_item::nested::Foo",
+                            "cyclic_overlapping_glob_and_local_item::nested::inner::Foo",
+                        },
+                        deduplicated_actual_items,
+                    ),
+                    _ => unreachable!("unexpected value for {deduplicated_actual_items:?}"),
+                };
+
+                all_importable_paths.extend(actual_items);
+            }
+
+            all_importable_paths.sort_unstable();
+            assert_eq!(
+                vec![
+                    "cyclic_overlapping_glob_and_local_item::Foo",
+                    "cyclic_overlapping_glob_and_local_item::inner::Foo",
+                    "cyclic_overlapping_glob_and_local_item::inner::nested::Foo",
+                    "cyclic_overlapping_glob_and_local_item::nested::Foo",
+                    "cyclic_overlapping_glob_and_local_item::nested::inner::Foo",
+                ],
+                all_importable_paths,
+            );
+        }
+
+        #[test]
+        fn overlapping_glob_of_enum_with_local_item() {
+            let test_crate = "overlapping_glob_of_enum_with_local_item";
+            let easy_expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "overlapping_glob_of_enum_with_local_item::Foo",
+                ],
+                "Second" => btreeset![
+                    "overlapping_glob_of_enum_with_local_item::Foo::Second",
+                    "overlapping_glob_of_enum_with_local_item::inner::Second",
+                ],
+            };
+
+            // Check the "easy" cases: `Foo` and `Second`.
+            // This is necessary but not sufficient to confirm our implementation works,
+            // since it doesn't check anything about `First` which is the point of this test case.
+            assert_exported_items_match(test_crate, &easy_expected_items);
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let items_named_first: Vec<_> = indexed_crate
+                .inner
+                .index
+                .values()
+                .filter(|item| item.name.as_deref() == Some("First"))
+                .collect();
+            assert_eq!(2, items_named_first.len(), "{items_named_first:?}");
+            let variant_item = items_named_first
+                .iter()
+                .copied()
+                .find(|item| matches!(item.inner, ItemEnum::Variant(..)))
+                .expect("no variant item found");
+            let struct_item = items_named_first
+                .iter()
+                .copied()
+                .find(|item| matches!(item.inner, ItemEnum::Struct(..)))
+                .expect("no struct item found");
+
+            assert_eq!(
+                vec![ImportablePath::new(
+                    vec!["overlapping_glob_of_enum_with_local_item", "Foo", "First"],
+                    false,
+                    false,
+                    false,
+                )],
+                indexed_crate.publicly_importable_names(&variant_item.id),
+            );
+            assert_eq!(
+                // The struct definition overrides the glob-imported variant here.
+                vec![ImportablePath::new(
+                    vec!["overlapping_glob_of_enum_with_local_item", "inner", "First"],
+                    false,
+                    false,
+                    false,
+                )],
+                indexed_crate.publicly_importable_names(&struct_item.id),
+            );
+        }
+
+        #[test]
+        fn glob_of_enum_does_not_shadow_local_fn() {
+            let test_crate = "glob_of_enum_does_not_shadow_local_fn";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let first_ids = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("First")).then_some(id))
+                .collect_vec();
+            if first_ids.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    First, but found these matching IDs: {first_ids:?}"
+                );
+            }
+
+            for item_id in first_ids {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|importable| importable.path.components.into_iter().join("::"))
+                    .collect();
+                let deduplicated_actual_items: BTreeSet<_> =
+                    actual_items.iter().map(|x| x.as_str()).collect();
+                assert_eq!(
+                    actual_items.len(),
+                    deduplicated_actual_items.len(),
+                    "duplicates found: {actual_items:?}"
+                );
+
+                let expected_items = match &rustdoc.index[item_id].inner {
+                    ItemEnum::Variant(..) => {
+                        vec!["glob_of_enum_does_not_shadow_local_fn::Foo::First"]
+                    }
+                    ItemEnum::Function(..) => {
+                        vec!["glob_of_enum_does_not_shadow_local_fn::inner::First"]
+                    }
+                    other => {
+                        unreachable!("item {item_id:?} had unexpected inner content: {other:?}")
+                    }
+                };
+
+                assert_eq!(expected_items, actual_items);
+            }
+        }
+
+        /// There's currently no way to detect private imports that shadow glob items.
+        /// Reported as: <https://github.com/rust-lang/rust/issues/111338>
+        #[test]
+        #[should_panic = "expected no importable item names but found \
+                         [\"overlapping_glob_and_private_import::inner::Foo\"]"]
+        fn overlapping_glob_and_private_import() {
+            let test_crate = "overlapping_glob_and_private_import";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|importable| importable.path.components.into_iter().join("::"))
+                    .collect();
+
+                assert!(
+                    actual_items.is_empty(),
+                    "expected no importable item names but found {actual_items:?}"
+                );
+            }
+        }
+
+        /// Our logic for determining whether a tuple struct's implicit constructor is exported
+        /// is too simplistic: it assumes "yes" if all fields are pub, and "no" otherwise.
+        /// This is why this test currently fails.
+        /// TODO: fix this once rustdoc includes shadowing information
+        ///       <https://github.com/rust-lang/rust/issues/111338>
+        ///
+        /// Its sibling test `visibility_modifier_avoids_shadowing` ensures that shadowing is
+        /// not inappropriately applied when the tuple constructors do *not* shadow each other.
+        #[test]
+        #[should_panic = "expected no importable item names but found \
+                         [\"visibility_modifier_causes_shadowing::Foo\"]"]
+        fn visibility_modifier_causes_shadowing() {
+            let test_crate = "visibility_modifier_causes_shadowing";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 3 {
+                panic!(
+                    "Expected to find exactly 3 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|importable| importable.path.components.into_iter().join("::"))
+                    .collect();
+
+                assert!(
+                    actual_items.is_empty(),
+                    "expected no importable item names but found {actual_items:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn visibility_modifier_avoids_shadowing() {
+            let test_crate = "visibility_modifier_avoids_shadowing";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Foo")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 3 {
+                panic!(
+                    "Expected to find exactly 3 items with name \
+                    Foo, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            for item_id in item_id_candidates {
+                let actual_items: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|importable| importable.path.components.into_iter().join("::"))
+                    .collect();
+
+                if rustdoc.index[item_id].visibility == Visibility::Public {
+                    assert_eq!(
+                        vec!["visibility_modifier_avoids_shadowing::Foo"],
+                        actual_items,
+                    );
+                } else {
+                    assert!(
+                        actual_items.is_empty(),
+                        "expected no importable item names but found {actual_items:?}"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn glob_vs_glob_shadowing() {
+            let test_crate = "glob_vs_glob_shadowing";
+
+            let expected_items = btreemap! {
+                "Foo" => (2, btreeset![]),
+                "Bar" => (1, btreeset![
+                    "glob_vs_glob_shadowing::Bar",
+                ]),
+                "Baz" => (1, btreeset![
+                    "glob_vs_glob_shadowing::Baz",
+                ]),
+            };
+
+            assert_duplicated_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_vs_glob_shadowing_downstream() {
+            let test_crate = "glob_vs_glob_shadowing_downstream";
+
+            let expected_items = btreemap! {
+                "Foo" => (3, btreeset![]),
+                "Bar" => (1, btreeset![
+                    "glob_vs_glob_shadowing_downstream::second::Bar",
+                ]),
+            };
+
+            assert_duplicated_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_vs_glob_no_shadowing_for_same_item() {
+            let test_crate = "glob_vs_glob_no_shadowing_for_same_item";
+
+            let expected_items = btreemap! {
+                "Foo" => btreeset![
+                    "glob_vs_glob_no_shadowing_for_same_item::Foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_vs_glob_no_shadowing_for_same_renamed_item() {
+            let test_crate = "glob_vs_glob_no_shadowing_for_same_renamed_item";
+
+            let expected_items = btreemap! {
+                "Bar" => btreeset![
+                    "glob_vs_glob_no_shadowing_for_same_renamed_item::Foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn glob_vs_glob_no_shadowing_for_same_multiply_renamed_item() {
+            let test_crate = "glob_vs_glob_no_shadowing_for_same_multiply_renamed_item";
+
+            let expected_items = btreemap! {
+                "Bar" => btreeset![
+                    "glob_vs_glob_no_shadowing_for_same_multiply_renamed_item::Foo",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn reexport_consts_and_statics() {
+            let test_crate = "reexport_consts_and_statics";
+            let expected_items = btreemap! {
+                "FIRST" => btreeset![
+                    "reexport_consts_and_statics::FIRST",
+                    "reexport_consts_and_statics::inner::FIRST",
+                ],
+                "SECOND" => btreeset![
+                    "reexport_consts_and_statics::SECOND",
+                    "reexport_consts_and_statics::inner::SECOND",
+                ],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn reexport_as_underscore() {
+            let test_crate = "reexport_as_underscore";
+            let expected_items = btreemap! {
+                "Struct" => btreeset![
+                    "reexport_as_underscore::Struct",
+                ],
+                "Trait" => btreeset![],
+                "hidden" => btreeset![],
+                "UnderscoreImported" => btreeset![],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn nested_reexport_as_underscore() {
+            let test_crate = "nested_reexport_as_underscore";
+            let expected_items = btreemap! {
+                "Trait" => btreeset![],  // no importable paths!
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+
+        #[test]
+        fn overlapping_reexport_as_underscore() {
+            let test_crate = "overlapping_reexport_as_underscore";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let item_id_candidates = rustdoc
+                .index
+                .iter()
+                .filter_map(|(id, item)| (item.name.as_deref() == Some("Example")).then_some(id))
+                .collect_vec();
+            if item_id_candidates.len() != 2 {
+                panic!(
+                    "Expected to find exactly 2 items with name \
+                    Example, but found these matching IDs: {item_id_candidates:?}"
+                );
+            }
+
+            for item_id in item_id_candidates {
+                let importable_paths: Vec<_> = indexed_crate
+                    .publicly_importable_names(item_id)
+                    .into_iter()
+                    .map(|importable| importable.path.components.into_iter().join("::"))
+                    .collect();
+
+                match &rustdoc.index[item_id].inner {
+                    ItemEnum::Struct(..) => {
+                        assert_eq!(
+                            vec!["overlapping_reexport_as_underscore::Example"],
+                            importable_paths,
+                        );
+                    }
+                    ItemEnum::Trait(..) => {
+                        assert!(
+                            importable_paths.is_empty(),
+                            "expected no importable item names but found {importable_paths:?}"
+                        );
+                    }
+                    _ => unreachable!(
+                        "unexpected item for ID {item_id:?}: {:?}",
+                        rustdoc.index[item_id]
+                    ),
+                }
+            }
+        }
+
+        #[test]
+        fn reexport_declarative_macro() {
+            let test_crate = "reexport_declarative_macro";
+            let expected_items = btreemap! {
+                "top_level_exported" => btreeset![
+                    "reexport_declarative_macro::top_level_exported",
+                ],
+                "private_mod_exported" => btreeset![
+                    "reexport_declarative_macro::private_mod_exported",
+                ],
+                "top_level_reexported" => btreeset![
+                    "reexport_declarative_macro::top_level_reexported",
+                    "reexport_declarative_macro::macros::top_level_reexported",
+                    "reexport_declarative_macro::reexports::top_level_reexported",
+                    "reexport_declarative_macro::glob_reexports::top_level_reexported",
+                ],
+                "private_mod_reexported" => btreeset![
+                    "reexport_declarative_macro::private_mod_reexported",
+                    "reexport_declarative_macro::macros::private_mod_reexported",
+                    "reexport_declarative_macro::reexports::private_mod_reexported",
+                    "reexport_declarative_macro::glob_reexports::private_mod_reexported",
+                ],
+                "top_level_not_exported" => btreeset![],
+                "private_mod_not_exported" => btreeset![],
+            };
+
+            assert_exported_items_match(test_crate, &expected_items);
+        }
+    }
+
+    mod index_tests {
+        use itertools::Itertools;
+
+        use crate::{IndexedCrate, indexed_crate::ImplEntry, test_util::load_pregenerated_rustdoc};
+
+        #[test]
+        fn defaulted_trait_items_overridden_in_impls_have_single_item_in_index() {
+            let test_crate = "defaulted_trait_items_overridden_in_impls";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let impl_owner = indexed_crate
+                .inner
+                .index
+                .values()
+                .filter(|item| item.name.as_deref() == Some("Example"))
+                .exactly_one()
+                .expect("failed to find exactly one Example item");
+            let trait_item = indexed_crate
+                .inner
+                .index
+                .values()
+                .filter(|item| item.name.as_deref() == Some("Trait"))
+                .exactly_one()
+                .expect("failed to find exactly one Trait item");
+            let trait_provided_items: Vec<_> = match &trait_item.inner {
+                rustdoc_types::ItemEnum::Trait(t) => t
+                    .items
+                    .iter()
+                    .map(|id| &indexed_crate.inner.index[id])
+                    .collect(),
+                _ => unreachable!(),
+            };
+            let trait_provided_method = trait_provided_items
+                .iter()
+                .copied()
+                .filter(|item| matches!(item.inner, rustdoc_types::ItemEnum::Function { .. }))
+                .exactly_one()
+                .expect("more than one provided method");
+
+            let impl_index = indexed_crate
+                .impl_method_index
+                .as_ref()
+                .expect("no impl index was built");
+            let method_entries = impl_index
+                .get(&ImplEntry::new(&impl_owner.id, "method"))
+                .expect("no method entries found");
+
+            // Associated const items aren't part of the `impl_index` at the moment, it's just methods.
+            let const_entries = impl_index.get(&ImplEntry::new(&impl_owner.id, "N"));
+            assert_eq!(const_entries, None, "{const_entries:#?}");
+
+            // There's exactly one provided method and it isn't the trait's default one.
+            assert_eq!(method_entries.len(), 1, "{method_entries:#?}");
+            assert_ne!(method_entries[0].1, trait_provided_method);
+        }
+    }
+}

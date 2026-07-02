@@ -1,0 +1,461 @@
+use std::sync::{Arc, LazyLock};
+
+use rustdoc_types::Item;
+use trustfall::{
+    FieldValue, Schema,
+    provider::{
+        Adapter, AsVertex, ContextIterator, ContextOutcomeIterator, EdgeParameters,
+        ResolveEdgeInfo, ResolveInfo, Typename, VertexIterator, resolve_coercion_with,
+    },
+};
+
+use crate::PackageIndex;
+
+use self::{
+    origin::Origin,
+    vertex::{Vertex, VertexKind},
+};
+
+mod edges;
+mod enum_variant;
+mod normalize;
+mod optimizations;
+mod origin;
+mod properties;
+mod receiver;
+mod rust_type_name;
+pub mod tracer;
+mod vertex;
+
+#[cfg(test)]
+mod tests;
+
+static SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
+    Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema not valid")
+});
+
+#[non_exhaustive]
+pub struct RustdocAdapter<'a> {
+    current_crate: &'a PackageIndex<'a>,
+    previous_crate: Option<&'a PackageIndex<'a>>,
+}
+
+impl<'a> RustdocAdapter<'a> {
+    pub fn new(
+        current_crate: &'a PackageIndex<'a>,
+        previous_crate: Option<&'a PackageIndex<'a>>,
+    ) -> Self {
+        Self {
+            current_crate,
+            previous_crate,
+        }
+    }
+
+    pub fn schema() -> &'static Schema {
+        &SCHEMA
+    }
+
+    /// Returns the crate at the given origin.
+    ///
+    /// Panics if `Origin::PreviousCrate` is passed and there is no previous crate.
+    #[inline]
+    pub(crate) fn crate_at_origin(&self, origin: Origin) -> &'a PackageIndex<'a> {
+        match origin {
+            Origin::CurrentCrate => self.current_crate,
+            Origin::PreviousCrate => self
+                .previous_crate
+                .expect("previous crate was not provided"),
+        }
+    }
+}
+
+impl Drop for RustdocAdapter<'_> {
+    fn drop(&mut self) {}
+}
+
+impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
+    type Vertex = Vertex<'a>;
+
+    fn resolve_starting_vertices(
+        &self,
+        edge_name: &Arc<str>,
+        _parameters: &EdgeParameters,
+        _resolve_info: &ResolveInfo,
+    ) -> VertexIterator<'a, Self::Vertex> {
+        match edge_name.as_ref() {
+            "Crate" => Box::new(std::iter::once(Vertex::new_crate(
+                Origin::CurrentCrate,
+                self.current_crate,
+            ))),
+            "CrateDiff" => {
+                let previous_crate = self.previous_crate.expect("no previous crate provided");
+                Box::new(std::iter::once(Vertex {
+                    origin: Origin::CurrentCrate,
+                    kind: VertexKind::CrateDiff((self.current_crate, previous_crate)),
+                }))
+            }
+            _ => unreachable!("resolve_starting_vertices {edge_name}"),
+        }
+    }
+
+    fn resolve_property<V: AsVertex<Self::Vertex> + 'a>(
+        &self,
+        contexts: ContextIterator<'a, V>,
+        type_name: &Arc<str>,
+        property_name: &Arc<str>,
+        _resolve_info: &ResolveInfo,
+    ) -> ContextOutcomeIterator<'a, V, FieldValue> {
+        if property_name.as_ref() == "__typename" {
+            Box::new(contexts.map(|ctx| match ctx.active_vertex() {
+                Some(vertex) => {
+                    let value = vertex.typename().into();
+                    (ctx, value)
+                }
+                None => (ctx, FieldValue::Null),
+            }))
+        } else {
+            match type_name.as_ref() {
+                "Crate" => properties::resolve_crate_property(contexts, property_name),
+                "Item" | "Importable" | "GenericItem" => {
+                    properties::resolve_item_property(contexts, property_name, self)
+                }
+                "ImplOwner"
+                | "Struct"
+                | "StructField"
+                | "Enum"
+                | "Variant"
+                | "PlainVariant"
+                | "TupleVariant"
+                | "StructVariant"
+                | "Union"
+                | "Trait"
+                | "ExportableFunction"
+                | "Function"
+                | "Method"
+                | "Impl"
+                | "GlobalValue"
+                | "Constant"
+                | "Static"
+                | "AssociatedType"
+                | "AssociatedConstant"
+                | "Module"
+                | "Macro"
+                | "ProcMacro"
+                | "FunctionLikeProcMacro"
+                | "AttributeProcMacro"
+                | "DeriveProcMacro"
+                    if matches!(
+                        property_name.as_ref(),
+                        "id" | "crate_id"
+                            | "name"
+                            | "docs"
+                            | "attrs"
+                            | "doc_hidden"
+                            | "deprecated"
+                            | "public_api_eligible"
+                            | "visibility_limit"
+                    ) =>
+                {
+                    // properties inherited from Item, accesssed on Item subtypes
+                    properties::resolve_item_property(contexts, property_name, self)
+                }
+                "Module" => properties::resolve_module_property(contexts, property_name),
+                "Struct" => properties::resolve_struct_property(contexts, property_name),
+                "StructField" => properties::resolve_struct_field_property(contexts, property_name),
+                "Enum" => properties::resolve_enum_property(contexts, property_name),
+                "Variant" | "PlainVariant" | "TupleVariant" | "StructVariant" => {
+                    properties::resolve_enum_variant_property(contexts, property_name)
+                }
+                "Union" => properties::resolve_union_property(contexts, property_name),
+                "Span" => properties::resolve_span_property(contexts, property_name),
+                "Path" => properties::resolve_path_property(contexts, property_name),
+                "ImportablePath" => {
+                    properties::resolve_importable_path_property(contexts, property_name)
+                }
+                "FunctionLike" | "ExportableFunction" | "Function" | "Method"
+                    if matches!(
+                        property_name.as_ref(),
+                        "const" | "unsafe" | "async" | "has_body" | "signature"
+                    ) =>
+                {
+                    properties::resolve_function_like_property(contexts, property_name, self)
+                }
+                "ExportableFunction" | "Function" | "Method"
+                    if matches!(property_name.as_ref(), "export_name") =>
+                {
+                    properties::resolve_exportable_function_property(contexts, property_name)
+                }
+                "Function" => properties::resolve_function_property(contexts, property_name),
+                "FunctionParameter" => {
+                    properties::resolve_function_parameter_property(contexts, property_name)
+                }
+                "ReturnValue" => properties::resolve_return_value_property(contexts, property_name),
+                "NormalizedTypeSignature" => {
+                    properties::resolve_normalized_type_signature_property(
+                        contexts,
+                        property_name,
+                        self,
+                    )
+                }
+                "FunctionAbi" => properties::resolve_function_abi_property(contexts, property_name),
+                "Impl" => properties::resolve_impl_property(contexts, property_name),
+                "Attribute" => properties::resolve_attribute_property(contexts, property_name),
+                "AttributeMetaItem" => {
+                    properties::resolve_attribute_meta_item_property(contexts, property_name)
+                }
+                "Trait" => properties::resolve_trait_property(contexts, property_name, self),
+                "ImplementedTrait" => {
+                    properties::resolve_implemented_trait_property(contexts, property_name, self)
+                }
+                "Static" => properties::resolve_static_property(contexts, property_name),
+                "RawType" | "ResolvedPathType" if matches!(property_name.as_ref(), "name") => {
+                    // fields from "RawType"
+                    properties::resolve_raw_type_property(contexts, property_name)
+                }
+                "AssociatedType" => {
+                    properties::resolve_associated_type_property(contexts, property_name)
+                }
+                "AssociatedConstant" => {
+                    properties::resolve_associated_constant_property(contexts, property_name)
+                }
+                "Constant" => properties::resolve_constant_property(contexts, property_name),
+                "Discriminant" => {
+                    properties::resolve_discriminant_property(contexts, property_name)
+                }
+                "Feature" => properties::resolve_feature_property(contexts, property_name),
+                "DeriveMacroHelperAttribute" => {
+                    properties::resolve_derive_macro_helper_attribute_property(
+                        contexts,
+                        property_name,
+                    )
+                }
+                "GenericParameter"
+                | "GenericTypeParameter"
+                | "GenericLifetimeParameter"
+                | "GenericConstParameter"
+                    if matches!(property_name.as_ref(), "name" | "position") =>
+                {
+                    properties::resolve_generic_parameter_property(contexts, property_name)
+                }
+                "GenericTypeParameter" => properties::resolve_generic_type_parameter_property(
+                    contexts,
+                    property_name,
+                    self,
+                ),
+                "GenericConstParameter" => {
+                    properties::resolve_generic_const_parameter_property(contexts, property_name)
+                }
+                "Receiver" => properties::resolve_receiver_property(contexts, property_name),
+                "RequiredTargetFeature" => {
+                    properties::resolve_required_target_feature_property(contexts, property_name)
+                }
+                _ => unreachable!("resolve_property {type_name} {property_name}"),
+            }
+        }
+    }
+
+    fn resolve_neighbors<V: AsVertex<Self::Vertex> + 'a>(
+        &self,
+        contexts: ContextIterator<'a, V>,
+        type_name: &Arc<str>,
+        edge_name: &Arc<str>,
+        parameters: &EdgeParameters,
+        resolve_info: &ResolveEdgeInfo,
+    ) -> ContextOutcomeIterator<'a, V, VertexIterator<'a, Self::Vertex>> {
+        match type_name.as_ref() {
+            "CrateDiff" => edges::resolve_crate_diff_edge(contexts, edge_name),
+            "Crate" => edges::resolve_crate_edge(self, contexts, edge_name, resolve_info),
+            "Importable"
+            | "ImplOwner"
+            | "Struct"
+            | "Enum"
+            | "Variant"
+            | "PlainVariant"
+            | "TupleVariant"
+            | "StructVariant"
+            | "Union"
+            | "Trait"
+            | "Function"
+            | "GlobalValue"
+            | "Constant"
+            | "Static"
+            | "Module"
+            | "Macro"
+            | "ProcMacro"
+            | "FunctionLikeProcMacro"
+            | "AttributeProcMacro"
+            | "DeriveProcMacro"
+                if matches!(edge_name.as_ref(), "importable_path" | "canonical_path") =>
+            {
+                edges::resolve_importable_edge(contexts, edge_name, self)
+            }
+            "Item"
+            | "Importable"
+            | "GenericItem"
+            | "ImplOwner"
+            | "Struct"
+            | "StructField"
+            | "Enum"
+            | "Variant"
+            | "PlainVariant"
+            | "TupleVariant"
+            | "Union"
+            | "StructVariant"
+            | "Trait"
+            | "ExportableFunction"
+            | "Function"
+            | "Method"
+            | "Impl"
+            | "GlobalValue"
+            | "Constant"
+            | "Static"
+            | "AssociatedType"
+            | "AssociatedConstant"
+            | "Module"
+            | "Macro"
+            | "ProcMacro"
+            | "FunctionLikeProcMacro"
+            | "AttributeProcMacro"
+            | "DeriveProcMacro"
+                if matches!(edge_name.as_ref(), "span" | "attribute") =>
+            {
+                edges::resolve_item_edge(contexts, edge_name)
+            }
+            "ImplOwner" | "Struct" | "Enum" | "Union"
+                if matches!(edge_name.as_ref(), "impl" | "inherent_impl") =>
+            {
+                edges::resolve_impl_owner_edge(self, contexts, edge_name, resolve_info)
+            }
+            "Function" | "Method" | "FunctionLike" | "ExportableFunction"
+                if matches!(edge_name.as_ref(), "parameter" | "abi" | "return_value") =>
+            {
+                edges::resolve_function_like_edge(contexts, edge_name)
+            }
+            "FunctionParameter" | "ReturnValue"
+                if matches!(edge_name.as_ref(), "normalized_type_signature") =>
+            {
+                edges::resolve_normalized_type_signature_edge(contexts, edge_name)
+            }
+            "GenericItem" | "ImplOwner" | "Struct" | "Enum" | "Union" | "Trait" | "Function"
+            | "Method" | "Impl"
+                if matches!(edge_name.as_ref(), "generic_parameter") =>
+            {
+                edges::resolve_generic_parameter_edge(contexts, edge_name)
+            }
+            "Method" if matches!(edge_name.as_ref(), "receiver") => {
+                edges::resolve_receiver_edge(contexts, edge_name)
+            }
+            "Function" | "Method" if matches!(edge_name.as_ref(), "requires_feature") => {
+                edges::resolve_requires_target_feature_edge(contexts, self)
+            }
+            "Module" => edges::resolve_module_edge(contexts, edge_name, self),
+            "Struct" => edges::resolve_struct_edge(contexts, edge_name, self),
+            "Variant" | "PlainVariant" | "TupleVariant" | "StructVariant" => {
+                edges::resolve_variant_edge(contexts, edge_name, self)
+            }
+            "Enum" => edges::resolve_enum_edge(contexts, edge_name, self, resolve_info),
+            "Union" => edges::resolve_union_edge(contexts, edge_name, self),
+            "StructField" => edges::resolve_struct_field_edge(contexts, edge_name),
+            "Impl" => edges::resolve_impl_edge(self, contexts, edge_name, resolve_info),
+            "Trait" => edges::resolve_trait_edge(contexts, edge_name, self),
+            "ImplementedTrait" => edges::resolve_implemented_trait_edge(contexts, edge_name),
+            "Attribute" => edges::resolve_attribute_edge(contexts, edge_name),
+            "AttributeMetaItem" => edges::resolve_attribute_meta_item_edge(contexts, edge_name),
+            "Feature" => edges::resolve_feature_edge(contexts, edge_name, self),
+            "DeriveProcMacro" => edges::resolve_derive_proc_macro_edge(contexts, edge_name),
+            "GenericTypeParameter" => {
+                edges::resolve_generic_type_parameter_edge(contexts, edge_name, self)
+            }
+            _ => unreachable!("resolve_neighbors {type_name} {edge_name} {parameters:?}"),
+        }
+    }
+
+    fn resolve_coercion<V: AsVertex<Self::Vertex> + 'a>(
+        &self,
+        contexts: ContextIterator<'a, V>,
+        type_name: &Arc<str>,
+        coerce_to_type: &Arc<str>,
+        _resolve_info: &ResolveInfo,
+    ) -> ContextOutcomeIterator<'a, V, bool> {
+        let coerce_to_type = coerce_to_type.clone();
+        match type_name.as_ref() {
+            "Item" | "GenericItem" | "Variant" | "FunctionLike" | "ExportableFunction"
+            | "Importable" | "ImplOwner" | "RawType" | "GlobalValue" | "ProcMacro" => {
+                resolve_coercion_with(contexts, move |vertex| {
+                    let actual_type_name = vertex.typename();
+
+                    match coerce_to_type.as_ref() {
+                        "Importable" => matches!(
+                            actual_type_name,
+                            "Struct"
+                                | "Enum"
+                                | "PlainVariant"
+                                | "TupleVariant"
+                                | "StructVariant"
+                                | "Union"
+                                | "Trait"
+                                | "Module"
+                                | "Function"
+                                | "Static"
+                                | "Constant"
+                                | "Macro"
+                                | "FunctionLikeProcMacro"
+                                | "AttributeProcMacro"
+                                | "DeriveProcMacro"
+                        ),
+                        "GenericItem" => matches!(
+                            actual_type_name,
+                            "Struct" | "Enum" | "Union" | "Trait" | "Function" | "Method"
+                        ),
+                        "Variant" => matches!(
+                            actual_type_name,
+                            "PlainVariant" | "TupleVariant" | "StructVariant"
+                        ),
+                        "ImplOwner" => matches!(actual_type_name, "Struct" | "Enum" | "Union"),
+                        "GlobalValue" => matches!(actual_type_name, "Constant" | "Static",),
+                        "ProcMacro" => matches!(
+                            actual_type_name,
+                            "FunctionLikeProcMacro" | "AttributeProcMacro" | "DeriveProcMacro"
+                        ),
+                        "ExportableFunction" => matches!(actual_type_name, "Function" | "Method"),
+                        _ => {
+                            // The remaining types are final (don't have any subtypes)
+                            // so we can just compare the actual type name to
+                            // the type we are attempting to coerce to.
+                            actual_type_name == coerce_to_type.as_ref()
+                        }
+                    }
+                })
+            }
+            "GenericParameter" => resolve_coercion_with(contexts, move |vertex| {
+                let actual_type_name = vertex.typename();
+
+                // The possible types are final (don't have any subtypes)
+                // so we can just compare the actual type name to
+                // the type we are attempting to coerce to.
+                actual_type_name == coerce_to_type.as_ref()
+            }),
+            _ => unreachable!("resolve_coercion {type_name} {coerce_to_type}"),
+        }
+    }
+}
+
+pub(crate) fn supported_item_kind(item: &Item) -> bool {
+    matches!(
+        item.inner,
+        rustdoc_types::ItemEnum::Struct(..)
+            | rustdoc_types::ItemEnum::StructField(..)
+            | rustdoc_types::ItemEnum::Enum(..)
+            | rustdoc_types::ItemEnum::Variant(..)
+            | rustdoc_types::ItemEnum::Union(..)
+            | rustdoc_types::ItemEnum::Function(..)
+            | rustdoc_types::ItemEnum::Impl(..)
+            | rustdoc_types::ItemEnum::Trait(..)
+            | rustdoc_types::ItemEnum::Constant { .. }
+            | rustdoc_types::ItemEnum::Static(..)
+            | rustdoc_types::ItemEnum::AssocType { .. }
+            | rustdoc_types::ItemEnum::Module { .. }
+            | rustdoc_types::ItemEnum::Macro { .. }
+            | rustdoc_types::ItemEnum::ProcMacro { .. }
+    )
+}

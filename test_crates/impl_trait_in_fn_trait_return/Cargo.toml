@@ -1,0 +1,7 @@
+[package]
+name = "impl_trait_in_fn_trait_return"
+publish = false
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]

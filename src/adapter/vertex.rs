@@ -1,0 +1,550 @@
+use std::{borrow::Cow, num::NonZeroUsize, rc::Rc};
+
+use rustdoc_types::{
+    Abi, Constant, Crate, Enum, Function, GenericBound, GenericParamDef, Impl, Item, Module, Path,
+    Span, Static, Struct, Trait, Type, Union, VariantKind,
+};
+use trustfall::provider::Typename;
+
+use crate::{
+    ImportablePath, IndexedCrate, PackageIndex,
+    attributes::{Attribute, AttributeMetaItem},
+};
+
+use super::{enum_variant::EnumVariant, origin::Origin, receiver::Receiver};
+
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub struct Vertex<'a> {
+    pub(super) origin: Origin,
+    pub(super) kind: VertexKind<'a>,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub enum VertexKind<'a> {
+    #[non_exhaustive]
+    CrateDiff((&'a PackageIndex<'a>, &'a PackageIndex<'a>)),
+
+    #[non_exhaustive]
+    Crate(&'a PackageIndex<'a>),
+
+    #[non_exhaustive]
+    Item(&'a Item),
+
+    #[non_exhaustive]
+    Method(Method<'a>),
+
+    #[non_exhaustive]
+    Span(&'a Span),
+
+    #[non_exhaustive]
+    Path(&'a [String]),
+
+    #[non_exhaustive]
+    ImportablePath(Rc<ImportablePath<'a>>),
+
+    #[non_exhaustive]
+    RawType(&'a Type),
+
+    #[non_exhaustive]
+    Attribute(Attribute<'a>),
+
+    #[non_exhaustive]
+    AttributeMetaItem(AttributeMetaItem<'a>),
+
+    #[non_exhaustive]
+    ImplementedTrait(ImplementedTrait<'a>),
+
+    #[non_exhaustive]
+    FunctionParameter(FunctionParameter<'a>),
+
+    #[non_exhaustive]
+    FunctionAbi(&'a Abi),
+
+    #[non_exhaustive]
+    Receiver(Receiver<'a>),
+
+    #[non_exhaustive]
+    Discriminant(Cow<'a, str>),
+
+    #[non_exhaustive]
+    Variant(EnumVariant<'a>),
+
+    #[non_exhaustive]
+    DeriveHelperAttr(&'a str),
+
+    #[non_exhaustive]
+    GenericParameter(
+        &'a rustdoc_types::Generics,
+        &'a GenericParamDef,
+        Option<NonZeroUsize>,
+    ),
+
+    #[non_exhaustive]
+    Feature(Feature<'a>),
+
+    #[non_exhaustive]
+    PositionedItem(usize, &'a Item),
+
+    #[non_exhaustive]
+    RequiredTargetFeature(TargetFeature<'a>),
+
+    #[non_exhaustive]
+    ReturnValue(ReturnValue<'a>),
+
+    #[non_exhaustive]
+    NormalizedTypeSignature(NormalizedTypeSignature<'a>),
+}
+
+impl Typename for Vertex<'_> {
+    /// The name of the actual runtime type of this vertex,
+    /// intended to fulfill resolution requests for the __typename property.
+    #[inline]
+    fn typename(&self) -> &'static str {
+        match self.kind {
+            VertexKind::Item(item) | VertexKind::PositionedItem(_, item) => match &item.inner {
+                rustdoc_types::ItemEnum::Module { .. } => "Module",
+                rustdoc_types::ItemEnum::Struct(..) => "Struct",
+                rustdoc_types::ItemEnum::Enum(..) => "Enum",
+                rustdoc_types::ItemEnum::Union(..) => "Union",
+                rustdoc_types::ItemEnum::Function(..) => "Function",
+                rustdoc_types::ItemEnum::Variant(variant) => match variant.kind {
+                    VariantKind::Plain => "PlainVariant",
+                    VariantKind::Tuple(..) => "TupleVariant",
+                    VariantKind::Struct { .. } => "StructVariant",
+                },
+                rustdoc_types::ItemEnum::StructField(..) => "StructField",
+                rustdoc_types::ItemEnum::Impl(..) => "Impl",
+                rustdoc_types::ItemEnum::Trait(..) => "Trait",
+                rustdoc_types::ItemEnum::Constant { .. } => "Constant",
+                rustdoc_types::ItemEnum::Static(..) => "Static",
+                rustdoc_types::ItemEnum::AssocType { .. } => "AssociatedType",
+                rustdoc_types::ItemEnum::Macro { .. } => "Macro",
+                rustdoc_types::ItemEnum::ProcMacro(proc) => match proc.kind {
+                    rustdoc_types::MacroKind::Bang => "FunctionLikeProcMacro",
+                    rustdoc_types::MacroKind::Attr => "AttributeProcMacro",
+                    rustdoc_types::MacroKind::Derive => "DeriveProcMacro",
+                },
+                _ => unreachable!("unexpected item.inner for item: {item:?}"),
+            },
+            VertexKind::Span(..) => "Span",
+            VertexKind::Path(..) => "Path",
+            VertexKind::ImportablePath(..) => "ImportablePath",
+            VertexKind::Crate(..) => "Crate",
+            VertexKind::CrateDiff(..) => "CrateDiff",
+            VertexKind::Attribute(..) => "Attribute",
+            VertexKind::AttributeMetaItem(..) => "AttributeMetaItem",
+            VertexKind::ImplementedTrait(..) => "ImplementedTrait",
+            VertexKind::Method(..) => "Method",
+            VertexKind::RawType(ty) => match ty {
+                rustdoc_types::Type::ResolvedPath { .. } => "ResolvedPathType",
+                _ => "RawType",
+            },
+            VertexKind::FunctionParameter(..) => "FunctionParameter",
+            VertexKind::ReturnValue(..) => "ReturnValue",
+            VertexKind::Receiver(..) => "Receiver",
+            VertexKind::FunctionAbi(..) => "FunctionAbi",
+            VertexKind::Discriminant(..) => "Discriminant",
+            VertexKind::Variant(ref ev) => match ev.variant().kind {
+                VariantKind::Plain => "PlainVariant",
+                VariantKind::Tuple(..) => "TupleVariant",
+                VariantKind::Struct { .. } => "StructVariant",
+            },
+            VertexKind::DeriveHelperAttr(..) => "DeriveMacroHelperAttribute",
+            VertexKind::GenericParameter(_, param, _) => match &param.kind {
+                rustdoc_types::GenericParamDefKind::Lifetime { .. } => "GenericLifetimeParameter",
+                rustdoc_types::GenericParamDefKind::Type { .. } => "GenericTypeParameter",
+                rustdoc_types::GenericParamDefKind::Const { .. } => "GenericConstParameter",
+            },
+            VertexKind::Feature(..) => "Feature",
+            VertexKind::RequiredTargetFeature(..) => "RequiredTargetFeature",
+            VertexKind::NormalizedTypeSignature(..) => "NormalizedTypeSignature",
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> Vertex<'a> {
+    pub(super) fn new_crate(origin: Origin, crate_: &'a PackageIndex<'a>) -> Self {
+        Self {
+            origin,
+            kind: VertexKind::Crate(crate_),
+        }
+    }
+
+    pub(super) fn as_crate_diff(&self) -> Option<(&'a PackageIndex<'a>, &'a PackageIndex<'a>)> {
+        match &self.kind {
+            VertexKind::CrateDiff(tuple) => Some(*tuple),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_indexed_crate(&self) -> Option<&'a IndexedCrate<'a>> {
+        match self.kind {
+            VertexKind::Crate(c) => Some(&c.own_crate),
+            _ => None,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn as_crate_handler(&self) -> Option<&'a PackageIndex<'a>> {
+        match self.kind {
+            VertexKind::Crate(h) => Some(h),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_crate(&self) -> Option<&'a Crate> {
+        self.as_indexed_crate().map(|c| c.inner)
+    }
+
+    pub(super) fn as_item(&self) -> Option<&'a Item> {
+        match &self.kind {
+            VertexKind::Item(item) => Some(item),
+            VertexKind::Method(method) => Some(method.function),
+            VertexKind::Variant(variant) => Some(variant.item()),
+            VertexKind::PositionedItem(_, item) => Some(item),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_positioned_item(&self) -> Option<(usize, &'a Item)> {
+        match &self.kind {
+            VertexKind::PositionedItem(index, item) => Some((*index, item)),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_module(&self) -> Option<&'a Module> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::Module(m) => Some(m),
+            _ => None,
+        })
+    }
+
+    pub(super) fn as_struct(&self) -> Option<&'a Struct> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::Struct(s) => Some(s),
+            _ => None,
+        })
+    }
+
+    pub(super) fn as_struct_field(&self) -> Option<&'a Type> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::StructField(s) => Some(s),
+            _ => None,
+        })
+    }
+
+    pub(super) fn as_span(&self) -> Option<&'a Span> {
+        match self.kind {
+            VertexKind::Span(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_enum(&self) -> Option<&'a Enum> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::Enum(e) => Some(e),
+            _ => None,
+        })
+    }
+
+    pub(super) fn as_union(&self) -> Option<&'a Union> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::Union(u) => Some(u),
+            _ => None,
+        })
+    }
+
+    pub(super) fn as_trait(&self) -> Option<&'a Trait> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::Trait(t) => Some(t),
+            _ => None,
+        })
+    }
+
+    pub(super) fn as_variant(&self) -> Option<&'_ EnumVariant<'a>> {
+        match &self.kind {
+            VertexKind::Variant(variant) => Some(variant),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_path(&self) -> Option<&'a [String]> {
+        match &self.kind {
+            VertexKind::Path(path) => Some(*path),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_importable_path(&self) -> Option<&'_ ImportablePath<'a>> {
+        match &self.kind {
+            VertexKind::ImportablePath(path) => Some(path),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_function(&self) -> Option<&'a Function> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::Function(func) => Some(func),
+            _ => None,
+        })
+    }
+
+    pub(super) fn as_function_parameter(&self) -> Option<&FunctionParameter<'a>> {
+        match &self.kind {
+            VertexKind::FunctionParameter(parameter) => Some(parameter),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_return_value(&self) -> Option<&ReturnValue<'a>> {
+        match &self.kind {
+            VertexKind::ReturnValue(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_normalized_type_signature(&self) -> Option<&NormalizedTypeSignature<'a>> {
+        match &self.kind {
+            VertexKind::NormalizedTypeSignature(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_function_abi(&self) -> Option<&'a Abi> {
+        match self.kind {
+            VertexKind::FunctionAbi(abi) => Some(abi),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_impl(&self) -> Option<&'a Impl> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::Impl(x) => Some(x),
+            _ => None,
+        })
+    }
+
+    pub(super) fn as_constant(&self) -> Option<&'a Constant> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::Constant { const_, .. } => Some(const_),
+            _ => None,
+        })
+    }
+
+    pub(super) fn as_static(&self) -> Option<&'a Static> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::Static(c) => Some(c),
+            _ => None,
+        })
+    }
+
+    pub(super) fn as_proc_macro(&self) -> Option<&'a rustdoc_types::ProcMacro> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::ProcMacro(m) => Some(m),
+            _ => None,
+        })
+    }
+
+    pub(super) fn as_attribute(&self) -> Option<&'_ Attribute<'a>> {
+        match &self.kind {
+            VertexKind::Attribute(attr) => Some(attr),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_attribute_meta_item(&self) -> Option<&'_ AttributeMetaItem<'a>> {
+        match &self.kind {
+            VertexKind::AttributeMetaItem(meta_item) => Some(meta_item),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_raw_type(&self) -> Option<&'a rustdoc_types::Type> {
+        match &self.kind {
+            VertexKind::RawType(ty) => Some(*ty),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_implemented_trait(&self) -> Option<&ImplementedTrait<'a>> {
+        match &self.kind {
+            VertexKind::ImplementedTrait(impld) => Some(impld),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_discriminant(&self) -> Option<&Cow<'a, str>> {
+        match &self.kind {
+            VertexKind::Discriminant(variant) => Some(variant),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_feature(&self) -> Option<&Feature<'a>> {
+        match &self.kind {
+            VertexKind::Feature(f) => Some(f),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_derive_helper_attr(&self) -> Option<&'a str> {
+        match &self.kind {
+            VertexKind::DeriveHelperAttr(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_generic_parameter(
+        &self,
+    ) -> Option<(&'a rustdoc_types::Generics, &'a GenericParamDef)> {
+        match &self.kind {
+            VertexKind::GenericParameter(generics, param, _) => Some((generics, param)),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_generic_parameter_position(&self) -> Option<Option<NonZeroUsize>> {
+        match &self.kind {
+            VertexKind::GenericParameter(_, _, position) => Some(*position),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_generics(&self) -> Option<&'a rustdoc_types::Generics> {
+        self.as_item().and_then(|item| match &item.inner {
+            rustdoc_types::ItemEnum::Struct(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Enum(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Function(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Trait(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Union(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::Impl(x) => Some(&x.generics),
+            _ => None,
+        })
+    }
+
+    pub(super) fn as_receiver(&self) -> Option<&Receiver<'a>> {
+        match &self.kind {
+            VertexKind::Receiver(receiver) => Some(receiver),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_required_target_feature(&self) -> Option<&TargetFeature<'a>> {
+        match &self.kind {
+            VertexKind::RequiredTargetFeature(feature) => Some(feature),
+            _ => None,
+        }
+    }
+}
+
+impl<'a> From<&'a Item> for VertexKind<'a> {
+    fn from(item: &'a Item) -> Self {
+        Self::Item(item)
+    }
+}
+
+impl<'a> From<&'a PackageIndex<'a>> for VertexKind<'a> {
+    fn from(c: &'a PackageIndex<'a>) -> Self {
+        Self::Crate(c)
+    }
+}
+
+impl<'a> From<&'a Span> for VertexKind<'a> {
+    fn from(s: &'a Span) -> Self {
+        Self::Span(s)
+    }
+}
+
+impl<'a> From<&'a Abi> for VertexKind<'a> {
+    fn from(a: &'a Abi) -> Self {
+        Self::FunctionAbi(a)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Feature<'a> {
+    pub(super) inner: &'a cargo_toml::features::Feature<'a>,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub struct ImplementedTrait<'a> {
+    /// The rustdoc `Path` item that contains the
+    pub(crate) path: &'a Path,
+
+    /// Keep higher-rank trait bound (HRTBs) information, if any.
+    pub(crate) bound: Option<&'a GenericBound>,
+
+    /// `None` if not in our crate
+    pub(crate) resolved_item: Option<&'a Item>,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub struct TargetFeature<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) feature_data: Option<&'a rustdoc_types::TargetFeature>,
+    pub(crate) explicit: bool,
+}
+
+impl TargetFeature<'_> {
+    #[inline]
+    pub(crate) fn valid_for_current_target(&self) -> bool {
+        self.feature_data.is_some()
+    }
+
+    #[inline]
+    pub(crate) fn globally_enabled(&self) -> bool {
+        self.feature_data
+            .map(|feat| feat.globally_enabled)
+            .unwrap_or(false)
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Method<'a> {
+    pub(crate) function: &'a Item,
+    pub(crate) parent: &'a Item,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FunctionContext<'a> {
+    pub(crate) function: &'a Item,
+    pub(crate) parent: Option<&'a Item>,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub(crate) struct FunctionParameter<'a> {
+    pub(crate) context: FunctionContext<'a>,
+    pub(crate) position: NonZeroUsize,
+    pub(crate) name: &'a str,
+    pub(crate) type_: &'a rustdoc_types::Type,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub struct ReturnValue<'a> {
+    pub(crate) context: FunctionContext<'a>,
+    pub(crate) type_: Option<&'a rustdoc_types::Type>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum TypeSignatureComponent {
+    FunctionParameter(NonZeroUsize),
+    ReturnValue,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub(crate) struct NormalizedTypeSignature<'a> {
+    pub(crate) context: FunctionContext<'a>,
+    pub(crate) component: TypeSignatureComponent,
+    pub(crate) type_: Option<&'a rustdoc_types::Type>,
+}

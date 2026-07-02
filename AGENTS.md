@@ -1,0 +1,84 @@
+# trustfall-rustdoc-adapter
+
+This project allows querying Rust programming language package APIs, ABIs, and manifest information
+for purposes like semantic version checking via `cargo-semver-checks`. It's designed as an adapter
+into the Trustfall query language, which is syntactically similar to GraphQL.
+
+The schema is located in `src/rustdoc_schema.graphql`. The implementation of that schema is found
+in `src/adapter/`. Surrounding files in `src` perform various static analyses whose data is exposed
+in the schema, such as tracking item visibility and name resolution in `src/visibility_tracker.rs`,
+or determining whether traits are sealed in `src/sealed_trait.rs`.
+
+All new schema additions must be tested by adding a new test crate (or when appropriate, editing an
+existing one that is thematically related) in `test_crate` to expose the Rust construct being added
+to the schema, then adding tests to `src/adapter/tests.rs` that make use of the new schema in
+querying the test crate and assert that the returned results are correct.
+Never construct `rustdoc_types` values by hand in tests; use a test crate to make rustdoc produce
+the construct instead. Prefer to test them by querying that crate through Trustfall whenever
+possible and pragmatic, rather than manipulating `rustdoc_types` values directly.
+
+## Basics
+
+Start sessions by reading the `CONTRIBUTING.md` file. The first time you read, write,
+or edit a file in a directory, read the `README.md` file in that directory first, if one exists.
+When editing files in a subdirectory, also check for and follow any `AGENTS.md` files along the
+path from the repository root to that subdirectory.
+
+Never under any circumstances propose or apply any change to the `package.version` field
+of the top-level `Cargo.toml` file. Never under any cicrcumstances change anything inside
+the `.github/` directory, or inside the `funding.json`, `CODEOWNERS`, or any license files.
+
+Read the values of the `Cargo.toml`'s `package.rust-version` and `package.edition` keys,
+then always adjust your Rust code to take advantage of the latest functionality supported
+by that version and edition. Ensure you do not use functionality that is not compatible with
+that version or edition. Do not change the values of these keys unless explicitly requested.
+
+Whenever possible, limit the scope of changes to what was explicitly requested. Only exceed
+the explicit request if that's required to fix a broken test or lint, or to make a similar small,
+tightly-scoped change that is reasonable to expect in the circumstances.
+If you exceed the explicit request, you must always describe how and why you did so
+when summarizing the changes.
+
+Always implement everything that was requested, or explicitly explain why that was not possible or
+reasonable to accomplish. If you are asked to not implement something, leave a TODO comment
+or a `todo!()` Rust expression with an appropriate message.
+
+Always fix problematic tests by fixing the underlying problem, and never do so by deleting the test
+or stubbing out or mocking out the functionality so as to make the test suite pass. In general,
+avoid mocking as much as possible, preferring to design APIs that can easily and reliably tested
+without mocks or complex test harnesses.
+
+Prefer Rust unit tests over integration tests whenever either option is viable.
+Always consider what behaviors in your new code are worth testing, and add appropriate tests
+making sure to cover all relevant edge cases.
+
+Do not add entries to the `[features]` table in `Cargo.toml` unless explicitly asked to do so.
+
+If working with the file system, prefer `fs_err` APIs over the equivalent `std::fs` ones
+whenever possible.
+
+Always prefer `.expect()` and similar methods over `.unwrap()`, making sure to add a descriptive
+but concise message that describes the problem.
+
+When writing comments, use backticks for concrete code items or syntax such as `where`, `?Sized`,
+`fn`, or a type name. Do not use backticks for ordinary prose categories like type, const, or trait
+unless the comment is specifically referring to the Rust keyword or syntax itself.
+
+## Testing and linting proposed changes
+
+All proposed changes must be properly formatted, must pass `clippy` without warnings or errors,
+and must pass tests. The GitHub workflow at `.github/workflows/ci.yml` is used to scan
+all proposed changes and will automatically reject any changes that do not pass.
+You are not able to run the `.github/workflows/ci.yml` file, but here follows
+a summary of the checks it performs and how to ensure your changes pass.
+
+Before proposing a code change:
+- Run `cargo clippy --all-targets --no-deps --fix --allow-dirty --allow-staged -- -D warnings --allow deprecated` to fix any auto-fixable lints. Manually fix anything that couldn't be auto-fixed.
+- Run `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items` to ensure the documentation is clean of lint.
+- Run `cargo fmt` to format your code.
+- Run `cargo test` to ensure the code passes tests.
+
+If adding new test crates, then additionally:
+- Ensure their `Cargo.toml` sets `publish = false`.
+- Ensure `RUSTFLAGS="-A dead_code -A deprecated -A unused -A private_bounds" cargo check --manifest-path=<path-to-new-crate-cargo-toml>` passes without warnings on each new test crate.
+- Run `./scripts/regenerate_test_rustdocs.sh` before running the top-level `cargo test` to ensure generated rustdoc is updated.

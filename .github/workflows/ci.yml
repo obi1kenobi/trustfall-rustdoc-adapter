@@ -1,0 +1,281 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - rustdoc-v*
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+  # The below settings are based on advice from:
+  # https://corrode.dev/blog/tips-for-faster-ci-builds/
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+
+jobs:
+  ci-everything:
+    name: All CI stages
+    runs-on: ubuntu-latest
+    needs:
+      - lint
+      - rust-tests
+      - test-crates
+    if: ${{ success() || failure() }}  # Run this job even if a dependency has failed.
+    steps:
+      - name: Job outcomes
+        run: |
+          echo "lint: ${{ needs.lint.result }}"
+          echo "rust-tests: ${{ needs.rust-tests.result }}"
+          echo "test-crates: ${{ needs.test-crates.result }}"
+
+      # Fail this required job if any of its dependent jobs have failed.
+      #
+      # Do not attempt to consolidate these steps into one step, it won't work.
+      # Multi-line `if` clauses are not evaluated properly: see the intermediate commits in
+      # https://github.com/obi1kenobi/cargo-semver-checks/pull/405
+      - if: ${{ needs.lint.result != 'success' }}
+        run: exit 1
+      - if: ${{ needs.rust-tests.result != 'success' }}
+        run: exit 1
+      - if: ${{ needs.test-crates.result != 'success' }}
+        run: exit 1
+
+  lint:
+    name: Check lint and rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt, clippy
+          rustflags: ""
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-features --all-targets -- -D warnings -Dclippy::print_stdout -Dclippy::print_stderr -Dclippy::dbg_macro --allow deprecated
+
+      - name: cargo fmt
+        run: cargo fmt -- --check
+
+      - name: cargo doc
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --all-features --no-deps --document-private-items
+
+  rust-tests:
+    name: Run tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain: ["nightly"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          rustflags: ""
+
+      - name: Regenerate test data
+        run: ./scripts/regenerate_test_rustdocs.sh +${{ matrix.toolchain }}
+
+      - name: compile
+        run: cargo test --no-run
+
+      - name: test
+        run: cargo test
+
+      - name: compile with rayon
+        run: cargo test --no-run --features rayon
+
+      - name: test with rayon
+        run: cargo test --features rayon
+
+      - name: compile with rayon and rustc-hash
+        run: cargo test --no-run --features rayon,rustc-hash
+
+      - name: test with rayon and rustc-hash
+        run: cargo test --features rayon,rustc-hash
+
+  test-crates:
+    name: Run test crate tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
+          rustflags: ""
+
+      - name: Run test crate tests
+        run: ./scripts/test_crates.sh
+
+  tag-version:
+    name: Tag the version
+    runs-on: ubuntu-latest
+    needs:
+      - should-publish
+      - ci-everything
+      - pre-publish-checks
+    if: needs.should-publish.outputs.trigger_publish == 'yes'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+
+      - name: Install rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+          rustflags: ""
+
+      - name: Tag the version
+        run: |
+          set -euxo pipefail
+          CURRENT_VERSION="$(./scripts/get_current_version.sh trustfall-rustdoc-adapter)"
+          export CURRENT_VERSION
+          git tag "v$CURRENT_VERSION"
+          git push origin "v$CURRENT_VERSION"
+
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    needs:
+      - should-publish
+      - ci-everything
+      - tag-version
+      - pre-publish-checks
+    if: needs.should-publish.outputs.trigger_publish == 'yes'
+    permissions:
+      id-token: write     # Required for OIDC token exchange (Trusted Publishing)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+          rustflags: ""
+
+      # For Trusted Publishing:
+      # https://crates.io/docs/trusted-publishing
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish
+
+  did-version-change:
+    name: Check if version changed
+    runs-on: ubuntu-latest
+    outputs:
+      is_new_version: ${{ steps.check.outputs.is_new_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - id: check
+        run: |
+          set +e
+          ./scripts/is_version_already_uploaded.sh trustfall-rustdoc-adapter
+          export EXIT_CODE="$?"
+          set -e
+          if [[ "$EXIT_CODE" == "7" ]]; then
+            echo "is_new_version=no" >> "$GITHUB_OUTPUT"
+          elif [[ "$EXIT_CODE" == "0" ]]; then
+            echo "is_new_version=yes" >> "$GITHUB_OUTPUT"
+          else
+            # Unexpected outcome, indicates a bug.
+            exit "$EXIT_CODE"
+          fi
+
+  should-publish:
+    name: Determine whether to publish
+    runs-on: ubuntu-latest
+    needs:
+      - did-version-change
+    if: needs.did-version-change.outputs.is_new_version == 'yes'
+    outputs:
+      trigger_publish: ${{ steps.evaluate.outputs.trigger_publish }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - id: evaluate
+        env:
+          VERSION_CHANGED: ${{ needs.did-version-change.outputs.is_new_version }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$VERSION_CHANGED" != "yes" ]]; then
+            echo "Version was not updated, skipping publish."
+            echo "trigger_publish=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BRANCH_REF="${GITHUB_REF#refs/heads/}"
+
+          if [[ ! "$BRANCH_REF" =~ ^rustdoc-v([0-9]{2,3})$ ]]; then
+            echo "Branch ${BRANCH_REF} is not an allowed release branch."
+            echo "trigger_publish=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BRANCH_MAJOR="${BASH_REMATCH[1]}"
+          MAJOR_VERSION="$(python - <<'PY'
+          import tomllib
+          with open('Cargo.toml', 'rb') as f:
+              data = tomllib.load(f)
+          print(data['package']['version'].split('.')[0])
+          PY
+          )"
+
+          if [[ "$BRANCH_MAJOR" != "$MAJOR_VERSION" ]]; then
+            echo "Branch major version ${BRANCH_MAJOR} does not match Cargo.toml major version ${MAJOR_VERSION}."
+            echo "trigger_publish=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "trigger_publish=yes" >> "$GITHUB_OUTPUT"
+
+  pre-publish-checks:
+    name: Check for semver compliance
+    runs-on: ubuntu-latest
+    needs:
+      - ci-everything
+      - should-publish
+    if: needs.should-publish.outputs.trigger_publish == 'yes'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check semver
+        uses: obi1kenobi/cargo-semver-checks-action@v2

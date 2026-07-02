@@ -1,0 +1,1186 @@
+use rustdoc_types::{Crate, GenericArgs, Id, Item, ItemEnum, TypeAlias, Visibility};
+
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
+use crate::{
+    ImportablePath,
+    attributes::Attribute,
+    hashtables::{HashMap, HashSet},
+    stability::PublicApiStabilityPolicy,
+};
+
+#[derive(Debug, Clone)]
+pub(crate) struct VisibilityTracker<'a> {
+    // The crate this represents.
+    inner: &'a Crate,
+
+    /// Stability policy used when this tracker's parent-edge modifiers were built.
+    stability_policy: PublicApiStabilityPolicy,
+
+    /// For an Id, give the list of parent edges under which it is publicly visible.
+    visible_parent_edges: HashMap<u32, Vec<ParentEdge<'a>>>,
+}
+
+impl<'a> VisibilityTracker<'a> {
+    pub(crate) fn from_crate(
+        crate_: &'a Crate,
+        stability_policy: PublicApiStabilityPolicy,
+    ) -> Self {
+        let mut visible_parent_edges =
+            compute_parent_edges_for_public_items(crate_, stability_policy);
+
+        #[cfg(feature = "rayon")]
+        let iter = visible_parent_edges.par_iter_mut();
+        #[cfg(not(feature = "rayon"))]
+        let iter = visible_parent_edges.iter_mut();
+
+        // Sort and deduplicate parent edges.
+        // This ensures a consistent order, since queries can observe this order directly.
+        iter.for_each(|(_id, parent_edges)| {
+            parent_edges.sort_unstable();
+            parent_edges.dedup();
+        });
+
+        Self {
+            inner: crate_,
+            stability_policy,
+            visible_parent_edges,
+        }
+    }
+
+    pub(crate) fn collect_publicly_importable_names(&self, id: u32) -> Vec<ImportablePath<'a>> {
+        let mut already_visited_ids = Default::default();
+        let mut result = Default::default();
+
+        self.collect_publicly_importable_names_inner(
+            id,
+            &mut already_visited_ids,
+            &mut vec![],
+            EdgeModifiers::default(),
+            &mut result,
+        );
+
+        result
+    }
+
+    fn collect_publicly_importable_names_inner(
+        &self,
+        next_id: u32,
+        already_visited_ids: &mut HashSet<u32>,
+        stack: &mut Vec<&'a str>,
+        current_modifiers: EdgeModifiers,
+        output: &mut Vec<ImportablePath<'a>>,
+    ) {
+        if !already_visited_ids.insert(next_id) {
+            // We found a cycle, and we've already processed this item.
+            // Nothing more to do here.
+            return;
+        }
+
+        let item = &self.inner.index[&rustdoc_types::Id(next_id)];
+        if !stack.is_empty()
+            && matches!(
+                item.inner,
+                ItemEnum::Impl(..) | ItemEnum::Struct(..) | ItemEnum::Union(..)
+            )
+        {
+            // Structs, unions, and impl blocks are not modules.
+            // They *themselves* can be imported, but the items they contain cannot be imported.
+            // Since the stack is non-empty, we must be trying to determine importable names
+            // for a descendant item of a struct / union / impl. There are none.
+            //
+            // We explicitly do *not* want to check for Enum here,
+            // since enum variants *are* importable.
+            return;
+        }
+
+        let (push_name, popped_name) = match &item.inner {
+            rustdoc_types::ItemEnum::Use(import_item) => {
+                if import_item.name == "_" {
+                    // Items re-exported as `_` are not nameable. They cannot be directly imported.
+                    // They can be used via a glob import, but we are not interested in that here.
+                    return;
+                } else if import_item.is_glob {
+                    // Glob imports refer to the *contents* of the named item, not the item itself.
+                    // Rust doesn't allow glob imports to rename items, so there's no name to add.
+                    (None, None)
+                } else {
+                    // Use the name of the imported item, since it might be renaming
+                    // the item being imported.
+                    let push_name = Some(import_item.name.as_str());
+
+                    // The imported item may be renamed here, so pop it from the stack.
+                    let popped_name = Some(stack.pop().expect("no name to pop"));
+
+                    (push_name, popped_name)
+                }
+            }
+            rustdoc_types::ItemEnum::TypeAlias(..) => {
+                // Use the typedef name instead of the underlying item's own name,
+                // since it might be renaming the underlying item.
+                let push_name = Some(item.name.as_deref().expect("typedef had no name"));
+
+                // If there is an underlying item, pop it from the stack
+                // since it may be renamed here.
+                let popped_name = stack.pop();
+
+                (push_name, popped_name)
+            }
+            _ => (item.name.as_deref(), None),
+        };
+
+        // Push the new name onto the stack, if there is one.
+        if let Some(pushed_name) = push_name {
+            stack.push(pushed_name);
+        }
+
+        let next_modifiers =
+            current_modifiers.union(EdgeModifiers::from_item(item, self.stability_policy));
+
+        self.collect_publicly_importable_names_recurse(
+            next_id,
+            already_visited_ids,
+            stack,
+            next_modifiers,
+            output,
+        );
+
+        // Undo any changes made to the stack, returning it to its pre-recursion state.
+        if let Some(pushed_name) = push_name {
+            let recovered_name = stack.pop().expect("there was nothing to pop");
+            assert_eq!(pushed_name, recovered_name);
+        }
+        if let Some(popped_name) = popped_name {
+            stack.push(popped_name);
+        }
+
+        // We're leaving this item. Remove it from the visited set.
+        let removed = already_visited_ids.remove(&next_id);
+        assert!(removed);
+    }
+
+    fn collect_publicly_importable_names_recurse(
+        &self,
+        next_id: u32,
+        already_visited_ids: &mut HashSet<u32>,
+        stack: &mut Vec<&'a str>,
+        current_modifiers: EdgeModifiers,
+        output: &mut Vec<ImportablePath<'a>>,
+    ) {
+        if next_id == self.inner.root.0 {
+            let final_name = stack.iter().rev().copied().collect();
+            output.push(ImportablePath::new(
+                final_name,
+                current_modifiers.doc_hidden,
+                current_modifiers.deprecated,
+                current_modifiers.unstable,
+            ));
+        } else if let Some(visible_parents) = self.visible_parent_edges.get(&next_id) {
+            for parent_edge in visible_parents.iter().copied() {
+                let replaced_name = parent_edge.imported_name.map(|imported_name| {
+                    let replaced_name = stack
+                        .pop()
+                        .expect("glob-imported item had no name to replace");
+                    stack.push(imported_name);
+                    (imported_name, replaced_name)
+                });
+
+                self.collect_publicly_importable_names_inner(
+                    parent_edge.parent_id,
+                    already_visited_ids,
+                    stack,
+                    current_modifiers.union(parent_edge.modifiers),
+                    output,
+                );
+
+                if let Some((imported_name, replaced_name)) = replaced_name {
+                    let recovered_name = stack.pop().expect("there was nothing to pop");
+                    assert_eq!(imported_name, recovered_name);
+                    stack.push(replaced_name);
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn visible_parent_edges(&self) -> &HashMap<u32, Vec<ParentEdge<'a>>> {
+        &self.visible_parent_edges
+    }
+}
+
+/// A visible reverse edge from an item to one parent scope that can name it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct ParentEdge<'a> {
+    /// Id of the item whose scope makes the child item visible.
+    parent_id: u32,
+
+    /// Public-API metadata from re-export edges from glob `Use` items,
+    /// where the `Use` item is not visited as a path node.
+    modifiers: EdgeModifiers,
+
+    /// Replacement path component for glob-created edges.
+    ///
+    /// `None` means this edge does not alter the name already on the reconstruction stack.
+    /// `Some(name)` means the glob made the underlying item visible in `parent_id` under
+    /// `name`, so path reconstruction should substitute `name` for the item's own name.
+    imported_name: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+struct EdgeModifiers {
+    doc_hidden: bool,
+    deprecated: bool,
+    unstable: bool,
+}
+
+impl EdgeModifiers {
+    fn from_item(item: &Item, stability_policy: PublicApiStabilityPolicy) -> Self {
+        Self {
+            doc_hidden: item.attrs.iter().any(Attribute::is_doc_hidden),
+            deprecated: item.deprecation.is_some(),
+            unstable: stability_policy.item_is_unstable(item),
+        }
+    }
+
+    fn union(self, other: Self) -> Self {
+        Self {
+            doc_hidden: self.doc_hidden || other.doc_hidden,
+            deprecated: self.deprecated || other.deprecated,
+            unstable: self.unstable || other.unstable,
+        }
+    }
+
+    fn public_api(self) -> bool {
+        !self.unstable && (self.deprecated || !self.doc_hidden)
+    }
+
+    /// Choose one concrete route among two equivalent glob re-export routes.
+    ///
+    /// This is used only when two glob-imported definitions have the same name and resolve
+    /// to the same underlying item. Such definitions are not ambiguous; they are alternative
+    /// routes for exposing the same item under the same path component.
+    ///
+    /// This method must return either `self` or `other`, not a synthesized combination of
+    /// their fields. Prefer a route that is public API; if both have the same public-API
+    /// status, prefer a route that is not `#[doc(hidden)]`; if still tied, prefer a route
+    /// that is not deprecated.
+    fn least_restrictive_alternative(self, other: Self) -> Self {
+        match (self.public_api(), other.public_api()) {
+            (true, false) => return self,
+            (false, true) => return other,
+            _ => {}
+        }
+
+        if self.unstable != other.unstable {
+            return if self.unstable { other } else { self };
+        }
+
+        if self.doc_hidden != other.doc_hidden {
+            return if self.doc_hidden { other } else { self };
+        }
+
+        if self.deprecated != other.deprecated {
+            return if self.deprecated { other } else { self };
+        }
+
+        self
+    }
+}
+
+/// A Rust item name, together with the namespace the name is in.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum NamespacedName<'a> {
+    Values(&'a str),
+    Types(&'a str),
+    // https://doc.rust-lang.org/reference/names/namespaces.html#sub-namespaces
+    BangMacros(&'a str),
+    AttrOrDeriveMacros(&'a str),
+}
+
+impl<'a> NamespacedName<'a> {
+    fn name(self) -> &'a str {
+        match self {
+            NamespacedName::Values(name)
+            | NamespacedName::Types(name)
+            | NamespacedName::BangMacros(name)
+            | NamespacedName::AttrOrDeriveMacros(name) => name,
+        }
+    }
+
+    fn rename(&self, new_name: &'a str) -> Self {
+        match self {
+            NamespacedName::Values(_) => NamespacedName::Values(new_name),
+            NamespacedName::Types(_) => NamespacedName::Types(new_name),
+            NamespacedName::BangMacros(_) => NamespacedName::BangMacros(new_name),
+            NamespacedName::AttrOrDeriveMacros(_) => NamespacedName::AttrOrDeriveMacros(new_name),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Definition {
+    /// The actual underlying item this definition resolves to, like a struct or function.
+    /// This Id must not point to an import item.
+    final_underlying_id: u32,
+
+    /// Modifiers from glob `Use` items in the module where this name is visible.
+    ///
+    /// Glob re-exports make their resolved names look local to the importing module.
+    /// The glob `Use` item itself is not part of the final importable path, and
+    /// neither are non-glob `Use` items inside the target module that supplied the visible name.
+    /// Their `#[doc(hidden)]`, deprecation, and stability still apply to that path, though.
+    invisible_glob_modifiers: EdgeModifiers,
+}
+
+impl Definition {
+    fn new(final_underlying_id: u32) -> Self {
+        Self {
+            final_underlying_id,
+            invisible_glob_modifiers: EdgeModifiers::default(),
+        }
+    }
+}
+
+/// Type showing which names are defined in which modules, where they point to,
+/// and whether they are defined directly, or imported directly or via a glob.
+#[derive(Debug, Default)]
+struct NameResolution<'a> {
+    /// Module Id -> { name -> (id, is_public) } for items directly defined in that module.
+    /// Not just public names, since private names can shadow pub glob-exported names.
+    names_defined_in_module: HashMap<u32, HashMap<NamespacedName<'a>, (Definition, bool)>>,
+
+    /// Modules and the glob imports they contain.
+    modules_with_glob_imports: HashMap<u32, HashSet<u32>>,
+
+    /// Names that were glob-imported and re-exported into a module, together with
+    /// the item Id to which they refer. This is because glob-glob name shadowing doesn't apply
+    /// if both names point to the same item.
+    glob_imported_names_in_module: HashMap<u32, HashMap<NamespacedName<'a>, Definition>>,
+
+    /// Names in a module that were glob-imported more than once, and are therefore unusable.
+    duplicated_glob_names_in_module: HashMap<u32, HashSet<NamespacedName<'a>>>,
+}
+
+/// Working state for resolving the glob imports in one module.
+#[derive(Debug, Default)]
+struct GlobResolution<'a> {
+    /// Module/modifier combinations already expanded while following glob-of-glob chains.
+    ///
+    /// The modifier set is part of the key because the same module can be reached through
+    /// different glob imports, and those paths may carry different visibility metadata.
+    visited: HashSet<(u32, EdgeModifiers)>,
+
+    /// Glob-imported names that are usable in the module being resolved.
+    ///
+    /// Each name maps to the final non-`Use` item it resolves to, plus any invisible modifiers
+    /// carried by the glob imports that made the name visible.
+    names: HashMap<NamespacedName<'a>, Definition>,
+
+    /// Glob-imported names that resolve to multiple distinct items and therefore cannot be used.
+    duplicated_names: HashSet<NamespacedName<'a>>,
+}
+
+fn compute_parent_edges_for_public_items(
+    crate_: &Crate,
+    stability_policy: PublicApiStabilityPolicy,
+) -> HashMap<u32, Vec<ParentEdge<'_>>> {
+    let root_id = &crate_.root;
+
+    if let Some(root_module) = crate_.index.get(root_id) {
+        if root_module.visibility == Visibility::Public {
+            let traversal_state = resolve_crate_names(crate_, stability_policy);
+
+            // Avoid cycles by keeping track of which items we're in the middle of visiting.
+            let mut currently_visited_items: HashSet<u32> = Default::default();
+
+            let mut result = Default::default();
+
+            visit_root_reachable_public_items(
+                crate_,
+                &mut result,
+                &traversal_state,
+                &mut currently_visited_items,
+                root_module,
+                None,
+            );
+
+            return result;
+        }
+    }
+
+    Default::default()
+}
+
+fn get_names_for_item<'a>(
+    crate_: &'a Crate,
+    item: &'a Item,
+) -> impl Iterator<Item = NamespacedName<'a>> + 'a {
+    match &item.inner {
+        ItemEnum::Module(..)
+        | ItemEnum::Union(..)
+        | ItemEnum::Enum(..)
+        | ItemEnum::Trait(..)
+        | ItemEnum::TypeAlias(..) => {
+            let item_name = item.name.as_deref().expect("item did not have a name");
+            [Some(NamespacedName::Types(item_name)), None]
+                .into_iter()
+                .flatten()
+        }
+        ItemEnum::Struct(struct_item) => {
+            let item_name = item.name.as_deref().expect("item did not have a name");
+            match &struct_item.kind {
+                rustdoc_types::StructKind::Unit => {
+                    // Always both a type and a value (the singleton instance of the type).
+                    [
+                        Some(NamespacedName::Types(item_name)),
+                        Some(NamespacedName::Values(item_name)),
+                    ]
+                    .into_iter()
+                    .flatten()
+                }
+                rustdoc_types::StructKind::Tuple(tuple_struct) => {
+                    // Always a type name, can also be a value if all fields
+                    // are visible to the importing scope.
+                    // TODO: We only check if the fields are public, which is subtly incorrect.
+                    //       We have a test crate for this: `visibility_modifier_causes_shadowing`
+                    let nonpublic_field =
+                        tuple_struct
+                            .iter()
+                            .filter_map(|x| x.as_ref())
+                            .any(|field_id| {
+                                crate_
+                                    .index
+                                    .get(field_id)
+                                    .map(|field| field.visibility != Visibility::Public)
+                                    .unwrap_or(false)
+                            });
+                    if nonpublic_field {
+                        [Some(NamespacedName::Types(item_name)), None]
+                            .into_iter()
+                            .flatten()
+                    } else {
+                        [
+                            Some(NamespacedName::Types(item_name)),
+                            Some(NamespacedName::Values(item_name)),
+                        ]
+                        .into_iter()
+                        .flatten()
+                    }
+                }
+                rustdoc_types::StructKind::Plain { .. } => {
+                    // Only a type, never a value.
+                    [Some(NamespacedName::Types(item_name)), None]
+                        .into_iter()
+                        .flatten()
+                }
+            }
+        }
+        ItemEnum::Variant(..)
+        | ItemEnum::Function(..)
+        | ItemEnum::Constant { .. }
+        | ItemEnum::Static(..) => {
+            let item_name = item.name.as_deref().expect("item did not have a name");
+            [Some(NamespacedName::Values(item_name)), None]
+                .into_iter()
+                .flatten()
+        }
+        ItemEnum::Macro(..) => {
+            let item_name = item.name.as_deref().expect("item did not have a name");
+            [Some(NamespacedName::BangMacros(item_name)), None]
+                .into_iter()
+                .flatten()
+        }
+        ItemEnum::ProcMacro(m) => {
+            let item_name = item.name.as_deref().expect("item did not have a name");
+            let namespaced_name = if m.kind == rustdoc_types::MacroKind::Bang {
+                NamespacedName::BangMacros(item_name)
+            } else {
+                NamespacedName::AttrOrDeriveMacros(item_name)
+            };
+            [Some(namespaced_name), None].into_iter().flatten()
+        }
+        _ => [None, None].into_iter().flatten(),
+    }
+}
+
+fn resolve_crate_names<'a>(
+    crate_: &'a Crate,
+    stability_policy: PublicApiStabilityPolicy,
+) -> NameResolution<'a> {
+    let mut result = NameResolution::default();
+
+    for item in crate_.index.values() {
+        let ItemEnum::Module(module_item) = &item.inner else {
+            continue;
+        };
+        for inner_id in &module_item.items {
+            let Some(inner_item) = crate_.index.get(inner_id) else {
+                continue;
+            };
+
+            if let ItemEnum::Use(imp) = &inner_item.inner {
+                if imp.is_glob {
+                    result
+                        .modules_with_glob_imports
+                        .entry(item.id.0)
+                        .or_default()
+                        .insert(inner_id.0);
+                } else if let Some(target) = imp.id.as_ref().and_then(|id| crate_.index.get(id)) {
+                    if imp.name == "_" {
+                        // `_` is a special name which causes the imported item to be available
+                        // but unnameable. `pub use Trait as _` makes sense when constructing
+                        // modules intended to be used as a prelude, since glob imports will
+                        // include the (unnameable) trait and make its methods available for use.
+                        //
+                        // For importable path purposes, items re-exported as `_` do not exist
+                        // since they cannot be directly imported due to lack of a usable name.
+                        continue;
+                    }
+
+                    for name in get_names_for_item(crate_, target) {
+                        // Handle renaming imports like `use some::foo as bar;`
+                        let name = name.rename(&imp.name);
+
+                        // Resolve the final item to which this import points.
+                        // This is important to ensure we don't incorrectly decide that
+                        // two glob imports shadow each other when they point to the same item.
+                        //
+                        // TODO: This only handles within-crate imports. It'll need to be updated
+                        //       when we support multiple crates and cross-crate imports.
+                        let mut invisible_glob_modifiers =
+                            EdgeModifiers::from_item(inner_item, stability_policy);
+                        let mut underlying_item = target;
+                        let final_underlying_id = loop {
+                            if let ItemEnum::Use(next_import) = &underlying_item.inner {
+                                invisible_glob_modifiers = invisible_glob_modifiers.union(
+                                    EdgeModifiers::from_item(underlying_item, stability_policy),
+                                );
+                                match next_import.id.as_ref().and_then(|id| crate_.index.get(id)) {
+                                    None => break None,
+                                    Some(item) => underlying_item = item,
+                                }
+                            } else {
+                                break Some(&underlying_item.id);
+                            }
+                        };
+                        let Some(final_underlying_id) = final_underlying_id else {
+                            continue;
+                        };
+                        let definition = Definition {
+                            final_underlying_id: final_underlying_id.0,
+                            invisible_glob_modifiers,
+                        };
+
+                        result
+                            .names_defined_in_module
+                            .entry(item.id.0)
+                            .or_default()
+                            .insert(
+                                name,
+                                (
+                                    definition,
+                                    matches!(
+                                        target.visibility,
+                                        Visibility::Public | Visibility::Default
+                                    ),
+                                ),
+                            );
+                    }
+                }
+            } else if let ItemEnum::Macro(..) = &inner_item.inner {
+                // `#[macro_export]` moves declarative macros to the crate root,
+                // regardless of what module they were declared in. Such macros are always public.
+                // Without `#[macro_export]`, declarative macros have no path-based scope:
+                // https://doc.rust-lang.org/reference/macros-by-example.html#path-based-scope
+                if inner_item
+                    .attrs
+                    .iter()
+                    .any(|attr| matches!(attr, rustdoc_types::Attribute::MacroExport))
+                {
+                    for name in get_names_for_item(crate_, inner_item) {
+                        result
+                            .names_defined_in_module
+                            .entry(crate_.root.0)
+                            .or_default()
+                            .insert(name, (Definition::new(inner_item.id.0), true));
+                    }
+                }
+            } else {
+                for name in get_names_for_item(crate_, inner_item) {
+                    result
+                        .names_defined_in_module
+                        .entry(item.id.0)
+                        .or_default()
+                        .insert(
+                            name,
+                            (
+                                Definition::new(inner_item.id.0),
+                                matches!(
+                                    inner_item.visibility,
+                                    Visibility::Public | Visibility::Default
+                                ),
+                            ),
+                        );
+                }
+            }
+        }
+    }
+
+    resolve_glob_imported_names(crate_, stability_policy, &mut result);
+
+    result
+}
+
+fn resolve_glob_imported_names<'a>(
+    crate_: &'a Crate,
+    stability_policy: PublicApiStabilityPolicy,
+    traversal_state: &mut NameResolution<'a>,
+) {
+    for (&module_id, globs) in &traversal_state.modules_with_glob_imports {
+        let mut glob_resolution = GlobResolution::default();
+
+        glob_resolution
+            .visited
+            .insert((module_id, EdgeModifiers::default()));
+        for &glob_id in globs {
+            // This glob is directly inside the module whose visible names we're resolving,
+            // so its attributes affect the path that downstream users can type.
+            recursively_compute_visited_names_for_glob(
+                crate_,
+                stability_policy,
+                module_id,
+                glob_id,
+                &*traversal_state,
+                &mut glob_resolution,
+                EdgeModifiers::default(),
+            );
+        }
+
+        // Glob-of-glob import chains might still produce `names` and `duplicated_names` entries
+        // that would be shadowed by locally-defined names in this module. Apply the shadowing
+        // rules by removing any conflicting names from both of those collections.
+        if let Some(local_names) = traversal_state.names_defined_in_module.get(&module_id) {
+            for local_name in local_names.keys() {
+                glob_resolution.names.remove(local_name);
+                glob_resolution.duplicated_names.remove(local_name);
+            }
+        }
+
+        let GlobResolution {
+            names,
+            duplicated_names,
+            ..
+        } = glob_resolution;
+        if !names.is_empty() {
+            traversal_state
+                .glob_imported_names_in_module
+                .insert(module_id, names);
+        }
+        if !duplicated_names.is_empty() {
+            traversal_state
+                .duplicated_glob_names_in_module
+                .insert(module_id, duplicated_names);
+        }
+    }
+}
+
+/// Resolve the names made visible by one glob import into `glob_parent_module_id`.
+///
+/// `glob_modifiers` contains modifiers from glob imports that are already known to affect
+/// the path being synthesized in `glob_parent_module_id`.
+///
+/// Each glob traversed here is required to expose the synthesized name. Even when an outer
+/// glob creates the final top-level path, a nested glob may be what made that name visible in
+/// the outer glob's target module, so its `#[doc(hidden)]`, deprecation, and stability metadata
+/// must still be attached to the resulting importable path.
+fn recursively_compute_visited_names_for_glob<'a>(
+    crate_: &'a Crate,
+    stability_policy: PublicApiStabilityPolicy,
+    glob_parent_module_id: u32,
+    glob_id: u32,
+    traversal_state: &NameResolution<'a>,
+    glob_resolution: &mut GlobResolution<'a>,
+    glob_modifiers: EdgeModifiers,
+) {
+    let glob_item = &crate_.index[&rustdoc_types::Id(glob_id)];
+    let ItemEnum::Use(glob_import) = &glob_item.inner else {
+        unreachable!("Id {glob_id:?} was not a glob: {glob_item:?}");
+    };
+    assert!(glob_import.is_glob, "not a glob import: {glob_import:?}");
+    let glob_modifiers =
+        glob_modifiers.union(EdgeModifiers::from_item(glob_item, stability_policy));
+
+    let module_local_items = traversal_state
+        .names_defined_in_module
+        .get(&glob_parent_module_id);
+
+    // Glob imports can target both enums and modules. Figure out which one this is.
+    let target_id = glob_import
+        .id
+        .as_ref()
+        .expect("no target Id for glob import");
+
+    if let Some(ItemEnum::Enum(enum_item)) = &crate_.index.get(target_id).map(|item| &item.inner) {
+        for variant_id in &enum_item.variants {
+            if let Some(variant_item) = crate_.index.get(variant_id) {
+                let name = NamespacedName::Values(
+                    variant_item.name.as_deref().expect("no name for variant"),
+                );
+
+                let mut definition = Definition::new(variant_id.0);
+                definition.invisible_glob_modifiers =
+                    definition.invisible_glob_modifiers.union(glob_modifiers);
+                register_name(
+                    module_local_items,
+                    name,
+                    definition,
+                    &mut glob_resolution.names,
+                    &mut glob_resolution.duplicated_names,
+                );
+            }
+        }
+        return;
+    }
+
+    let module_id = target_id.0;
+    if !glob_resolution.visited.insert((module_id, glob_modifiers)) {
+        // Already checked this module with these accumulated glob modifiers.
+        return;
+    }
+
+    // Process the public locally-defined items.
+    if let Some(names_in_module) = traversal_state.names_defined_in_module.get(&module_id) {
+        for (local_name, data) in names_in_module {
+            let (item_defn, is_public) = data;
+            if *is_public {
+                let mut item_defn = item_defn.clone();
+                item_defn.invisible_glob_modifiers =
+                    item_defn.invisible_glob_modifiers.union(glob_modifiers);
+                register_name(
+                    module_local_items,
+                    *local_name,
+                    item_defn,
+                    &mut glob_resolution.names,
+                    &mut glob_resolution.duplicated_names,
+                );
+            }
+        }
+    }
+
+    // Recurse into any glob imports defined here.
+    if let Some(globs) = traversal_state.modules_with_glob_imports.get(&module_id) {
+        for &glob_id in globs {
+            // Nested globs may be part of the chain that makes the final name visible.
+            recursively_compute_visited_names_for_glob(
+                crate_,
+                stability_policy,
+                module_id,
+                glob_id,
+                traversal_state,
+                glob_resolution,
+                glob_modifiers,
+            );
+        }
+    }
+}
+
+fn register_name<'a>(
+    module_local_items: Option<&HashMap<NamespacedName, (Definition, bool)>>,
+    name: NamespacedName<'a>,
+    definition: Definition,
+    names: &mut HashMap<NamespacedName<'a>, Definition>,
+    duplicated_names: &mut HashSet<NamespacedName<'a>>,
+) {
+    // Don't add names that would be shadowed by an explicit definition
+    // in the glob's parent module.
+    if module_local_items
+        .map(|items| !items.contains_key(&name))
+        .unwrap_or(true)
+    {
+        match names.entry(name) {
+            std::collections::hash_map::Entry::Occupied(entry) => {
+                if entry.get().final_underlying_id != definition.final_underlying_id {
+                    // Duplicate name, remove from here and move to duplicates due to ambiguity.
+                    entry.remove();
+                    duplicated_names.insert(name);
+                } else {
+                    // Same item under the same name. No ambiguity here.
+                    // Choose the least restrictive alternative between the two sets of modifiers.
+                    let existing = entry.into_mut();
+                    existing.invisible_glob_modifiers = existing
+                        .invisible_glob_modifiers
+                        .least_restrictive_alternative(definition.invisible_glob_modifiers);
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                if !duplicated_names.contains(&name) {
+                    entry.insert(definition);
+                }
+            }
+        }
+    }
+}
+
+/// Collect all public items that are reachable from the crate root and record their parent edges.
+fn visit_root_reachable_public_items<'a>(
+    crate_: &'a Crate,
+    parents: &mut HashMap<u32, Vec<ParentEdge<'a>>>,
+    traversal_state: &NameResolution<'a>,
+    currently_visited_items: &mut HashSet<u32>,
+    item: &'a Item,
+    parent_edge: Option<ParentEdge<'a>>,
+) {
+    match item.visibility {
+        Visibility::Crate | Visibility::Restricted { .. } => {
+            // This item is not public, so we don't need to process it.
+            return;
+        }
+        Visibility::Public => {} // Public item, keep going.
+        Visibility::Default => {
+            // Enum variants, and some impls and methods have default visibility:
+            // they are visible only if the type to which they belong is visible.
+            // However, we don't recurse into non-public items with this function, so
+            // reachable items with default visibility must be public.
+        }
+    }
+
+    let item_parents = parents.entry(item.id.0).or_default();
+    if let Some(parent_edge) = parent_edge {
+        item_parents.push(parent_edge);
+    }
+
+    if !currently_visited_items.insert(item.id.0) {
+        // We found a cycle in the import graph, and we've already processed this item.
+        // Nothing more to do here.
+        return;
+    }
+
+    let next_parent_edge = Some(ParentEdge {
+        parent_id: item.id.0,
+        modifiers: EdgeModifiers::default(),
+        imported_name: None,
+    });
+    match &item.inner {
+        rustdoc_types::ItemEnum::Module(m) => {
+            for inner in m.items.iter().filter_map(|id| crate_.index.get(id)) {
+                visit_root_reachable_public_items(
+                    crate_,
+                    parents,
+                    traversal_state,
+                    currently_visited_items,
+                    inner,
+                    next_parent_edge,
+                );
+            }
+
+            // Explicitly process items imported via globs inside this module,
+            // since the logic there is not item-wise: it requires
+            // knowledge of the other names defined in the module.
+            if let Some(glob_imports) = traversal_state
+                .glob_imported_names_in_module
+                .get(&item.id.0)
+            {
+                for (name, inner_defn) in glob_imports {
+                    if let Some(inner_item) = crate_
+                        .index
+                        .get(&rustdoc_types::Id(inner_defn.final_underlying_id))
+                    {
+                        // The glob import creates this path in the current module. Any `Use` item
+                        // that supplied the name in the target module is an internal detail.
+                        visit_root_reachable_public_items(
+                            crate_,
+                            parents,
+                            traversal_state,
+                            currently_visited_items,
+                            inner_item,
+                            Some(ParentEdge {
+                                parent_id: item.id.0,
+                                modifiers: inner_defn.invisible_glob_modifiers,
+                                imported_name: Some(name.name()),
+                            }),
+                        );
+                    }
+                }
+            }
+        }
+        rustdoc_types::ItemEnum::Use(imp) => {
+            // Imports of modules, and glob imports of enums,
+            // import the *contents* of the pointed-to item rather than the item itself.
+            if let Some(imported_item) = imp.id.as_ref().and_then(|id| crate_.index.get(id)) {
+                // Glob imports are handled at the level of the module that contains them.
+                // Here we just skip them as a no-op.
+                if !imp.is_glob {
+                    visit_root_reachable_public_items(
+                        crate_,
+                        parents,
+                        traversal_state,
+                        currently_visited_items,
+                        imported_item,
+                        next_parent_edge,
+                    );
+                }
+            }
+        }
+        rustdoc_types::ItemEnum::Struct(struct_) => {
+            let field_ids_iter: Box<dyn Iterator<Item = &Id>> = match &struct_.kind {
+                rustdoc_types::StructKind::Unit => Box::new(std::iter::empty()),
+                rustdoc_types::StructKind::Tuple(field_ids) => {
+                    Box::new(field_ids.iter().filter_map(|x| x.as_ref()))
+                }
+                rustdoc_types::StructKind::Plain { fields, .. } => Box::new(fields.iter()),
+            };
+
+            for inner in field_ids_iter
+                .chain(struct_.impls.iter())
+                .filter_map(|id| crate_.index.get(id))
+            {
+                visit_root_reachable_public_items(
+                    crate_,
+                    parents,
+                    traversal_state,
+                    currently_visited_items,
+                    inner,
+                    next_parent_edge,
+                );
+            }
+        }
+        rustdoc_types::ItemEnum::Enum(enum_) => {
+            for inner in enum_
+                .variants
+                .iter()
+                .chain(enum_.impls.iter())
+                .filter_map(|id| crate_.index.get(id))
+            {
+                visit_root_reachable_public_items(
+                    crate_,
+                    parents,
+                    traversal_state,
+                    currently_visited_items,
+                    inner,
+                    next_parent_edge,
+                );
+            }
+        }
+        rustdoc_types::ItemEnum::Union(union_) => {
+            for inner in union_
+                .fields
+                .iter()
+                .chain(union_.impls.iter())
+                .filter_map(|id| crate_.index.get(id))
+            {
+                visit_root_reachable_public_items(
+                    crate_,
+                    parents,
+                    traversal_state,
+                    currently_visited_items,
+                    inner,
+                    next_parent_edge,
+                );
+            }
+        }
+        rustdoc_types::ItemEnum::Trait(trait_) => {
+            for inner in trait_.items.iter().filter_map(|id| crate_.index.get(id)) {
+                visit_root_reachable_public_items(
+                    crate_,
+                    parents,
+                    traversal_state,
+                    currently_visited_items,
+                    inner,
+                    next_parent_edge,
+                );
+            }
+        }
+        rustdoc_types::ItemEnum::Impl(impl_) => {
+            for inner in impl_.items.iter().filter_map(|id| crate_.index.get(id)) {
+                visit_root_reachable_public_items(
+                    crate_,
+                    parents,
+                    traversal_state,
+                    currently_visited_items,
+                    inner,
+                    next_parent_edge,
+                );
+            }
+        }
+        rustdoc_types::ItemEnum::TypeAlias(ty) => {
+            // We're interested in type aliases that are specifically used to rename types:
+            //   `pub type Foo = Bar`
+            // If the underlying type is generic, it's only a valid renaming if the typedef
+            // is also generic in all the same parameters.
+            //
+            // The Rust compiler ignores `where` bounds on typedefs, so we ignore them too.
+            if let Some(reexport_target) = get_typedef_equivalent_reexport_target(crate_, ty) {
+                visit_root_reachable_public_items(
+                    crate_,
+                    parents,
+                    traversal_state,
+                    currently_visited_items,
+                    reexport_target,
+                    next_parent_edge,
+                );
+            }
+        }
+        _ => {
+            // No-op, no further items within to consider.
+        }
+    }
+
+    // We are leaving this item. Remove it from the visited set.
+    let removed = currently_visited_items.remove(&item.id.0);
+    assert!(removed);
+}
+
+/// Type aliases can sometimes be equivalent to a regular `pub use` re-export:
+/// `pub type Foo = crate::Bar` is an example, equivalent to `pub use crate::Bar`.
+///
+/// If the underlying type has generic parameters, the type alias must include
+/// all the same generic parameters in the same order.
+/// `pub type Foo<A, B> = crate::Bar<B, A>` is *not* equivalent to `pub use crate::Bar`.
+///
+/// If the underlying type has default values for any of its generic parameters,
+/// the same exact parameters with the same order and defaults must be present on the type alias.
+/// `pub type Foo<A> = crate::Bar<A>` is *not* equivalent to `crate::Bar<A, B = ()>`
+/// since `Foo<A, B = i64>` is not valid whereas `crate::Bar<A, B = i64>` is fine.
+fn get_typedef_equivalent_reexport_target<'a>(
+    crate_: &'a Crate,
+    ty: &'a TypeAlias,
+) -> Option<&'a Item> {
+    if let rustdoc_types::Type::ResolvedPath(resolved_path) = &ty.type_ {
+        let underlying = crate_.index.get(&resolved_path.id)?;
+
+        let underlying_generics = match &underlying.inner {
+            rustdoc_types::ItemEnum::Struct(struct_) => &struct_.generics,
+            rustdoc_types::ItemEnum::Enum(enum_) => &enum_.generics,
+            rustdoc_types::ItemEnum::Trait(trait_) => &trait_.generics,
+            rustdoc_types::ItemEnum::Union(union_) => &union_.generics,
+            rustdoc_types::ItemEnum::TypeAlias(ty) => &ty.generics,
+            _ => unreachable!("unexpected underlying item kind: {underlying:?}"),
+        };
+
+        // If the underlying type is generic and the typedef is not
+        // (e.g. by relying on the generics' default values),
+        // then the generic is clearly not a re-export.
+        if !underlying_generics.params.is_empty() && resolved_path.args.is_none() {
+            return None;
+        }
+
+        if let Some(GenericArgs::AngleBracketed { args, constraints }) =
+            resolved_path.args.as_deref()
+        {
+            if !constraints.is_empty() {
+                // The type alias specifies some of the underlying type's generic parameters.
+                // This is not equivalent to a re-export.
+                return None;
+            }
+
+            // For the typedef to be equivalent to a re-export, all of the following must hold:
+            // - The typedef has the same number of generic parameters as the underlying.
+            // - All underlying generic parameters are available on the typedef,
+            //   are of the same kind, in the same order, with the same defaults.
+            if ty.generics.params.len() != args.len() {
+                // The typedef takes a different number of parameters than
+                // it supplies to the underlying type. It cannot be a re-export.
+                return None;
+            }
+            if underlying_generics.params.len() != args.len() {
+                // The underlying type supports more generic parameter than the typedef supplies
+                // when using it -- the unspecified generic parameters take the default values
+                // that must have been specified on the underlying type.
+                // Nevertheless, this is not a re-export since the types are not equivalent.
+                return None;
+            }
+            for (ty_generic, (underlying_param, arg_generic)) in ty
+                .generics
+                .params
+                .iter()
+                .zip(underlying_generics.params.iter().zip(args.iter()))
+            {
+                let arg_generic_name = match arg_generic {
+                    rustdoc_types::GenericArg::Lifetime(name) => name.as_str(),
+                    rustdoc_types::GenericArg::Type(rustdoc_types::Type::Generic(t)) => t.as_str(),
+                    rustdoc_types::GenericArg::Type(_) => return None,
+                    rustdoc_types::GenericArg::Const(c) => {
+                        // Nominally, this is the const expression, not the const generic's name.
+                        // However, except for pathological edge cases, if the expression is not
+                        // simply the const generic parameter itself, then the type isn't the same.
+                        //
+                        // An example pathological case where this isn't the case is:
+                        // `pub type Foo<const N: usize> = Underlying<N + 1 - 1>;`
+                        // Detecting that this is the same expression requires that one of
+                        // rustdoc or our code do const-evaluation here.
+                        //
+                        // Const expressions like this are currently only on nightly,
+                        // so we can't test them on stable Rust at the moment.
+                        //
+                        // TODO: revisit this decision when const expressions in types are stable
+                        c.expr.as_str()
+                    }
+                    rustdoc_types::GenericArg::Infer => return None,
+                };
+                if ty_generic.name.as_str() != arg_generic_name {
+                    // The typedef params are not in the same order as the underlying type's.
+                    return None;
+                }
+
+                match (&ty_generic.kind, &underlying_param.kind) {
+                    (
+                        rustdoc_types::GenericParamDefKind::Lifetime { .. },
+                        rustdoc_types::GenericParamDefKind::Lifetime { .. },
+                    ) => {
+                        // TypeAlias values cannot have "outlives" relationships on their lifetimes,
+                        // so there's nothing further to compare here. So far, it's a match.
+                    }
+                    (
+                        rustdoc_types::GenericParamDefKind::Type {
+                            default: ty_default,
+                            ..
+                        },
+                        rustdoc_types::GenericParamDefKind::Type {
+                            default: underlying_default,
+                            ..
+                        },
+                    ) => {
+                        // If the typedef doesn't have the same default values for its generics,
+                        // then it isn't equivalent to the underlying and so isn't a re-export.
+                        if ty_default != underlying_default {
+                            // The defaults have changed.
+                            return None;
+                        }
+                        // We don't care about the other fields.
+                        // Generic bounds on typedefs are ignored by rustc and generate a lint.
+                    }
+                    (
+                        rustdoc_types::GenericParamDefKind::Const {
+                            type_: ty_type,
+                            default: ty_default,
+                        },
+                        rustdoc_types::GenericParamDefKind::Const {
+                            type_: underlying_type,
+                            default: underlying_default,
+                        },
+                    ) => {
+                        // If the typedef doesn't have the same default values for its generics,
+                        // then it isn't equivalent to the underlying and so isn't a re-export.
+                        //
+                        // Similarly, if it is in any way possible to change the const generic type,
+                        // that makes the typedef not a re-export anymore.
+                        if ty_default != underlying_default || ty_type != underlying_type {
+                            // The generic type or its default has changed.
+                            return None;
+                        }
+                    }
+                    _ => {
+                        // Not the same kind of generic parameter.
+                        return None;
+                    }
+                }
+            }
+        }
+
+        Some(underlying)
+    } else {
+        None
+    }
+}
