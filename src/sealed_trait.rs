@@ -3,14 +3,19 @@ use rustdoc_types::{GenericBound, Id, Item, Trait};
 use crate::{
     hashtables::{HashMap, HashSet},
     item_flags::ItemFlag,
+    stability::PublicApiStabilityPolicy,
 };
 
 /// Update the `flags` with trait sealing and blanket impls information.
 ///
 /// # Preconditions
 /// - `flags` must contain complete reachability information,
-///   including info on `doc(hidden)` importable paths.
-pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap<Id, ItemFlag>) {
+///   including info on non-public API importable paths.
+pub(crate) fn compute_trait_flags(
+    index: &HashMap<Id, Item>,
+    flags: &mut HashMap<Id, ItemFlag>,
+    stability_policy: PublicApiStabilityPolicy,
+) {
     let mut possibly_sealed = Vec::with_capacity(128);
     let mut definitely_not_fully_sealed: HashSet<Id> = HashSet::default();
     for (id, item) in index.iter() {
@@ -76,7 +81,7 @@ pub(crate) fn compute_trait_flags(index: &HashMap<Id, Item>, flags: &mut HashMap
         //
         // This method applies the flags internally, and returns `true` only if
         // the trait is unconditionally sealed, meaning that we can skip further analysis for it.
-        if is_method_or_item_sealed(index, id, trait_inner, flags) {
+        if is_method_or_item_sealed(index, id, trait_inner, flags, stability_policy) {
             continue;
         }
 
@@ -403,6 +408,7 @@ fn is_method_or_item_sealed(
     trait_id: &Id,
     trait_inner: &Trait,
     flags: &mut HashMap<Id, ItemFlag>,
+    stability_policy: PublicApiStabilityPolicy,
 ) -> bool {
     for inner_item_id in &trait_inner.items {
         let inner_item = &index.get(inner_item_id);
@@ -418,8 +424,8 @@ fn is_method_or_item_sealed(
 
         match &inner_item.inner {
             rustdoc_types::ItemEnum::Function(func) => {
-                if func.has_body {
-                    // This trait function has a default implementation.
+                if stability_policy.effective_function_has_body(func) {
+                    // This trait function has a stable default implementation.
                     // An implementation is not required in order to implement this trait on a type.
                     // Therefore, it cannot on its own cause the trait to be sealed.
                     continue;
@@ -475,9 +481,9 @@ fn is_method_or_item_sealed(
                     };
                 }
             }
-            rustdoc_types::ItemEnum::AssocType { type_, .. }
-                if type_.is_none()
-                // Associated types without a default can cause a trait to be public-API-sealed.
+            rustdoc_types::ItemEnum::AssocType { .. }
+                if !stability_policy.effective_assoc_type_has_default(inner_item)
+                // Associated types without a stable default can cause a trait to be public-API-sealed.
 
                 && !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_non_pub_api_reachable() =>
             {
@@ -488,8 +494,12 @@ fn is_method_or_item_sealed(
                     .expect("no flags entry for trait item ID")
                     .set_pub_api_sealed();
             }
-            rustdoc_types::ItemEnum::AssocConst { type_, value } if value.is_none() => {
-                // Associated constants without a default can cause a trait to be sealed,
+            rustdoc_types::ItemEnum::AssocConst { type_, .. }
+                if stability_policy
+                    .effective_assoc_const_default(inner_item)
+                    .is_none() =>
+            {
+                // Associated constants without a stable default can cause a trait to be sealed,
                 // either unconditionally or just public-API-sealed.
 
                 if !assoc_item_flag.is_pub_reachable() && assoc_item_flag.is_non_pub_api_reachable()

@@ -1,5 +1,6 @@
 // Emit structured stdlib-style stability data by enabling unstable Rust features.
 #![allow(internal_features)]
+#![feature(associated_type_defaults)]
 #![feature(const_trait_impl)]
 #![feature(rustc_attrs)]
 #![feature(staged_api)]
@@ -154,4 +155,77 @@ pub const fn const_trait_marker(
     arg: impl [const] FixtureConstBound,
 ) -> impl [const] FixtureConstBound {
     arg
+}
+
+#[stable(feature = "default_stability_trait", since = "1.0.0")]
+pub trait DefaultStabilityTrait {
+    #[stable(feature = "stable_default_method", since = "1.0.0")]
+    fn stable_default_method() {}
+
+    #[stable(feature = "unstable_default_method", since = "1.0.0")]
+    #[rustc_default_body_unstable(feature = "unstable_default_method_body", issue = "none")]
+    fn unstable_default_method() {}
+
+    #[stable(feature = "required_default_stability_method", since = "1.0.0")]
+    fn required_method();
+
+    #[stable(feature = "stable_default_const", since = "1.0.0")]
+    const STABLE_DEFAULT_CONST: usize = 1;
+
+    #[stable(feature = "unstable_default_const", since = "1.0.0")]
+    #[rustc_default_body_unstable(feature = "unstable_default_const_value", issue = "none")]
+    const UNSTABLE_DEFAULT_CONST: usize = 2;
+
+    #[stable(feature = "required_default_stability_const", since = "1.0.0")]
+    const REQUIRED_CONST: usize;
+
+    #[stable(feature = "stable_default_type", since = "1.0.0")]
+    type StableDefaultType = u8;
+
+    #[stable(feature = "unstable_default_type", since = "1.0.0")]
+    #[rustc_default_body_unstable(feature = "unstable_default_type_value", issue = "none")]
+    type UnstableDefaultType = u16;
+
+    #[stable(feature = "required_default_stability_type", since = "1.0.0")]
+    type RequiredType;
+}
+
+#[stable(feature = "stable_hidden_default_is_not_sealed", since = "1.0.0")]
+pub trait StableHiddenDefaultIsNotSealed {
+    #[doc(hidden)]
+    #[stable(feature = "hidden_stable_default_method", since = "1.0.0")]
+    fn hidden_stable_default_method() {}
+}
+
+#[stable(
+    feature = "unstable_hidden_method_default_is_public_api_sealed",
+    since = "1.0.0"
+)]
+pub trait UnstableHiddenMethodDefaultIsPublicApiSealed {
+    #[doc(hidden)]
+    #[stable(feature = "hidden_unstable_default_method", since = "1.0.0")]
+    #[rustc_default_body_unstable(feature = "hidden_unstable_default_method_body", issue = "none")]
+    fn hidden_unstable_default_method() {}
+}
+
+#[stable(
+    feature = "unstable_hidden_assoc_const_default_is_public_api_sealed",
+    since = "1.0.0"
+)]
+pub trait UnstableHiddenAssocConstDefaultIsPublicApiSealed {
+    #[doc(hidden)]
+    #[stable(feature = "hidden_unstable_default_const", since = "1.0.0")]
+    #[rustc_default_body_unstable(feature = "hidden_unstable_default_const_value", issue = "none")]
+    const HIDDEN_UNSTABLE_DEFAULT_CONST: usize = 0;
+}
+
+#[stable(
+    feature = "unstable_hidden_assoc_type_default_is_public_api_sealed",
+    since = "1.0.0"
+)]
+pub trait UnstableHiddenAssocTypeDefaultIsPublicApiSealed {
+    #[doc(hidden)]
+    #[stable(feature = "hidden_unstable_default_type", since = "1.0.0")]
+    #[rustc_default_body_unstable(feature = "hidden_unstable_default_type_value", issue = "none")]
+    type HiddenUnstableDefaultType = usize;
 }

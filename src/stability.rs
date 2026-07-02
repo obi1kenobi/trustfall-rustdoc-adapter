@@ -53,6 +53,46 @@ impl PublicApiStabilityPolicy {
         // We have a test to make sure upstream doesn't stop emitting that data.
         !is_explicitly_unstable(function_item.const_stability.as_deref())
     }
+
+    pub(crate) fn effective_function_has_body(self, function: &rustdoc_types::Function) -> bool {
+        if !function.has_body || self == Self::Ignore {
+            return function.has_body;
+        }
+
+        // Rustdoc JSON emits `default_unstable` only for unstable provided defaults.
+        // In std mode, expose the stable guarantee by treating those defaults as absent.
+        function.default_unstable.is_none()
+    }
+
+    pub(crate) fn effective_assoc_type_has_default(self, item: &Item) -> bool {
+        let rustdoc_types::ItemEnum::AssocType {
+            type_,
+            default_unstable,
+            ..
+        } = &item.inner
+        else {
+            unreachable!("`item` was not an associated type: {item:?}");
+        };
+
+        type_.is_some() && (self == Self::Ignore || default_unstable.is_none())
+    }
+
+    pub(crate) fn effective_assoc_const_default(self, item: &Item) -> Option<&str> {
+        let rustdoc_types::ItemEnum::AssocConst {
+            value,
+            default_unstable,
+            ..
+        } = &item.inner
+        else {
+            unreachable!("`item` was not an associated constant: {item:?}");
+        };
+
+        if self == Self::RustStandardLibrary && default_unstable.is_some() {
+            None
+        } else {
+            value.as_deref()
+        }
+    }
 }
 
 fn is_explicitly_unstable(stability: Option<&Stability>) -> bool {

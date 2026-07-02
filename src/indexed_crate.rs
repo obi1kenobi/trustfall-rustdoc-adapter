@@ -695,6 +695,18 @@ impl<'a> IndexedCrate<'a> {
             .effective_constness(item, function.header.is_const)
     }
 
+    pub(crate) fn effective_function_has_body(&self, function: &rustdoc_types::Function) -> bool {
+        self.stability_policy.effective_function_has_body(function)
+    }
+
+    pub(crate) fn effective_assoc_type_has_default(&self, item: &'a Item) -> bool {
+        self.stability_policy.effective_assoc_type_has_default(item)
+    }
+
+    pub(crate) fn effective_assoc_const_default<'b>(&self, item: &'b Item) -> Option<&'b str> {
+        self.stability_policy.effective_assoc_const_default(item)
+    }
+
     /// Return `true` if our analysis indicates the trait is sealed, and `false` otherwise.
     ///
     /// Our analysis is conservative: it has false-negatives but no false-positives.
