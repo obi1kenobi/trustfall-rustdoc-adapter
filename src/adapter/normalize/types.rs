@@ -1,23 +1,28 @@
 use std::num::NonZeroUsize;
 
 use rustdoc_types::{
-    Abi, AssocItemConstraint, AssocItemConstraintKind, FunctionHeader, GenericArg, GenericBound,
-    GenericParamDef, GenericParamDefKind, Term, TraitBoundModifier, Type,
+    AssocItemConstraint, AssocItemConstraintKind, GenericArg, GenericBound, GenericParamDef,
+    GenericParamDefKind, Term, TraitBoundModifier, Type,
 };
 
 use super::{
-    context::FnNormalizationContext, parameter_impl_trait::ParameterImplTraitCursor, paths,
+    context::FnNormalizationContext, function_pointer,
+    parameter_impl_trait::ParameterImplTraitCursor, paths, sort_key,
 };
 
 /// Output a normalized parameter type.
 ///
 /// In parameters, `impl Trait` is normalized to a synthetic generic type, not an opaque type.
 pub(super) fn format_parameter_type<'a>(
-    context: &FnNormalizationContext<'a>,
+    context: &mut FnNormalizationContext<'a>,
     position: NonZeroUsize,
     type_: &'a Type,
 ) -> String {
-    let mut parameter_impl_trait_cursor = Some(context.impl_trait_cursor_for_parameter(position));
+    let mut parameter_impl_trait_cursor = Some(
+        context
+            .parameter_impl_traits()
+            .cursor_for_parameter(position),
+    );
     let mut output = String::new();
     format_type_inner(
         context,
@@ -29,14 +34,14 @@ pub(super) fn format_parameter_type<'a>(
     parameter_impl_trait_cursor
         .as_ref()
         .expect("parameter impl Trait cursor disappeared")
-        .assert_finished();
+        .assert_finished(context.parameter_impl_traits());
     output
 }
 
 /// Output a normalized type for positions other than parameter position.
 ///
 /// In non-parameters, `impl Trait` is normalized to an opaque type, not a synthetic generic type.
-pub(super) fn format_type<'a>(context: &FnNormalizationContext<'a>, type_: &'a Type) -> String {
+pub(super) fn format_type<'a>(context: &mut FnNormalizationContext<'a>, type_: &'a Type) -> String {
     let mut parameter_impl_trait_cursor = None;
     let mut output = String::new();
     format_type_inner(
@@ -50,10 +55,10 @@ pub(super) fn format_type<'a>(context: &FnNormalizationContext<'a>, type_: &'a T
 }
 
 fn format_type_inner<'a>(
-    context: &FnNormalizationContext<'a>,
+    context: &mut FnNormalizationContext<'a>,
     type_: &'a Type,
     wrap_before_bounds: bool,
-    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor>,
     output: &mut String,
 ) {
     match type_ {
@@ -66,34 +71,100 @@ fn format_type_inner<'a>(
             }
             output.push_str("dyn ");
 
-            let mut traits = dyn_trait
-                .traits
-                .iter()
-                .map(|poly_trait| {
-                    let mut formatted = String::new();
+            let wrap_trait_before_bounds =
+                dyn_trait.traits.len() + usize::from(dyn_trait.lifetime.is_some()) > 1;
+            if parameter_impl_trait_cursor.is_none() {
+                let mut traits = dyn_trait
+                    .traits
+                    .iter()
+                    .map(|trait_| {
+                        (
+                            sort_key::output_poly_trait(context.crate_(), context.names(), trait_),
+                            trait_,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                // We can't use `sort_unstable_by_key()` here because its signature doesn't allow
+                // borrowing the sort key from the item. Recall that items are moved during sorting.
+                traits.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+                let mut traits_iter = traits.into_iter();
+                if let Some((_, trait_)) = traits_iter.next() {
                     format_poly_trait(
                         context,
-                        poly_trait,
-                        dyn_trait.traits.len() + usize::from(dyn_trait.lifetime.is_some()) > 1,
+                        trait_,
+                        wrap_trait_before_bounds,
                         parameter_impl_trait_cursor,
-                        &mut formatted,
+                        output,
                     );
-                    formatted
-                })
-                .collect::<Vec<_>>();
-            traits.sort_unstable();
+                }
+                for (_, trait_) in traits_iter {
+                    output.push_str(" + ");
+                    format_poly_trait(
+                        context,
+                        trait_,
+                        wrap_trait_before_bounds,
+                        parameter_impl_trait_cursor,
+                        output,
+                    );
+                }
+            } else {
+                // `parameter_impl_trait_cursor` being `Some` means we are formatting
+                // a function parameter, where parameter-position `impl Trait` is rendered
+                // as `IT...`. The cursor must be consumed in rustdoc traversal order,
+                // but higher-ranked placeholders inside this unordered group must be
+                // assigned in canonical output order. Walk once with a cloned context
+                // to advance the cursor and record the assignments, then render sorted
+                // components with the real context.
+                let mut traversal_context = context.clone();
+                let mut traits = Vec::with_capacity(dyn_trait.traits.len());
+                let mut scratch = String::new();
+                for trait_ in &dyn_trait.traits {
+                    let cursor_before = *parameter_impl_trait_cursor;
+                    scratch.clear();
+                    format_poly_trait(
+                        &mut traversal_context,
+                        trait_,
+                        wrap_trait_before_bounds,
+                        parameter_impl_trait_cursor,
+                        &mut scratch,
+                    );
+                    let cursor_after_next = parameter_impl_trait_cursor
+                        .as_ref()
+                        .map(ParameterImplTraitCursor::next_index);
+                    let key =
+                        sort_key::parameter_poly_trait(context.crate_(), context.names(), trait_);
+                    traits.push((key, trait_, cursor_before, cursor_after_next));
+                }
+                // We can't use `sort_unstable_by_key()` here because its signature doesn't allow
+                // borrowing the sort key from the item. Recall that items are moved during sorting.
+                traits.sort_unstable_by(|a, b| a.0.cmp(&b.0));
 
-            let mut traits_iter = traits.iter();
-            if let Some(trait_) = traits_iter.next() {
-                output.push_str(trait_);
-            }
-            for trait_ in traits_iter {
-                output.push_str(" + ");
-                output.push_str(trait_);
+                let mut traits_iter = traits.into_iter();
+                if let Some((_, trait_, mut cursor, cursor_after_next)) = traits_iter.next() {
+                    format_poly_trait(
+                        context,
+                        trait_,
+                        wrap_trait_before_bounds,
+                        &mut cursor,
+                        output,
+                    );
+                    assert_cursor_checkpoint(&cursor, cursor_after_next, "trait-bound");
+                }
+                for (_, trait_, mut cursor, cursor_after_next) in traits_iter {
+                    output.push_str(" + ");
+                    format_poly_trait(
+                        context,
+                        trait_,
+                        wrap_trait_before_bounds,
+                        &mut cursor,
+                        output,
+                    );
+                    assert_cursor_checkpoint(&cursor, cursor_after_next, "trait-bound");
+                }
             }
             if let Some(lifetime) = &dyn_trait.lifetime {
                 assert!(
-                    !traits.is_empty(),
+                    !dyn_trait.traits.is_empty(),
                     "trait object lifetime bound cannot appear without a trait bound",
                 );
                 output.push_str(" + ");
@@ -110,19 +181,18 @@ fn format_type_inner<'a>(
         }
         Type::Primitive(name) => output.push_str(name),
         Type::FunctionPointer(pointer) => {
-            // Function-pointer ABI and safety are part of the type being
-            // normalized, unlike ABI and safety on the containing function.
-            let pointer_context = context.with_params(&pointer.generic_params);
-            format_scoped_generic_params(&pointer_context, &pointer.generic_params, output);
-            format_function_header(&pointer.header, output);
-            output.push_str("fn");
-            format_function_signature(
-                &pointer_context,
-                &pointer.sig,
-                wrap_before_bounds,
-                parameter_impl_trait_cursor,
-                output,
-            );
+            context.with_higher_ranked_params(&pointer.generic_params, |context| {
+                format_scoped_generic_params(context, &pointer.generic_params, output);
+                function_pointer::format_fn_pointer_header(&pointer.header, output);
+                output.push_str("fn");
+                format_function_signature(
+                    context,
+                    &pointer.sig,
+                    wrap_before_bounds,
+                    parameter_impl_trait_cursor,
+                    output,
+                );
+            });
         }
         Type::Tuple(types) => format_tuple(context, types, parameter_impl_trait_cursor, output),
         Type::Slice(type_) => {
@@ -140,11 +210,11 @@ fn format_type_inner<'a>(
         }
         Type::Pat { .. } => unimplemented!("Type::Pat is unstable"),
         Type::ImplTrait(bounds) => {
-            if let Some(names) = parameter_impl_trait_cursor.as_mut() {
-                // We're in parameter mode, output a synthetic generic.
-                output.push_str(names.next());
+            if let Some(cursor) = parameter_impl_trait_cursor.as_mut() {
+                // We are formatting a function parameter, so output a synthetic generic.
+                output.push_str(cursor.next(context.parameter_impl_traits()));
             } else {
-                // We're in non-parameter mode, output an opaque (`impl Trait`).
+                // We are formatting a non-parameter position, so output an opaque (`impl Trait`).
                 if wrap_before_bounds {
                     output.push('(');
                 }
@@ -242,9 +312,9 @@ fn format_type_inner<'a>(
 }
 
 fn format_tuple<'a>(
-    context: &FnNormalizationContext<'a>,
+    context: &mut FnNormalizationContext<'a>,
     types: &'a [Type],
-    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor>,
     output: &mut String,
 ) {
     match types {
@@ -268,28 +338,29 @@ fn format_tuple<'a>(
 }
 
 fn format_poly_trait<'a>(
-    context: &FnNormalizationContext<'a>,
+    context: &mut FnNormalizationContext<'a>,
     poly_trait: &'a rustdoc_types::PolyTrait,
     wrap_before_bounds: bool,
-    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor>,
     output: &mut String,
 ) {
-    let context = context.with_params(&poly_trait.generic_params);
-    format_scoped_generic_params(&context, &poly_trait.generic_params, output);
-    format_path(
-        &context,
-        &poly_trait.trait_,
-        wrap_before_bounds,
-        parameter_impl_trait_cursor,
-        output,
-    );
+    context.with_higher_ranked_params(&poly_trait.generic_params, |context| {
+        format_scoped_generic_params(context, &poly_trait.generic_params, output);
+        format_path(
+            context,
+            &poly_trait.trait_,
+            wrap_before_bounds,
+            parameter_impl_trait_cursor,
+            output,
+        );
+    });
 }
 
 fn format_path<'a>(
-    context: &FnNormalizationContext<'a>,
+    context: &mut FnNormalizationContext<'a>,
     path: &'a rustdoc_types::Path,
     wrap_args_before_bounds: bool,
-    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor>,
     output: &mut String,
 ) {
     output.push_str(&paths::normalized_path(context.crate_(), path));
@@ -305,10 +376,10 @@ fn format_path<'a>(
 }
 
 fn format_generic_args<'a>(
-    context: &FnNormalizationContext<'a>,
+    context: &mut FnNormalizationContext<'a>,
     args: &'a rustdoc_types::GenericArgs,
     wrap_output_before_bounds: bool,
-    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor>,
     output: &mut String,
 ) {
     match args {
@@ -327,31 +398,105 @@ fn format_generic_args<'a>(
                 needs_separator = true;
             }
 
-            let mut constraints = constraints
-                .iter()
-                .map(|constraint| {
-                    let mut formatted = String::new();
-                    format_assoc_item_constraint(
-                        context,
-                        constraint,
-                        parameter_impl_trait_cursor,
-                        &mut formatted,
-                    );
-                    formatted
-                })
-                .collect::<Vec<_>>();
-            constraints.sort_unstable();
             if !constraints.is_empty() {
                 if needs_separator {
                     output.push_str(", ");
                 }
-                let mut constraints_iter = constraints.iter();
-                if let Some(constraint) = constraints_iter.next() {
-                    output.push_str(constraint);
-                }
-                for constraint in constraints_iter {
-                    output.push_str(", ");
-                    output.push_str(constraint);
+                if parameter_impl_trait_cursor.is_none() {
+                    let mut constraints = constraints
+                        .iter()
+                        .map(|constraint| {
+                            (
+                                sort_key::output_assoc_item_constraint(
+                                    context.crate_(),
+                                    context.names(),
+                                    constraint,
+                                ),
+                                constraint,
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    // We can't use `sort_unstable_by_key()` here because its signature
+                    // doesn't allow borrowing the sort key from the item.
+                    // Recall that items are moved during sorting.
+                    constraints.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+                    let mut constraints_iter = constraints.into_iter();
+                    if let Some((_, constraint)) = constraints_iter.next() {
+                        format_assoc_item_constraint(
+                            context,
+                            constraint,
+                            parameter_impl_trait_cursor,
+                            output,
+                        );
+                    }
+                    for (_, constraint) in constraints_iter {
+                        output.push_str(", ");
+                        format_assoc_item_constraint(
+                            context,
+                            constraint,
+                            parameter_impl_trait_cursor,
+                            output,
+                        );
+                    }
+                } else {
+                    // `parameter_impl_trait_cursor` being `Some` means we are formatting
+                    // a function parameter, where parameter-position `impl Trait` is rendered
+                    // as `IT...`. The cursor must be consumed in rustdoc traversal order,
+                    // but higher-ranked placeholders inside this unordered group must be
+                    // assigned in canonical output order. Walk once with a cloned context
+                    // to advance the cursor and record checkpoints, then render sorted
+                    // components with the real context.
+                    let mut traversal_context = context.clone();
+                    let mut constraints_by_key = Vec::new();
+                    let mut scratch = String::new();
+                    for constraint in constraints {
+                        let cursor_before = *parameter_impl_trait_cursor;
+                        scratch.clear();
+                        format_assoc_item_constraint(
+                            &mut traversal_context,
+                            constraint,
+                            parameter_impl_trait_cursor,
+                            &mut scratch,
+                        );
+                        let cursor_after_next = parameter_impl_trait_cursor
+                            .as_ref()
+                            .map(ParameterImplTraitCursor::next_index);
+                        let key = sort_key::parameter_assoc_item_constraint(
+                            context.crate_(),
+                            context.names(),
+                            constraint,
+                        );
+                        constraints_by_key.push((
+                            key,
+                            constraint,
+                            cursor_before,
+                            cursor_after_next,
+                        ));
+                    }
+                    // We can't use `sort_unstable_by_key()` here because its signature
+                    // doesn't allow borrowing the sort key from the item.
+                    // Recall that items are moved during sorting.
+                    constraints_by_key.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+                    let mut constraints_iter = constraints_by_key.into_iter();
+                    if let Some((_, constraint, mut cursor, cursor_after_next)) =
+                        constraints_iter.next()
+                    {
+                        format_assoc_item_constraint(context, constraint, &mut cursor, output);
+                        assert_cursor_checkpoint(
+                            &cursor,
+                            cursor_after_next,
+                            "associated-constraint",
+                        );
+                    }
+                    for (_, constraint, mut cursor, cursor_after_next) in constraints_iter {
+                        output.push_str(", ");
+                        format_assoc_item_constraint(context, constraint, &mut cursor, output);
+                        assert_cursor_checkpoint(
+                            &cursor,
+                            cursor_after_next,
+                            "associated-constraint",
+                        );
+                    }
                 }
             }
             output.push('>');
@@ -385,9 +530,9 @@ fn format_generic_args<'a>(
 }
 
 fn format_generic_arg<'a>(
-    context: &FnNormalizationContext<'a>,
+    context: &mut FnNormalizationContext<'a>,
     arg: &'a GenericArg,
-    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor>,
     output: &mut String,
 ) {
     match arg {
@@ -404,9 +549,9 @@ fn format_generic_arg<'a>(
 }
 
 fn format_assoc_item_constraint<'a>(
-    context: &FnNormalizationContext<'a>,
+    context: &mut FnNormalizationContext<'a>,
     constraint: &'a AssocItemConstraint,
-    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor>,
     output: &mut String,
 ) {
     output.push_str(&constraint.name);
@@ -427,41 +572,105 @@ fn format_assoc_item_constraint<'a>(
 }
 
 fn format_bounds<'a>(
-    context: &FnNormalizationContext<'a>,
+    context: &mut FnNormalizationContext<'a>,
     bounds: &'a [GenericBound],
-    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor>,
     output: &mut String,
 ) {
-    let mut bounds = bounds
-        .iter()
-        .map(|bound| {
-            let mut formatted = String::new();
+    if parameter_impl_trait_cursor.is_none() {
+        let mut bounds = bounds
+            .iter()
+            .map(|bound| {
+                (
+                    sort_key::output_generic_bound(context.crate_(), context.names(), bound),
+                    bound,
+                )
+            })
+            .collect::<Vec<_>>();
+        let bounds_len = bounds.len();
+        // We can't use `sort_unstable_by_key()` here because its signature doesn't allow
+        // borrowing the sort key from the item. Recall that items are moved during sorting.
+        bounds.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        let mut bounds_iter = bounds.into_iter();
+        if let Some((_, bound)) = bounds_iter.next() {
             format_generic_bound(
                 context,
                 bound,
-                bounds.len() > 1,
+                bounds_len > 1,
                 parameter_impl_trait_cursor,
-                &mut formatted,
+                output,
             );
-            formatted
-        })
-        .collect::<Vec<_>>();
-    bounds.sort_unstable();
-    let mut bounds_iter = bounds.iter();
-    if let Some(bound) = bounds_iter.next() {
-        output.push_str(bound);
-    }
-    for bound in bounds_iter {
-        output.push_str(" + ");
-        output.push_str(bound);
+        }
+        for (_, bound) in bounds_iter {
+            output.push_str(" + ");
+            format_generic_bound(
+                context,
+                bound,
+                bounds_len > 1,
+                parameter_impl_trait_cursor,
+                output,
+            );
+        }
+    } else {
+        // `parameter_impl_trait_cursor` being `Some` means we are formatting
+        // a function parameter, where parameter-position `impl Trait` is rendered
+        // as `IT...`. The cursor must be consumed in rustdoc traversal order,
+        // but higher-ranked placeholders inside this unordered group must be
+        // assigned in canonical output order. Walk once with a cloned context
+        // to advance the cursor and record checkpoints, then render sorted
+        // components with the real context.
+        let mut traversal_context = context.clone();
+        let mut bounds_by_key = Vec::new();
+        let mut scratch = String::new();
+        for bound in bounds {
+            let cursor_before = *parameter_impl_trait_cursor;
+            scratch.clear();
+            format_generic_bound(
+                &mut traversal_context,
+                bound,
+                false,
+                parameter_impl_trait_cursor,
+                &mut scratch,
+            );
+            let cursor_after_next = parameter_impl_trait_cursor
+                .as_ref()
+                .map(ParameterImplTraitCursor::next_index);
+            let key = sort_key::parameter_generic_bound(context.crate_(), context.names(), bound);
+            bounds_by_key.push((key, bound, cursor_before, cursor_after_next));
+        }
+        // We can't use `sort_unstable_by_key()` here because its signature doesn't allow
+        // borrowing the sort key from the item. Recall that items are moved during sorting.
+        bounds_by_key.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        let mut bounds_iter = bounds_by_key.into_iter();
+        if let Some((_, bound, mut cursor, cursor_after_next)) = bounds_iter.next() {
+            format_generic_bound(context, bound, false, &mut cursor, output);
+            assert_cursor_checkpoint(&cursor, cursor_after_next, "generic-bound");
+        }
+        for (_, bound, mut cursor, cursor_after_next) in bounds_iter {
+            output.push_str(" + ");
+            format_generic_bound(context, bound, false, &mut cursor, output);
+            assert_cursor_checkpoint(&cursor, cursor_after_next, "generic-bound");
+        }
     }
 }
 
+fn assert_cursor_checkpoint(
+    cursor: &Option<ParameterImplTraitCursor>,
+    expected_next: Option<usize>,
+    component: &str,
+) {
+    assert_eq!(
+        cursor.as_ref().map(ParameterImplTraitCursor::next_index),
+        expected_next,
+        "canonical {component} formatting consumed a different number of parameter-position impl Trait nodes",
+    );
+}
+
 fn format_generic_bound<'a>(
-    context: &FnNormalizationContext<'a>,
+    context: &mut FnNormalizationContext<'a>,
     bound: &'a GenericBound,
     wrap_before_or_after_bounds: bool,
-    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor>,
     output: &mut String,
 ) {
     match bound {
@@ -470,22 +679,23 @@ fn format_generic_bound<'a>(
             generic_params,
             modifier,
         } => {
-            let context = context.with_params(generic_params);
-            format_scoped_generic_params(&context, generic_params, output);
-            match modifier {
-                TraitBoundModifier::None => {}
-                TraitBoundModifier::Maybe => output.push('?'),
-                // The schema has no separate const-trait facet. Render the stable
-                // ordinary-bound view instead of leaking nightly-only `[const]` syntax.
-                TraitBoundModifier::MaybeConst => {}
-            }
-            format_path(
-                &context,
-                trait_,
-                wrap_before_or_after_bounds,
-                parameter_impl_trait_cursor,
-                output,
-            );
+            context.with_higher_ranked_params(generic_params, |context| {
+                format_scoped_generic_params(context, generic_params, output);
+                match modifier {
+                    TraitBoundModifier::None => {}
+                    TraitBoundModifier::Maybe => output.push('?'),
+                    // The schema has no separate const-trait facet. Render the stable
+                    // ordinary-bound view instead of leaking nightly-only `[const]` syntax.
+                    TraitBoundModifier::MaybeConst => {}
+                }
+                format_path(
+                    context,
+                    trait_,
+                    wrap_before_or_after_bounds,
+                    parameter_impl_trait_cursor,
+                    output,
+                );
+            });
         }
         GenericBound::Outlives(lifetime) => {
             let lifetime = context.names().lifetime(lifetime);
@@ -514,7 +724,7 @@ fn format_generic_bound<'a>(
 }
 
 fn format_scoped_generic_params<'a>(
-    context: &FnNormalizationContext<'a>,
+    context: &mut FnNormalizationContext<'a>,
     params: &'a [GenericParamDef],
     output: &mut String,
 ) {
@@ -533,7 +743,7 @@ fn format_scoped_generic_params<'a>(
 }
 
 fn format_generic_param_def<'a>(
-    context: &FnNormalizationContext<'a>,
+    context: &mut FnNormalizationContext<'a>,
     param: &'a GenericParamDef,
     output: &mut String,
 ) {
@@ -560,10 +770,10 @@ fn format_generic_param_def<'a>(
 }
 
 fn format_function_signature<'a>(
-    context: &FnNormalizationContext<'a>,
+    context: &mut FnNormalizationContext<'a>,
     signature: &'a rustdoc_types::FunctionSignature,
     wrap_output_before_bounds: bool,
-    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor>,
     output: &mut String,
 ) {
     output.push('(');
@@ -595,52 +805,8 @@ fn format_function_signature<'a>(
     }
 }
 
-fn format_function_header(header: &FunctionHeader, output: &mut String) {
-    if header.is_const {
-        // As of Rust 1.96, function pointer types cannot use hypothetical
-        // `const fn(...)` syntax, so there is no normalized signature text to
-        // produce for this header shape.
-        unreachable!("found const function pointer header: {header:?}");
-    }
-    if header.is_async {
-        // As of Rust 1.96, function pointer types cannot use hypothetical
-        // `async fn(...)` syntax, so there is no normalized signature text to
-        // produce for this header shape.
-        unreachable!("found async function pointer header: {header:?}");
-    }
-    if header.is_unsafe {
-        output.push_str("unsafe ");
-    }
-
-    match &header.abi {
-        Abi::Rust => {}
-        Abi::C { unwind } => push_abi(output, "C", *unwind),
-        Abi::Cdecl { unwind } => push_abi(output, "cdecl", *unwind),
-        Abi::Stdcall { unwind } => push_abi(output, "stdcall", *unwind),
-        Abi::Fastcall { unwind } => push_abi(output, "fastcall", *unwind),
-        Abi::Aapcs { unwind } => push_abi(output, "aapcs", *unwind),
-        Abi::Win64 { unwind } => push_abi(output, "win64", *unwind),
-        Abi::SysV64 { unwind } => push_abi(output, "sysv64", *unwind),
-        Abi::System { unwind } => push_abi(output, "system", *unwind),
-        Abi::Other(other) => {
-            output.push_str("extern \"");
-            output.push_str(other);
-            output.push_str("\" ");
-        }
-    }
-}
-
-fn push_abi(output: &mut String, name: &str, unwind: bool) {
-    output.push_str("extern \"");
-    output.push_str(name);
-    if unwind {
-        output.push_str("-unwind");
-    }
-    output.push_str("\" ");
-}
-
 fn format_constant<'a>(
-    context: &FnNormalizationContext<'a>,
+    context: &mut FnNormalizationContext<'a>,
     constant: &'a rustdoc_types::Constant,
     output: &mut String,
 ) {
@@ -650,9 +816,9 @@ fn format_constant<'a>(
 }
 
 fn format_term<'a>(
-    context: &FnNormalizationContext<'a>,
+    context: &mut FnNormalizationContext<'a>,
     term: &'a Term,
-    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor<'_>>,
+    parameter_impl_trait_cursor: &mut Option<ParameterImplTraitCursor>,
     output: &mut String,
 ) {
     match term {
