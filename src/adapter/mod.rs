@@ -213,10 +213,10 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                     properties::resolve_raw_type_property(contexts, property_name)
                 }
                 "AssociatedType" => {
-                    properties::resolve_associated_type_property(contexts, property_name)
+                    properties::resolve_associated_type_property(contexts, property_name, self)
                 }
                 "AssociatedConstant" => {
-                    properties::resolve_associated_constant_property(contexts, property_name)
+                    properties::resolve_associated_constant_property(contexts, property_name, self)
                 }
                 "Constant" => properties::resolve_constant_property(contexts, property_name),
                 "Discriminant" => {

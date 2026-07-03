@@ -23,9 +23,9 @@ impl PublicApiStabilityPolicy {
     /// - public/default visibility (e.g. enum variants have default visibility), and
     /// - deprecated or not `#[doc(hidden)]`.
     ///
-    /// Rustdoc JSON v57 does not expose item stability as structured data, so
+    /// This rustdoc JSON version does not expose item stability as structured data, so
     /// [`PublicApiStabilityPolicy::RustStandardLibrary`] behaves the same as
-    /// [`PublicApiStabilityPolicy::Ignore`] on this branch.
+    /// [`PublicApiStabilityPolicy::Ignore`].
     pub(crate) fn public_api_eligible(self, item: &Item) -> bool {
         let is_public = matches!(item.visibility, Visibility::Public | Visibility::Default);
         let allowed_by_doc_hidden =
@@ -43,5 +43,31 @@ impl PublicApiStabilityPolicy {
         // Stability info is not present in this rustdoc version.
         // Treat it as absent, so syntactic constness is the effective constness.
         raw_constness
+    }
+
+    pub(crate) fn effective_function_has_body(self, function: &rustdoc_types::Function) -> bool {
+        // Default-body stability info starts in rustdoc JSON v60.
+        // Treat it as absent and use syntactic body presence.
+        function.has_body
+    }
+
+    pub(crate) fn effective_assoc_type_has_default(self, item: &Item) -> bool {
+        let rustdoc_types::ItemEnum::AssocType { type_, .. } = &item.inner else {
+            unreachable!("`item` was not an associated type: {item:?}");
+        };
+
+        // Default-value stability info starts in rustdoc JSON v60.
+        // Treat it as absent and use syntactic default presence.
+        type_.is_some()
+    }
+
+    pub(crate) fn effective_assoc_const_default(self, item: &Item) -> Option<&str> {
+        let rustdoc_types::ItemEnum::AssocConst { value, .. } = &item.inner else {
+            unreachable!("`item` was not an associated constant: {item:?}");
+        };
+
+        // Default-value stability info starts in rustdoc JSON v60.
+        // Treat it as absent and use the syntactic default.
+        value.as_deref()
     }
 }
