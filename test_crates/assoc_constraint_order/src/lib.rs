@@ -11,8 +11,21 @@ impl AssocConstraintOrder for ConcreteAssoc {
 }
 
 pub trait Takes<T> {}
+pub trait AlsoTakes<T> {}
+pub trait TakesConst<const N: usize> {}
+impl<T, U> Takes<T> for U {}
+impl<T, U> AlsoTakes<T> for U {}
+impl<T, const N: usize> TakesConst<N> for T {}
 
 pub trait TakesLifetimeConst<'a, const N: usize> {}
+
+pub trait RealTrait {
+    fn method(&self);
+}
+
+pub struct DynAssoc;
+
+pub struct DynPointerAssoc;
 
 pub fn a_then_b(value: Box<dyn AssocConstraintOrder<A = impl Clone, B = impl Copy>>) {
     let _ = value;
@@ -27,7 +40,19 @@ pub fn return_assoc_constraint_bound() -> impl AssocConstraintOrder<A: Clone + C
 }
 
 pub trait HasItem {
-    type Item;
+    type Item: ?Sized;
+}
+
+impl HasItem for ConcreteAssoc {
+    type Item = u8;
+}
+
+impl HasItem for DynAssoc {
+    type Item = dyn RealTrait + Send;
+}
+
+impl HasItem for DynPointerAssoc {
+    type Item = fn() -> *const (dyn RealTrait + Send);
 }
 
 pub trait HasGenericItem {
@@ -52,6 +77,47 @@ pub fn return_generic_assoc_constraint_bound() -> impl GenericAssoc<u8, A: Clone
 
 pub fn return_gat_assoc_constraint_bound() -> impl HasGenericItem<Item<u8>: Clone + Copy> {
     ConcreteAssoc
+}
+
+pub fn return_nested_dyn_bound() -> impl HasItem<Item = dyn RealTrait + Send> {
+    DynAssoc
+}
+
+pub fn return_nested_parenthesized_dyn_bound(
+) -> impl HasItem<Item = fn() -> *const (dyn RealTrait + Send)> {
+    DynPointerAssoc
+}
+
+pub fn return_nested_opaque_bound_clone_then_copy(
+) -> impl HasItem<Item: Takes<impl Clone> + Takes<impl Copy>> {
+    ConcreteAssoc
+}
+
+pub fn return_nested_opaque_bound_copy_then_clone(
+) -> impl HasItem<Item: Takes<impl Copy> + Takes<impl Clone>> {
+    ConcreteAssoc
+}
+
+pub fn return_function_pointer_bound_safe_then_unsafe(
+) -> impl Takes<fn(u8) -> u8> + Takes<unsafe extern "C" fn(u8, ...) -> u8> {
+}
+
+pub fn return_function_pointer_bound_unsafe_then_safe(
+) -> impl Takes<unsafe extern "C" fn(u8, ...) -> u8> + Takes<fn(u8) -> u8> {
+}
+
+pub fn return_assoc_constraints_b_then_a() -> impl AssocConstraintOrder<B = u8, A = u8> {
+    ConcreteAssoc
+}
+
+pub fn return_const_arg_sort_key() -> impl TakesConst<2> + TakesConst<1> {}
+
+pub fn return_function_pointer_signature_sort_key() -> impl Takes<fn(u8)> + Takes<fn(u16)> {}
+
+pub fn return_function_pointer_header_sort_key() -> impl Takes<unsafe fn(u8)> + Takes<fn(u8)> {}
+
+pub fn return_function_pointer_abi_sort_key(
+) -> impl Takes<unsafe extern "C-unwind" fn(u8)> + Takes<unsafe extern "C" fn(u8)> {
 }
 
 pub trait Provider {
@@ -190,6 +256,17 @@ pub fn constraint_two_lifetime_function_pointer(
     let _ = value;
 }
 
+pub fn constraint_higher_ranked_two_constraints_b_then_a(
+    value: Box<
+        dyn AssocConstraintOrder<
+            B = for<'b> fn(&'b u16) -> &'b u16,
+            A = for<'a> fn(&'a u8) -> &'a u8,
+        >,
+    >,
+) {
+    let _ = value;
+}
+
 pub fn constraint_dyn_fn_trait_two_args(
     value: Box<dyn AssocConstraintOrder<A = Box<dyn Fn(u8, u16) -> u32>, B = impl Clone>>,
 ) {
@@ -241,6 +318,12 @@ pub fn constraint_single_tuple(
 
 pub fn constraint_dyn_multi_trait<'a>(
     value: Box<dyn AssocConstraintOrder<A = Box<dyn Send + Sync + 'a>, B = impl Clone>>,
+) {
+    let _ = value;
+}
+
+pub fn constraint_dyn_multi_trait_reverse<'a>(
+    value: Box<dyn AssocConstraintOrder<A = Box<dyn Sync + Send + 'a>, B = impl Clone>>,
 ) {
     let _ = value;
 }
