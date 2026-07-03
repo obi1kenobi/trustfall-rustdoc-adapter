@@ -23,6 +23,10 @@ pub trait RealTrait {
     fn method(&self);
 }
 
+pub struct DynAssoc;
+
+pub struct DynPointerAssoc;
+
 pub fn a_then_b(value: Box<dyn AssocConstraintOrder<A = impl Clone, B = impl Copy>>) {
     let _ = value;
 }
@@ -36,11 +40,19 @@ pub fn return_assoc_constraint_bound() -> impl AssocConstraintOrder<A: Clone + C
 }
 
 pub trait HasItem {
-    type Item;
+    type Item: ?Sized;
 }
 
 impl HasItem for ConcreteAssoc {
     type Item = u8;
+}
+
+impl HasItem for DynAssoc {
+    type Item = dyn RealTrait + Send;
+}
+
+impl HasItem for DynPointerAssoc {
+    type Item = fn() -> *const (dyn RealTrait + Send);
 }
 
 pub trait HasGenericItem {
@@ -67,10 +79,13 @@ pub fn return_gat_assoc_constraint_bound() -> impl HasGenericItem<Item<u8>: Clon
     ConcreteAssoc
 }
 
-#[allow(unused_parens)]
-pub fn return_nested_dyn_bound(
-) -> impl HasItem<Item: Fn() -> (dyn RealTrait + Send) + Clone> {
-    ConcreteAssoc
+pub fn return_nested_dyn_bound() -> impl HasItem<Item = dyn RealTrait + Send> {
+    DynAssoc
+}
+
+pub fn return_nested_parenthesized_dyn_bound(
+) -> impl HasItem<Item = fn() -> *const (dyn RealTrait + Send)> {
+    DynPointerAssoc
 }
 
 pub fn return_nested_opaque_bound_clone_then_copy(

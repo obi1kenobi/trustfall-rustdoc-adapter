@@ -4401,13 +4401,19 @@ fn defaulted_trait_items_overridden_in_impls_when_looked_up_by_name() {
     }
 
     let mut expected_results = vec![
-        // We *must* only get one result here.
+        // We *must* only get one result for `Example` here.
         //
         // If we get two, we've erroneously returned both
         // the trait's provided default impl for the method
         // and the `impl Trait for Example` override for the method.
         Output {
             name: "Example".into(),
+            method: "method".into(),
+        },
+        // `SameNameExample` has a same-named associated type but no method override;
+        // the provided method should still be discoverable.
+        Output {
+            name: "SameNameExample".into(),
             method: "method".into(),
         },
     ];
@@ -12355,7 +12361,11 @@ fn function_return_normalized_type_signature_handles_assoc_constraint_bound() {
             },
             Output {
                 name: "return_nested_dyn_bound".into(),
-                signature: "impl ::assoc_constraint_order::HasItem<Item: ::core::clone::Clone + ::core::ops::function::Fn() -> (dyn ::assoc_constraint_order::RealTrait + ::core::marker::Send)>".into(),
+                signature: "impl ::assoc_constraint_order::HasItem<Item = dyn ::assoc_constraint_order::RealTrait + ::core::marker::Send>".into(),
+            },
+            Output {
+                name: "return_nested_parenthesized_dyn_bound".into(),
+                signature: "impl ::assoc_constraint_order::HasItem<Item = fn() -> *const (dyn ::assoc_constraint_order::RealTrait + ::core::marker::Send)>".into(),
             },
             Output {
                 name: "return_nested_opaque_bound_clone_then_copy".into(),
