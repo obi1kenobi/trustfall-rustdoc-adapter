@@ -4,7 +4,7 @@ use crate::{PackageIndex, adapter::vertex::FunctionContext};
 
 use super::{
     names::{Names, is_synthetic_type_param},
-    parameter_impl_trait::{self, FnParameterImplTraits, ParameterImplTraitCursor},
+    parameter_impl_trait::{self, FnParameterImplTraits},
 };
 
 /// Per-function state used while rendering one normalized signature.
@@ -25,18 +25,19 @@ impl<'a> FnNormalizationContext<'a> {
     pub(super) fn new(crate_: &'a PackageIndex<'a>, fn_ctx: FunctionContext<'a>) -> Self {
         let mut names = Names::default();
 
-        // Parent generics must be introduced before function generics so
-        // normalized numbering follows the source-visible outer-to-inner scope.
+        // Parent and function generics use distinct placeholder families, but
+        // they share lookup maps. Rust rejects shadowing across nested generic scopes
+        // so there's no possibility of collisions.
         if let Some(item) = fn_ctx.parent {
             match &item.inner {
                 ItemEnum::Trait(trait_) => {
                     for param in &trait_.generics.params {
-                        names.add_param(param);
+                        names.add_parent_param(param);
                     }
                 }
                 ItemEnum::Impl(impl_) => {
                     for param in &impl_.generics.params {
-                        names.add_param(param);
+                        names.add_parent_param(param);
                     }
                 }
                 _ => unreachable!("function parent was not a trait or impl: {item:?}"),
@@ -57,10 +58,10 @@ impl<'a> FnNormalizationContext<'a> {
                 // parameter list as a whole.
                 continue;
             }
-            names.add_param(param);
+            names.add_item_param(param);
         }
         let parameter_impl_traits =
-            parameter_impl_trait::compute_for_function(crate_, function_inner, &names);
+            parameter_impl_trait::compute_for_function(crate_, &names, function_inner);
 
         Self {
             crate_,
@@ -69,17 +70,28 @@ impl<'a> FnNormalizationContext<'a> {
         }
     }
 
-    pub(super) fn with_params(&self, params: &'a [GenericParamDef]) -> Self {
-        // HRTB and function-pointer binders add a nested scope. Clone the
-        // context so outer generic mappings remain available while nested
-        // parameters get fresh canonical names.
-        // TODO: If this cloning becomes a bottleneck, we can probably design
-        // a hierarchical name structure, since we don't expect deep levels of nesting.
-        let mut value = self.clone();
+    pub(super) fn with_higher_ranked_params<R>(
+        &mut self,
+        params: &'a [GenericParamDef],
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        // HRTB and function-pointer binders add a nested scope, but their
+        // placeholder counters are monotonic across the whole signature,
+        // to disambiguate in case another HRTB or function-pointer binder is introduced.
+        // Keep the counters on this context and remove only the temporary lookup mappings
+        // after the binder body has been formatted.
+        let mut lifetime_keys = Vec::with_capacity(params.len());
         for param in params {
-            value.names.add_param(param);
+            lifetime_keys.push(self.names.add_higher_ranked_param(param));
         }
-        value
+        let result = f(self);
+        for key in lifetime_keys {
+            self.names
+                .lifetimes
+                .remove(key)
+                .expect("higher-ranked lifetime param was not in scope");
+        }
+        result
     }
 
     pub(super) fn crate_(&self) -> &'a PackageIndex<'a> {
@@ -90,10 +102,7 @@ impl<'a> FnNormalizationContext<'a> {
         &self.names
     }
 
-    pub(super) fn impl_trait_cursor_for_parameter(
-        &self,
-        position: std::num::NonZeroUsize,
-    ) -> ParameterImplTraitCursor<'_> {
-        self.parameter_impl_traits.cursor_for_parameter(position)
+    pub(super) fn parameter_impl_traits(&self) -> &FnParameterImplTraits {
+        &self.parameter_impl_traits
     }
 }

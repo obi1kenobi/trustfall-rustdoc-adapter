@@ -8,6 +8,13 @@ pub struct PublicType<T>(pub T);
 
 pub struct LifetimeConst<'a, const N: usize>(pub &'a [u8; N]);
 
+pub trait BinderTraitA<T> {}
+pub trait BinderTraitB<T> {}
+pub struct BinderWitness;
+
+impl<'a> BinderTraitA<&'a ()> for BinderWitness {}
+impl<'a> BinderTraitB<&'a ()> for BinderWitness {}
+
 pub fn concrete_types(value: u64) -> bool {
     value > 0
 }
@@ -18,6 +25,13 @@ pub fn generic_identity<T>(value: T) -> T {
 
 pub fn lifetime_ref<'long>(value: &'long str) -> &'long str {
     value
+}
+
+pub fn two_lifetimes<'first, 'second>(
+    first: &'first u8,
+    second: &'second u8,
+) -> (&'first u8, &'second u8) {
+    (first, second)
 }
 
 pub fn const_array<const N: usize>(value: [u8; N]) -> [u8; N] {
@@ -159,6 +173,12 @@ pub fn higher_ranked_fn_pointer(callback: for<'a> fn(&'a u8) -> &'a u8) {
     let _ = callback;
 }
 
+pub fn nested_higher_ranked_fn_pointer(
+    callback: for<'outer> fn(&'outer (), for<'inner> fn(&'inner ())),
+) {
+    let _ = callback;
+}
+
 pub fn unsafe_c_variadic_pointer(callback: unsafe extern "C" fn(u8, ...) -> u8) {
     let _ = callback;
 }
@@ -197,6 +217,16 @@ pub fn fn_bound_pointer_to_dyn_return() -> impl Fn() -> *const (dyn Send + Sync)
         static VALUE: u8 = 0;
         &VALUE as &(dyn Send + Sync) as *const (dyn Send + Sync)
     }
+}
+
+pub fn sorted_higher_ranked_return_bounds(
+) -> impl for<'x> BinderTraitB<&'x ()> + for<'y> BinderTraitA<&'y ()> {
+    BinderWitness
+}
+
+pub fn repeated_higher_ranked_lifetime_name_return(
+) -> impl for<'a> BinderTraitB<&'a ()> + for<'a> BinderTraitA<&'a ()> {
+    BinderWitness
 }
 
 pub fn precise_capture_return<T: Clone>(value: T) -> impl Clone + use<T> {
@@ -247,6 +277,31 @@ impl<Owner> GenericExample<Owner> {
     }
 
     pub fn pin_box_self(self: std::pin::Pin<Box<Self>>) {}
+}
+
+pub struct GenericPairExample<Owner, Extra>(pub Owner, pub Extra);
+
+impl<Owner, Extra> GenericPairExample<Owner, Extra> {
+    pub fn parent_and_method<Method>(
+        &self,
+        owner: Owner,
+        extra: Extra,
+        method: Method,
+    ) -> (Owner, Extra, Method) {
+        (owner, extra, method)
+    }
+}
+
+pub struct LifetimeConstExample<'owner, const N: usize>(pub &'owner [u8; N]);
+
+impl<'owner, const N: usize> LifetimeConstExample<'owner, N> {
+    pub fn parent_lifetime_const<Method>(
+        &self,
+        owner: &'owner [u8; N],
+        method: Method,
+    ) -> (&'owner [u8; N], Method) {
+        (owner, method)
+    }
 }
 
 pub trait GenericTrait<TraitParam> {
