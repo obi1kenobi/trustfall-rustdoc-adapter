@@ -471,7 +471,10 @@ impl<K: std::cmp::Eq + std::hash::Hash, V> MapList<K, V> {
 ///
 /// When compiled using the `rayon` feature, build it in parallel. Specifically, this paralelizes
 /// the work of gathering all of the impls for the items in the index.
-fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item, &Item)> {
+fn build_impl_index(
+    index: &HashMap<Id, Item>,
+    stability_policy: PublicApiStabilityPolicy,
+) -> MapList<ImplEntry<'_>, (&Item, &Item)> {
     #[cfg(feature = "rayon")]
     let iter = index.par_iter();
     #[cfg(not(feature = "rayon"))]
@@ -560,10 +563,16 @@ fn build_impl_index(index: &HashMap<Id, Item>) -> MapList<ImplEntry<'_>, (&Item,
             let trait_provided_items = trait_items
                 .filter_map(|id| index.get(id))
                 .filter(move |item| {
+                    let rustdoc_types::ItemEnum::Function(function) = &item.inner else {
+                        return false;
+                    };
+
                     item.name
                         .as_deref()
                         .map(|name| {
-                            trait_provided_methods.contains(name) && !impl_item_names.contains(name)
+                            trait_provided_methods.contains(name)
+                                && !impl_item_names.contains(name)
+                                && stability_policy.effective_function_has_body(function)
                         })
                         .unwrap_or_default()
                 })
@@ -664,7 +673,8 @@ impl<'a> IndexedCrate<'a> {
         ));
         value.imports_index = Some(imports_index);
 
-        value.impl_method_index = Some(build_impl_index(&crate_.index).into_inner());
+        value.impl_method_index =
+            Some(build_impl_index(&crate_.index, value.stability_policy).into_inner());
         value.fn_owner_index = Some(fn_owner_index);
         value.export_name_index = Some(build_export_name_index(&crate_.index));
         value.variant_name_index = Some(build_variant_name_index(&crate_.index));
@@ -693,6 +703,18 @@ impl<'a> IndexedCrate<'a> {
     ) -> bool {
         self.stability_policy
             .effective_constness(item, function.header.is_const)
+    }
+
+    pub(crate) fn effective_function_has_body(&self, function: &rustdoc_types::Function) -> bool {
+        self.stability_policy.effective_function_has_body(function)
+    }
+
+    pub(crate) fn effective_assoc_type_has_default(&self, item: &Item) -> bool {
+        self.stability_policy.effective_assoc_type_has_default(item)
+    }
+
+    pub(crate) fn effective_assoc_const_default<'b>(&self, item: &'b Item) -> Option<&'b str> {
+        self.stability_policy.effective_assoc_const_default(item)
     }
 
     /// Return `true` if our analysis indicates the trait is sealed, and `false` otherwise.
