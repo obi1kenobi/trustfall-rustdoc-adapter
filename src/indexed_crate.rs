@@ -54,12 +54,12 @@ impl From<cargo_metadata::Package> for PackageData {
             .iter()
             .map(|dep| {
                 let dependency = if dep.features.is_empty() {
-                    cargo_toml::Dependency::Simple(dep.req.to_string())
+                    cargo_toml::Dependency::Simple(dep.req.clone())
                 } else {
                     cargo_toml::Dependency::Detailed(Box::new(cargo_toml::DependencyDetail {
                         package: dep.rename.is_none().then(|| dep.name.clone()),
                         version: (dep.req != cargo_metadata::semver::VersionReq::STAR)
-                            .then(|| dep.req.to_string()),
+                            .then(|| dep.req.clone()),
                         features: dep.features.clone(),
                         default_features: dep.uses_default_features,
                         optional: dep.optional,
