@@ -19,6 +19,10 @@ impl<T, const N: usize> TakesConst<N> for T {}
 
 pub trait TakesLifetimeConst<'a, const N: usize> {}
 
+pub trait RealTrait {
+    fn method(&self);
+}
+
 pub fn a_then_b(value: Box<dyn AssocConstraintOrder<A = impl Clone, B = impl Copy>>) {
     let _ = value;
 }
@@ -60,6 +64,12 @@ pub fn return_generic_assoc_constraint_bound() -> impl GenericAssoc<u8, A: Clone
 }
 
 pub fn return_gat_assoc_constraint_bound() -> impl HasGenericItem<Item<u8>: Clone + Copy> {
+    ConcreteAssoc
+}
+
+#[allow(unused_parens)]
+pub fn return_nested_dyn_bound(
+) -> impl HasItem<Item: Fn() -> (dyn RealTrait + Send) + Clone> {
     ConcreteAssoc
 }
 

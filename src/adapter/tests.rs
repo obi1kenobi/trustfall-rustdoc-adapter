@@ -12354,6 +12354,10 @@ fn function_return_normalized_type_signature_handles_assoc_constraint_bound() {
                         .into(),
             },
             Output {
+                name: "return_nested_dyn_bound".into(),
+                signature: "impl ::assoc_constraint_order::HasItem<Item: ::core::clone::Clone + ::core::ops::function::Fn() -> (dyn ::assoc_constraint_order::RealTrait + ::core::marker::Send)>".into(),
+            },
+            Output {
                 name: "return_nested_opaque_bound_clone_then_copy".into(),
                 signature: "impl ::assoc_constraint_order::HasItem<Item: ::assoc_constraint_order::Takes<impl ::core::clone::Clone> + ::assoc_constraint_order::Takes<impl ::core::marker::Copy>>".into(),
             },
