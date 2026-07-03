@@ -56,6 +56,15 @@ macro_rules! get_test_data {
     }
 }
 
+// This mirrors `get_test_data!` for fixtures that intentionally need the
+// Rust standard-library indexing policy instead of ordinary crate indexing.
+macro_rules! get_rust_std_test_data {
+    ($data:ident, $case:ident) => {
+        let crate_ = crate::test_util::load_pregenerated_rustdoc(stringify!($case));
+        let $data = crate::PackageIndex::from_rust_std_component_crate(&crate_);
+    };
+}
+
 #[test]
 fn rustdoc_json_format_version() {
     let path = "./localdata/test_data/reexport/rustdoc.json";
@@ -2497,9 +2506,9 @@ fn importable_paths() {
         Output {
             name: "NestedHiddenGlobOnly".into(),
             path: vec!["importable_paths".into(), "NestedHiddenGlobOnly".into()],
-            doc_hidden: false,
+            doc_hidden: true,
             deprecated: false,
-            public_api: true,
+            public_api: false,
         },
         Output {
             name: "NestedHiddenDeprecatedGlobOnly".into(),
@@ -2507,8 +2516,8 @@ fn importable_paths() {
                 "importable_paths".into(),
                 "NestedHiddenDeprecatedGlobOnly".into(),
             ],
-            doc_hidden: false,
-            deprecated: false,
+            doc_hidden: true,
+            deprecated: true,
             public_api: true,
         },
         Output {
@@ -2534,9 +2543,9 @@ fn importable_paths() {
                 "importable_paths".into(),
                 "HiddenPerItemThenRootGlob".into(),
             ],
-            doc_hidden: false,
+            doc_hidden: true,
             deprecated: false,
-            public_api: true,
+            public_api: false,
         },
         Output {
             name: "HiddenGlobThenRootPerItem".into(),
@@ -2551,9 +2560,9 @@ fn importable_paths() {
         Output {
             name: "HiddenGlobThenRootGlob".into(),
             path: vec!["importable_paths".into(), "HiddenGlobThenRootGlob".into()],
-            doc_hidden: false,
+            doc_hidden: true,
             deprecated: false,
-            public_api: true,
+            public_api: false,
         },
         Output {
             name: "Aliased".into(),
@@ -2561,6 +2570,85 @@ fn importable_paths() {
             doc_hidden: true,
             deprecated: false,
             public_api: false,
+        },
+    ];
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Ensure that if the same path is available via both a `#[doc(hidden)]` glob re-export
+/// and also via some other manner that is public API, the net result is a valid public API path.
+#[test]
+fn hidden_glob_reexports_affect_synthesized_public_api_paths() {
+    get_test_data!(data, doc_hidden_glob_reexports);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                name @output
+                importable_path {
+                    path @output
+                    doc_hidden @output
+                    deprecated @output
+                    public_api @output
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables: BTreeMap<&str, &str> = Default::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        path: Vec<String>,
+        doc_hidden: bool,
+        deprecated: bool,
+        public_api: bool,
+    }
+
+    let mut results: Vec<Output> = trustfall::execute_query(&schema, adapter, query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            name: "HiddenGlobOnly".into(),
+            path: vec!["doc_hidden_glob_reexports".into(), "HiddenGlobOnly".into()],
+            doc_hidden: true,
+            deprecated: false,
+            public_api: false,
+        },
+        Output {
+            name: "HiddenAndVisibleGlob".into(),
+            path: vec![
+                "doc_hidden_glob_reexports".into(),
+                "HiddenAndVisibleGlob".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
+        },
+        Output {
+            name: "HiddenGlobAndDirectUse".into(),
+            path: vec![
+                "doc_hidden_glob_reexports".into(),
+                "HiddenGlobAndDirectUse".into(),
+            ],
+            doc_hidden: false,
+            deprecated: false,
+            public_api: true,
         },
     ];
     expected_results.sort_unstable();
@@ -6507,6 +6595,189 @@ fn type_generic_bounds() {
         },
     ];
     expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn rust_std_function_facets_report_stable_guarantee() {
+    get_rust_std_test_data!(data, rust_std_stability);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @filter(op: "one_of", value: ["$names"]) @output
+                const @output
+                has_body @output
+                public_api_eligible @output
+                signature @output
+            }
+        }
+    }
+}
+    "#;
+    let variables = btreemap! {
+        "names" => FieldValue::List(vec![
+            FieldValue::String("stable_const_stable".into()),
+            FieldValue::String("stable_const_unstable".into()),
+            FieldValue::String("unstable_const_function".into()),
+        ].into()),
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        #[serde(rename = "const")]
+        const_: bool,
+        has_body: bool,
+        public_api_eligible: bool,
+        signature: String,
+    }
+
+    let mut results: Vec<_> = trustfall::execute_query(&schema, adapter, query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+    results.sort_unstable();
+
+    let mut expected_results = vec![
+        Output {
+            name: "stable_const_stable".into(),
+            const_: true,
+            has_body: true,
+            public_api_eligible: true,
+            signature: "const fn stable_const_stable() -> u32".into(),
+        },
+        Output {
+            name: "stable_const_unstable".into(),
+            const_: true, // stability info is not present in this rustdoc version
+            has_body: true,
+            public_api_eligible: true,
+            signature: "const fn stable_const_unstable() -> u32".into(), // stability info is not present in this rustdoc version
+        },
+        Output {
+            name: "unstable_const_function".into(),
+            const_: true,
+            has_body: true,
+            public_api_eligible: true, // stability info is not present in this rustdoc version
+            signature: "const fn unstable_const_function() -> u32".into(),
+        },
+    ];
+    expected_results.sort_unstable();
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
+fn default_policy_ignores_rust_std_const_stability() {
+    let rustdoc = crate::test_util::load_pregenerated_rustdoc("rust_std_stability");
+    let data = PackageIndex::from_crate(&rustdoc);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @filter(op: "=", value: ["$name"])
+                const @output
+                signature @output
+            }
+        }
+    }
+}
+    "#;
+    let variables = btreemap! {
+        "name" => FieldValue::String("stable_const_unstable".into()),
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        #[serde(rename = "const")]
+        const_: bool,
+        signature: String,
+    }
+
+    let results: Vec<Output> = trustfall::execute_query(&schema, adapter, query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+
+    similar_asserts::assert_eq!(
+        vec![Output {
+            const_: true,
+            signature: "const fn stable_const_unstable() -> u32".into(),
+        }],
+        results,
+    );
+}
+
+#[test]
+fn rust_std_signatures_hide_const_trait_markers() {
+    get_rust_std_test_data!(data, rust_std_stability);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Function {
+                name @filter(op: "=", value: ["$name"])
+                signature @output(name: "function_signature")
+
+                parameter {
+                    normalized_type_signature {
+                        signature @output(name: "parameter_signature")
+                    }
+                }
+
+                return_value {
+                    normalized_type_signature {
+                        signature @output(name: "return_signature")
+                    }
+                }
+            }
+        }
+    }
+}
+    "#;
+    let variables = btreemap! {
+        "name" => FieldValue::String("const_trait_marker".into()),
+    };
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        function_signature: String,
+        parameter_signature: String,
+        return_signature: String,
+    }
+
+    let results: Vec<Output> = trustfall::execute_query(&schema, adapter, query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
+
+    let expected_results = vec![Output {
+        function_signature:
+            "const fn const_trait_marker(arg: impl FixtureConstBound) -> impl FixtureConstBound"
+                .into(), // stability info is not present in this rustdoc version
+        parameter_signature: "IT1_1".into(),
+        return_signature: "impl ::rust_std_stability::FixtureConstBound".into(),
+    }];
 
     similar_asserts::assert_eq!(expected_results, results);
 }

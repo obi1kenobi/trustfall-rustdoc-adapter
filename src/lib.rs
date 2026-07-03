@@ -5,6 +5,7 @@ mod hashtables;
 mod indexed_crate;
 mod item_flags;
 mod sealed_trait;
+mod stability;
 mod visibility_tracker;
 
 #[cfg(test)]

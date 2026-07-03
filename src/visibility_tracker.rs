@@ -7,6 +7,7 @@ use crate::{
     ImportablePath,
     attributes::Attribute,
     hashtables::{HashMap, HashSet},
+    stability::PublicApiStabilityPolicy,
 };
 
 #[derive(Debug, Clone)]
@@ -14,13 +15,20 @@ pub(crate) struct VisibilityTracker<'a> {
     // The crate this represents.
     inner: &'a Crate,
 
+    /// Stability policy used when this tracker's parent-edge modifiers were built.
+    stability_policy: PublicApiStabilityPolicy,
+
     /// For an Id, give the list of parent edges under which it is publicly visible.
     visible_parent_edges: HashMap<u32, Vec<ParentEdge<'a>>>,
 }
 
 impl<'a> VisibilityTracker<'a> {
-    pub(crate) fn from_crate(crate_: &'a Crate) -> Self {
-        let mut visible_parent_edges = compute_parent_edges_for_public_items(crate_);
+    pub(crate) fn from_crate(
+        crate_: &'a Crate,
+        stability_policy: PublicApiStabilityPolicy,
+    ) -> Self {
+        let mut visible_parent_edges =
+            compute_parent_edges_for_public_items(crate_, stability_policy);
 
         #[cfg(feature = "rayon")]
         let iter = visible_parent_edges.par_iter_mut();
@@ -36,6 +44,7 @@ impl<'a> VisibilityTracker<'a> {
 
         Self {
             inner: crate_,
+            stability_policy,
             visible_parent_edges,
         }
     }
@@ -48,21 +57,19 @@ impl<'a> VisibilityTracker<'a> {
             id,
             &mut already_visited_ids,
             &mut vec![],
-            false,
-            false,
+            EdgeModifiers::default(),
             &mut result,
         );
 
         result
     }
 
-    pub(crate) fn collect_publicly_importable_names_inner(
+    fn collect_publicly_importable_names_inner(
         &self,
         next_id: u32,
         already_visited_ids: &mut HashSet<u32>,
         stack: &mut Vec<&'a str>,
-        currently_doc_hidden: bool,
-        currently_deprecated: bool,
+        current_modifiers: EdgeModifiers,
         output: &mut Vec<ImportablePath<'a>>,
     ) {
         if !already_visited_ids.insert(next_id) {
@@ -128,16 +135,14 @@ impl<'a> VisibilityTracker<'a> {
             stack.push(pushed_name);
         }
 
-        let next_doc_hidden =
-            currently_doc_hidden || item.attrs.iter().any(Attribute::is_doc_hidden);
-        let next_deprecated = currently_deprecated || item.deprecation.is_some();
+        let next_modifiers =
+            current_modifiers.union(EdgeModifiers::from_item(item, self.stability_policy));
 
         self.collect_publicly_importable_names_recurse(
             next_id,
             already_visited_ids,
             stack,
-            next_doc_hidden,
-            next_deprecated,
+            next_modifiers,
             output,
         );
 
@@ -160,16 +165,16 @@ impl<'a> VisibilityTracker<'a> {
         next_id: u32,
         already_visited_ids: &mut HashSet<u32>,
         stack: &mut Vec<&'a str>,
-        currently_doc_hidden: bool,
-        currently_deprecated: bool,
+        current_modifiers: EdgeModifiers,
         output: &mut Vec<ImportablePath<'a>>,
     ) {
         if next_id == self.inner.root.0 {
             let final_name = stack.iter().rev().copied().collect();
             output.push(ImportablePath::new(
                 final_name,
-                currently_doc_hidden,
-                currently_deprecated,
+                current_modifiers.doc_hidden,
+                current_modifiers.deprecated,
+                current_modifiers.unstable,
             ));
         } else if let Some(visible_parents) = self.visible_parent_edges.get(&next_id) {
             for parent_edge in visible_parents.iter().copied() {
@@ -185,8 +190,7 @@ impl<'a> VisibilityTracker<'a> {
                     parent_edge.parent_id,
                     already_visited_ids,
                     stack,
-                    currently_doc_hidden || parent_edge.modifiers.doc_hidden,
-                    currently_deprecated || parent_edge.modifiers.deprecated,
+                    current_modifiers.union(parent_edge.modifiers),
                     output,
                 );
 
@@ -211,8 +215,8 @@ pub(super) struct ParentEdge<'a> {
     /// Id of the item whose scope makes the child item visible.
     parent_id: u32,
 
-    /// Visibility metadata from glob `Use` items whose names are synthesized directly
-    /// into the importing module instead of being visited as path nodes.
+    /// Public-API metadata from re-export edges from glob `Use` items,
+    /// where the `Use` item is not visited as a path node.
     modifiers: EdgeModifiers,
 
     /// Replacement path component for glob-created edges.
@@ -227,13 +231,15 @@ pub(super) struct ParentEdge<'a> {
 struct EdgeModifiers {
     doc_hidden: bool,
     deprecated: bool,
+    unstable: bool,
 }
 
 impl EdgeModifiers {
-    fn from_item(item: &Item) -> Self {
+    fn from_item(item: &Item, stability_policy: PublicApiStabilityPolicy) -> Self {
         Self {
             doc_hidden: item.attrs.iter().any(Attribute::is_doc_hidden),
             deprecated: item.deprecation.is_some(),
+            unstable: stability_policy.item_is_unstable(item),
         }
     }
 
@@ -241,11 +247,12 @@ impl EdgeModifiers {
         Self {
             doc_hidden: self.doc_hidden || other.doc_hidden,
             deprecated: self.deprecated || other.deprecated,
+            unstable: self.unstable || other.unstable,
         }
     }
 
     fn public_api(self) -> bool {
-        self.deprecated || !self.doc_hidden
+        !self.unstable && (self.deprecated || !self.doc_hidden)
     }
 
     /// Choose one concrete route among two equivalent glob re-export routes.
@@ -263,6 +270,10 @@ impl EdgeModifiers {
             (true, false) => return self,
             (false, true) => return other,
             _ => {}
+        }
+
+        if self.unstable != other.unstable {
+            return if self.unstable { other } else { self };
         }
 
         if self.doc_hidden != other.doc_hidden {
@@ -316,9 +327,10 @@ struct Definition {
 
     /// Modifiers from glob `Use` items in the module where this name is visible.
     ///
-    /// They are "invisible" because glob re-exports make their resolved names look local to the
-    /// importing module. The `Use` item itself is not part of the final importable path, but its
-    /// `#[doc(hidden)]` and deprecation metadata still apply to that path.
+    /// Glob re-exports make their resolved names look local to the importing module.
+    /// The glob `Use` item itself is not part of the final importable path, and
+    /// neither are non-glob `Use` items inside the target module that supplied the visible name.
+    /// Their `#[doc(hidden)]`, deprecation, and stability still apply to that path, though.
     invisible_glob_modifiers: EdgeModifiers,
 }
 
@@ -370,12 +382,15 @@ struct GlobResolution<'a> {
     duplicated_names: HashSet<NamespacedName<'a>>,
 }
 
-fn compute_parent_edges_for_public_items(crate_: &Crate) -> HashMap<u32, Vec<ParentEdge<'_>>> {
+fn compute_parent_edges_for_public_items(
+    crate_: &Crate,
+    stability_policy: PublicApiStabilityPolicy,
+) -> HashMap<u32, Vec<ParentEdge<'_>>> {
     let root_id = &crate_.root;
 
     if let Some(root_module) = crate_.index.get(root_id) {
         if root_module.visibility == Visibility::Public {
-            let traversal_state = resolve_crate_names(crate_);
+            let traversal_state = resolve_crate_names(crate_, stability_policy);
 
             // Avoid cycles by keeping track of which items we're in the middle of visiting.
             let mut currently_visited_items: HashSet<u32> = Default::default();
@@ -490,7 +505,10 @@ fn get_names_for_item<'a>(
     }
 }
 
-fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
+fn resolve_crate_names<'a>(
+    crate_: &'a Crate,
+    stability_policy: PublicApiStabilityPolicy,
+) -> NameResolution<'a> {
     let mut result = NameResolution::default();
 
     for item in crate_.index.values() {
@@ -531,9 +549,14 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
                         //
                         // TODO: This only handles within-crate imports. It'll need to be updated
                         //       when we support multiple crates and cross-crate imports.
+                        let mut invisible_glob_modifiers =
+                            EdgeModifiers::from_item(inner_item, stability_policy);
                         let mut underlying_item = target;
                         let final_underlying_id = loop {
                             if let ItemEnum::Use(next_import) = &underlying_item.inner {
+                                invisible_glob_modifiers = invisible_glob_modifiers.union(
+                                    EdgeModifiers::from_item(underlying_item, stability_policy),
+                                );
                                 match next_import.id.as_ref().and_then(|id| crate_.index.get(id)) {
                                     None => break None,
                                     Some(item) => underlying_item = item,
@@ -545,7 +568,10 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
                         let Some(final_underlying_id) = final_underlying_id else {
                             continue;
                         };
-                        let definition = Definition::new(final_underlying_id.0);
+                        let definition = Definition {
+                            final_underlying_id: final_underlying_id.0,
+                            invisible_glob_modifiers,
+                        };
 
                         result
                             .names_defined_in_module
@@ -602,12 +628,16 @@ fn resolve_crate_names(crate_: &Crate) -> NameResolution<'_> {
         }
     }
 
-    resolve_glob_imported_names(crate_, &mut result);
+    resolve_glob_imported_names(crate_, stability_policy, &mut result);
 
     result
 }
 
-fn resolve_glob_imported_names<'a>(crate_: &'a Crate, traversal_state: &mut NameResolution<'a>) {
+fn resolve_glob_imported_names<'a>(
+    crate_: &'a Crate,
+    stability_policy: PublicApiStabilityPolicy,
+    traversal_state: &mut NameResolution<'a>,
+) {
     for (&module_id, globs) in &traversal_state.modules_with_glob_imports {
         let mut glob_resolution = GlobResolution::default();
 
@@ -619,12 +649,12 @@ fn resolve_glob_imported_names<'a>(crate_: &'a Crate, traversal_state: &mut Name
             // so its attributes affect the path that downstream users can type.
             recursively_compute_visited_names_for_glob(
                 crate_,
+                stability_policy,
                 module_id,
                 glob_id,
                 &*traversal_state,
                 &mut glob_resolution,
                 EdgeModifiers::default(),
-                true,
             );
         }
 
@@ -661,34 +691,26 @@ fn resolve_glob_imported_names<'a>(crate_: &'a Crate, traversal_state: &mut Name
 /// `glob_modifiers` contains modifiers from glob imports that are already known to affect
 /// the path being synthesized in `glob_parent_module_id`.
 ///
-/// Set `include_current_glob_modifiers` to `true` when `glob_id` is one of the glob imports
-/// directly contained in `glob_parent_module_id`: that glob is the edge that exposes names
-/// in the module we're resolving, so its `#[doc(hidden)]` and deprecation metadata must be
-/// attached to the resulting importable paths.
-///
-/// Set it to `false` when following a glob import inside the target module of another glob.
-/// In that case the nested glob is used only to discover which names the target module exports;
-/// downstream users import those names through the outer glob, so the nested glob's own
-/// metadata is not part of the path they can type.
+/// Each glob traversed here is required to expose the synthesized name. Even when an outer
+/// glob creates the final top-level path, a nested glob may be what made that name visible in
+/// the outer glob's target module, so its `#[doc(hidden)]`, deprecation, and stability metadata
+/// must still be attached to the resulting importable path.
 fn recursively_compute_visited_names_for_glob<'a>(
     crate_: &'a Crate,
+    stability_policy: PublicApiStabilityPolicy,
     glob_parent_module_id: u32,
     glob_id: u32,
     traversal_state: &NameResolution<'a>,
     glob_resolution: &mut GlobResolution<'a>,
     glob_modifiers: EdgeModifiers,
-    include_current_glob_modifiers: bool,
 ) {
     let glob_item = &crate_.index[&rustdoc_types::Id(glob_id)];
     let ItemEnum::Use(glob_import) = &glob_item.inner else {
         unreachable!("Id {glob_id:?} was not a glob: {glob_item:?}");
     };
     assert!(glob_import.is_glob, "not a glob import: {glob_import:?}");
-    let glob_modifiers = if include_current_glob_modifiers {
-        glob_modifiers.union(EdgeModifiers::from_item(glob_item))
-    } else {
-        glob_modifiers
-    };
+    let glob_modifiers =
+        glob_modifiers.union(EdgeModifiers::from_item(glob_item, stability_policy));
 
     let module_local_items = traversal_state
         .names_defined_in_module
@@ -750,16 +772,15 @@ fn recursively_compute_visited_names_for_glob<'a>(
     // Recurse into any glob imports defined here.
     if let Some(globs) = traversal_state.modules_with_glob_imports.get(&module_id) {
         for &glob_id in globs {
-            // Nested globs describe the target module's exported names,
-            // but they are not the visible edge from the module currently being resolved.
+            // Nested globs may be part of the chain that makes the final name visible.
             recursively_compute_visited_names_for_glob(
                 crate_,
+                stability_policy,
                 module_id,
                 glob_id,
                 traversal_state,
                 glob_resolution,
                 glob_modifiers,
-                false,
             );
         }
     }
