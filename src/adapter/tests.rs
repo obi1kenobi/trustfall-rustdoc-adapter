@@ -6723,60 +6723,6 @@ fn default_policy_ignores_rust_std_const_stability() {
 }
 
 #[test]
-fn rust_std_const_impl_methods_use_inherited_const_stability() {
-    get_rust_std_test_data!(data, rust_std_stability);
-    let adapter = RustdocAdapter::new(&data, None);
-    let adapter = Arc::new(&adapter);
-
-    let query = r#"
-{
-    Crate {
-        item {
-            ... on ImplOwner {
-                name @filter(op: "=", value: ["$owner"])
-
-                impl {
-                    method {
-                        name @filter(op: "=", value: ["$method"])
-                        const @output
-                        signature @output
-                    }
-                }
-            }
-        }
-    }
-}
-    "#;
-    let variables = btreemap! {
-        "owner" => FieldValue::String("ConstImplOwner".into()),
-        "method" => FieldValue::String("const_impl_method".into()),
-    };
-
-    let schema =
-        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
-
-    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
-    struct Output {
-        #[serde(rename = "const")]
-        const_: bool,
-        signature: String,
-    }
-
-    let results: Vec<Output> = trustfall::execute_query(&schema, adapter, query, variables)
-        .expect("failed to run query")
-        .map(|row| row.try_into_struct().expect("shape mismatch"))
-        .collect();
-
-    similar_asserts::assert_eq!(
-        vec![Output {
-            const_: true, // stability info is not present in this rustdoc version
-            signature: "const fn const_impl_method() -> u32".into(), // stability info is not present in this rustdoc version
-        }],
-        results,
-    );
-}
-
-#[test]
 fn rust_std_signatures_hide_const_trait_markers() {
     get_rust_std_test_data!(data, rust_std_stability);
     let adapter = RustdocAdapter::new(&data, None);

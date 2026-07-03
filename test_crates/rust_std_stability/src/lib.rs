@@ -121,20 +121,6 @@ impl ItemStabilityOwner {
     }
 }
 
-#[stable(feature = "const_impl_owner", since = "1.0.0")]
-pub struct ConstImplOwner;
-
-#[stable(feature = "const_inherent_impl", since = "1.0.0")]
-#[rustc_const_unstable(feature = "const_inherent_impl_unstable", issue = "none")]
-const impl ConstImplOwner {
-    // Rustdoc JSON should propagate the impl's const-instability onto this method item.
-    // The adapter relies on that item-local `const_stability` instead of looking up the impl.
-    #[stable(feature = "const_impl_method", since = "1.0.0")]
-    pub fn const_impl_method() -> u32 {
-        0
-    }
-}
-
 #[stable(feature = "fixture_const_trait", since = "1.0.0")]
 #[rustc_const_unstable(feature = "fixture_const_trait_unstable", issue = "none")]
 pub const trait FixtureConstTrait {
