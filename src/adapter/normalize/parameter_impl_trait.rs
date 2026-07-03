@@ -30,7 +30,7 @@ use crate::PackageIndex;
 
 use super::{
     names::{Names, is_synthetic_type_param, parameter_impl_trait_placeholder},
-    paths, sort_key,
+    sort_key,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -55,8 +55,9 @@ pub(super) struct FnParameterImplTraits {
 /// `Type::ImplTrait` consumes the next name from this cursor. Return-position
 /// `impl Trait` formatting does not use this cursor, so it remains an opaque
 /// `impl` type rather than becoming a synthetic generic placeholder.
-pub(super) struct ParameterImplTraitCursor<'a> {
-    names: &'a [Cow<'static, str>],
+#[derive(Clone, Copy)]
+pub(super) struct ParameterImplTraitCursor {
+    parameter_index: usize,
     next: usize,
 }
 
@@ -67,51 +68,62 @@ impl FnParameterImplTraits {
     /// nodes in that parameter. Placeholder assignment itself may have used a
     /// canonical ordering first, so callers should not index into
     /// `by_parameter` directly.
-    pub(super) fn cursor_for_parameter(
-        &self,
-        position: NonZeroUsize,
-    ) -> ParameterImplTraitCursor<'_> {
-        let index = position.get() - 1;
-        let names = self
-            .by_parameter
-            .get(index)
+    pub(super) fn cursor_for_parameter(&self, position: NonZeroUsize) -> ParameterImplTraitCursor {
+        let parameter_index = position.get() - 1;
+        self.by_parameter
+            .get(parameter_index)
             .expect("function parameter position was out of bounds");
-        ParameterImplTraitCursor { names, next: 0 }
+        ParameterImplTraitCursor {
+            parameter_index,
+            next: 0,
+        }
     }
 }
 
-impl<'a> ParameterImplTraitCursor<'a> {
-    pub(super) fn next(&mut self) -> &str {
-        let name = self.names.get(self.next).unwrap_or_else(|| {
+impl ParameterImplTraitCursor {
+    pub(super) fn next<'a>(&mut self, impl_traits: &'a FnParameterImplTraits) -> &'a str {
+        let names = impl_traits
+            .by_parameter
+            .get(self.parameter_index)
+            .expect("parameter impl Trait cursor had an invalid parameter index");
+        let name = names.get(self.next).unwrap_or_else(|| {
             unreachable!(
                 "parameter-position impl Trait had no matching synthetic generic parameter: \
                 next={}, names={:?}",
-                self.next, self.names,
+                self.next, names,
             )
         });
         self.next += 1;
         name.as_ref()
     }
 
-    pub(super) fn assert_finished(&self) {
+    pub(super) fn next_index(&self) -> usize {
+        self.next
+    }
+
+    pub(super) fn assert_finished(&self, impl_traits: &FnParameterImplTraits) {
+        let names = impl_traits
+            .by_parameter
+            .get(self.parameter_index)
+            .expect("parameter impl Trait cursor had an invalid parameter index");
         assert_eq!(
             self.next,
-            self.names.len(),
+            names.len(),
             "not all parameter-position impl Trait synthetic generic parameters were used",
         );
     }
 }
 
 fn collect_type_impl_trait_params<'a>(
-    type_: &'a Type,
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
-    normalize_path: &impl Fn(&Path) -> String,
+    type_: &'a Type,
     synthetic_params: &mut impl Iterator<Item = SyntheticTypeParam>,
     output: &mut Vec<SyntheticTypeParam>,
 ) {
     match type_ {
         Type::ResolvedPath(path) => {
-            collect_path_impl_trait_params(path, names, normalize_path, synthetic_params, output);
+            collect_path_impl_trait_params(crate_, names, path, synthetic_params, output);
         }
         Type::DynTrait(dyn_trait) => {
             let mut traits = Vec::new();
@@ -121,17 +133,20 @@ fn collect_type_impl_trait_params<'a>(
                 // we can look to replace it with an immutable hierarchical design instead.
                 let mut scoped_names = names.clone();
                 for param in &trait_.generic_params {
-                    scoped_names.add_param(param);
+                    scoped_names.add_higher_ranked_param(param);
                 }
                 let mut params = Vec::new();
                 collect_path_impl_trait_params(
-                    &trait_.trait_,
+                    crate_,
                     &scoped_names,
-                    normalize_path,
+                    &trait_.trait_,
                     synthetic_params,
                     &mut params,
                 );
-                traits.push((sort_key::poly_trait(names, trait_, normalize_path), params));
+                traits.push((
+                    sort_key::parameter_poly_trait(crate_, names, trait_),
+                    params,
+                ));
             }
             traits.sort_unstable_by(|a, b| a.0.cmp(&b.0));
             for (_, params) in traits {
@@ -143,43 +158,26 @@ fn collect_type_impl_trait_params<'a>(
         }
         Type::FunctionPointer(pointer) => {
             assert_supported_hrtb_generic_params(&pointer.generic_params);
-            // TODO: If this cloning ends up being expensive,
-            // we can look to replace it with an immutable hierarchical design instead.
-            let mut scoped_names = names.clone();
-            for param in &pointer.generic_params {
-                scoped_names.add_param(param);
-            }
-
             // As of Rust 1.96, `impl Trait` nested in `fn` pointer signatures is
             // rejected, so there are no parameter-position synthetic params to
             // collect inside `pointer.sig`.
         }
         Type::Tuple(types) => {
             for type_ in types {
-                collect_type_impl_trait_params(
-                    type_,
-                    names,
-                    normalize_path,
-                    synthetic_params,
-                    output,
-                );
+                collect_type_impl_trait_params(crate_, names, type_, synthetic_params, output);
             }
         }
         Type::Slice(type_) | Type::Array { type_, .. } => {
-            collect_type_impl_trait_params(type_, names, normalize_path, synthetic_params, output);
+            collect_type_impl_trait_params(crate_, names, type_, synthetic_params, output);
         }
         Type::ImplTrait(bounds) => {
-            collect_bounds_impl_trait_params(
-                bounds,
-                names,
-                normalize_path,
-                synthetic_params,
-                output,
-            );
-            output.push(next_synthetic_impl_trait_param(synthetic_params));
+            collect_bounds_impl_trait_params(crate_, names, bounds, synthetic_params, output);
+            output.push(synthetic_params.next().expect(
+                "parameter-position impl Trait had no matching synthetic generic parameter",
+            ));
         }
         Type::RawPointer { type_, .. } | Type::BorrowedRef { type_, .. } => {
-            collect_type_impl_trait_params(type_, names, normalize_path, synthetic_params, output);
+            collect_type_impl_trait_params(crate_, names, type_, synthetic_params, output);
         }
         Type::QualifiedPath {
             args,
@@ -187,27 +185,15 @@ fn collect_type_impl_trait_params<'a>(
             trait_,
             ..
         } => {
-            collect_type_impl_trait_params(
-                self_type,
-                names,
-                normalize_path,
-                synthetic_params,
-                output,
-            );
+            collect_type_impl_trait_params(crate_, names, self_type, synthetic_params, output);
             if let Some(trait_) = trait_ {
-                collect_path_impl_trait_params(
-                    trait_,
-                    names,
-                    normalize_path,
-                    synthetic_params,
-                    output,
-                );
+                collect_path_impl_trait_params(crate_, names, trait_, synthetic_params, output);
             }
             if let Some(args) = args.as_deref() {
                 collect_generic_args_impl_trait_params(
-                    args,
+                    crate_,
                     names,
-                    normalize_path,
+                    args,
                     synthetic_params,
                     output,
                 );
@@ -239,27 +225,21 @@ fn assert_supported_hrtb_generic_params(params: &[GenericParamDef]) {
 }
 
 fn collect_path_impl_trait_params<'a>(
-    path: &'a Path,
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
-    normalize_path: &impl Fn(&Path) -> String,
+    path: &'a Path,
     synthetic_params: &mut impl Iterator<Item = SyntheticTypeParam>,
     output: &mut Vec<SyntheticTypeParam>,
 ) {
     if let Some(args) = path.args.as_deref() {
-        collect_generic_args_impl_trait_params(
-            args,
-            names,
-            normalize_path,
-            synthetic_params,
-            output,
-        );
+        collect_generic_args_impl_trait_params(crate_, names, args, synthetic_params, output);
     }
 }
 
 fn collect_generic_args_impl_trait_params<'a>(
-    args: &'a GenericArgs,
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
-    normalize_path: &impl Fn(&Path) -> String,
+    args: &'a GenericArgs,
     synthetic_params: &mut impl Iterator<Item = SyntheticTypeParam>,
     output: &mut Vec<SyntheticTypeParam>,
 ) {
@@ -269,9 +249,9 @@ fn collect_generic_args_impl_trait_params<'a>(
                 match arg {
                     GenericArg::Type(type_) => {
                         collect_type_impl_trait_params(
-                            type_,
+                            crate_,
                             names,
-                            normalize_path,
+                            type_,
                             synthetic_params,
                             output,
                         );
@@ -284,14 +264,14 @@ fn collect_generic_args_impl_trait_params<'a>(
             for constraint in constraints {
                 let mut params = Vec::new();
                 collect_assoc_item_constraint_impl_trait_params_raw(
-                    constraint,
+                    crate_,
                     names,
-                    normalize_path,
+                    constraint,
                     synthetic_params,
                     &mut params,
                 );
                 constraint_params.push((
-                    sort_key::assoc_item_constraint(names, constraint, normalize_path),
+                    sort_key::parameter_assoc_item_constraint(crate_, names, constraint),
                     params,
                 ));
             }
@@ -310,42 +290,30 @@ fn collect_generic_args_impl_trait_params<'a>(
 }
 
 fn collect_assoc_item_constraint_impl_trait_params_raw<'a>(
-    constraint: &'a AssocItemConstraint,
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
-    normalize_path: &impl Fn(&Path) -> String,
+    constraint: &'a AssocItemConstraint,
     synthetic_params: &mut impl Iterator<Item = SyntheticTypeParam>,
     output: &mut Vec<SyntheticTypeParam>,
 ) {
     if let Some(args) = constraint.args.as_deref() {
-        collect_generic_args_impl_trait_params(
-            args,
-            names,
-            normalize_path,
-            synthetic_params,
-            output,
-        );
+        collect_generic_args_impl_trait_params(crate_, names, args, synthetic_params, output);
     }
 
     match &constraint.binding {
         AssocItemConstraintKind::Constraint(bounds) => {
-            collect_bounds_impl_trait_params(
-                bounds,
-                names,
-                normalize_path,
-                synthetic_params,
-                output,
-            );
+            collect_bounds_impl_trait_params(crate_, names, bounds, synthetic_params, output);
         }
         AssocItemConstraintKind::Equality(term) => {
-            collect_term_impl_trait_params(term, names, normalize_path, synthetic_params, output);
+            collect_term_impl_trait_params(crate_, names, term, synthetic_params, output);
         }
     }
 }
 
 fn collect_bounds_impl_trait_params<'a>(
-    bounds: &'a [GenericBound],
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
-    normalize_path: &impl Fn(&Path) -> String,
+    bounds: &'a [GenericBound],
     synthetic_params: &mut impl Iterator<Item = SyntheticTypeParam>,
     output: &mut Vec<SyntheticTypeParam>,
 ) {
@@ -363,12 +331,12 @@ fn collect_bounds_impl_trait_params<'a>(
                 // we can look to replace it with an immutable hierarchical design instead.
                 let mut scoped_names = names.clone();
                 for param in generic_params {
-                    scoped_names.add_param(param);
+                    scoped_names.add_higher_ranked_param(param);
                 }
                 collect_path_impl_trait_params(
-                    trait_,
+                    crate_,
                     &scoped_names,
-                    normalize_path,
+                    trait_,
                     synthetic_params,
                     &mut params,
                 );
@@ -376,7 +344,7 @@ fn collect_bounds_impl_trait_params<'a>(
             GenericBound::Outlives(_) | GenericBound::Use(_) => {}
         }
         bound_params.push((
-            sort_key::generic_bound(names, bound, normalize_path),
+            sort_key::parameter_generic_bound(crate_, names, bound),
             params,
         ));
     }
@@ -388,15 +356,15 @@ fn collect_bounds_impl_trait_params<'a>(
 }
 
 fn collect_term_impl_trait_params<'a>(
-    term: &'a Term,
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
-    normalize_path: &impl Fn(&Path) -> String,
+    term: &'a Term,
     synthetic_params: &mut impl Iterator<Item = SyntheticTypeParam>,
     output: &mut Vec<SyntheticTypeParam>,
 ) {
     match term {
         Term::Type(type_) => {
-            collect_type_impl_trait_params(type_, names, normalize_path, synthetic_params, output);
+            collect_type_impl_trait_params(crate_, names, type_, synthetic_params, output);
         }
         Term::Constant(constant) => {
             // As of Rust 1.96, associated const equality constraints such as
@@ -405,14 +373,6 @@ fn collect_term_impl_trait_params<'a>(
             unreachable!("found associated const equality constraint term: {constant:?}");
         }
     }
-}
-
-fn next_synthetic_impl_trait_param(
-    synthetic_params: &mut impl Iterator<Item = SyntheticTypeParam>,
-) -> SyntheticTypeParam {
-    synthetic_params
-        .next()
-        .expect("parameter-position impl Trait had no matching synthetic generic parameter")
 }
 
 /// Computes the parameter-position `impl Trait` placeholders for one function.
@@ -424,17 +384,8 @@ fn next_synthetic_impl_trait_param(
 /// new `impl Trait` is added elsewhere in the same function signature.
 pub(super) fn compute_for_function<'a>(
     crate_: &'a PackageIndex<'a>,
-    function: &'a rustdoc_types::Function,
     names: &Names<'a>,
-) -> FnParameterImplTraits {
-    let normalize_path = |path: &Path| paths::normalized_path(crate_, path);
-    compute_for_function_with_path_normalizer(function, names, &normalize_path)
-}
-
-fn compute_for_function_with_path_normalizer<'a>(
     function: &'a rustdoc_types::Function,
-    names: &Names<'a>,
-    normalize_path: &impl Fn(&Path) -> String,
 ) -> FnParameterImplTraits {
     let synthetic_params = function
         .generics
@@ -465,9 +416,9 @@ fn compute_for_function_with_path_normalizer<'a>(
         let mut canonical_synthetic_params = synthetic_params.clone();
         let mut canonical_params = Vec::new();
         collect_type_impl_trait_params(
-            type_,
+            crate_,
             names,
-            normalize_path,
+            type_,
             &mut canonical_synthetic_params,
             &mut canonical_params,
         );
@@ -625,7 +576,9 @@ fn collect_type_impl_trait_names(
                 output,
                 false,
             );
-            let param = next_synthetic_impl_trait_param(synthetic_params);
+            let param = synthetic_params.next().expect(
+                "parameter-position impl Trait had no matching synthetic generic parameter",
+            );
             if emit {
                 let names = synthetic_names_by_index.expect(
                     "parameter-position impl Trait name emission requires precomputed names",
