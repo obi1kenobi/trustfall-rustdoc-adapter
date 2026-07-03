@@ -318,7 +318,7 @@ pub(crate) fn build_flags_index(
         }
     });
 
-    sealed_trait::compute_trait_flags(index, &mut flags);
+    sealed_trait::compute_trait_flags(index, &mut flags, stability_policy);
 
     flags
 }
