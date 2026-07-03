@@ -3056,5 +3056,38 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
             assert_eq!(method_entries.len(), 1, "{method_entries:#?}");
             assert_ne!(method_entries[0].1, trait_provided_method);
         }
+
+        #[test]
+        fn provided_trait_method_index_ignores_same_named_associated_types() {
+            let test_crate = "defaulted_trait_items_overridden_in_impls";
+
+            let rustdoc = load_pregenerated_rustdoc(test_crate);
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+
+            let impl_owner = indexed_crate
+                .inner
+                .index
+                .values()
+                .filter(|item| item.name.as_deref() == Some("SameNameExample"))
+                .exactly_one()
+                .expect("failed to find exactly one SameNameExample item");
+
+            let impl_index = indexed_crate
+                .impl_method_index
+                .as_ref()
+                .expect("no impl index was built");
+            let method_entries = impl_index
+                .get(&ImplEntry::new(&impl_owner.id, "method"))
+                .expect("no method entries found");
+
+            assert_eq!(method_entries.len(), 1, "{method_entries:#?}");
+            assert!(
+                matches!(
+                    method_entries[0].1.inner,
+                    rustdoc_types::ItemEnum::Function(..)
+                ),
+                "impl method index included a non-function item: {method_entries:#?}",
+            );
+        }
     }
 }
