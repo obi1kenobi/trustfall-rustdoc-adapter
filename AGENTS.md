@@ -13,6 +13,9 @@ All new schema additions must be tested by adding a new test crate (or when appr
 existing one that is thematically related) in `test_crate` to expose the Rust construct being added
 to the schema, then adding tests to `src/adapter/tests.rs` that make use of the new schema in
 querying the test crate and assert that the returned results are correct.
+Never construct `rustdoc_types` values by hand in tests; use a test crate to make rustdoc produce
+the construct instead. Prefer to test them by querying that crate through Trustfall whenever
+possible and pragmatic, rather than manipulating `rustdoc_types` values directly.
 
 ## Basics
 

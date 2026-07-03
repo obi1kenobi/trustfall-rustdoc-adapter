@@ -8,6 +8,7 @@
 //! normalized-signature vertex; we do not perform any kind of eager normalization.
 
 mod context;
+mod function_pointer;
 mod names;
 mod parameter_impl_trait;
 mod paths;
@@ -25,12 +26,14 @@ pub(super) fn fn_param_or_return_type_signature<'a>(
     component: TypeSignatureComponent,
     type_: Option<&'a rustdoc_types::Type>,
 ) -> String {
-    let context = context::FnNormalizationContext::new(crate_, function);
+    let mut context = context::FnNormalizationContext::new(crate_, function);
     match (component, type_) {
         (TypeSignatureComponent::FunctionParameter(position), Some(type_)) => {
-            types::format_parameter_type(&context, position, type_)
+            types::format_parameter_type(&mut context, position, type_)
         }
-        (TypeSignatureComponent::ReturnValue, Some(type_)) => types::format_type(&context, type_),
+        (TypeSignatureComponent::ReturnValue, Some(type_)) => {
+            types::format_type(&mut context, type_)
+        }
         (_, None) => "()".to_string(), // empty fn return values hit this branch
     }
 }
