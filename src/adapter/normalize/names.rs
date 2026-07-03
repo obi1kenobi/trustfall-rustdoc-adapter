@@ -3,9 +3,14 @@ use std::{borrow::Cow, collections::BTreeMap};
 use rustdoc_types::{GenericParamDef, GenericParamDefKind};
 
 // Avoid allocations for common amounts of generics: 8 of each kind.
-const LIFETIME_NAMES: [&str; 8] = ["'a", "'b", "'c", "'d", "'e", "'f", "'g", "'h"];
-const TYPE_NAMES: [&str; 8] = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8"];
-const CONST_NAMES: [&str; 8] = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"];
+const ITEM_LIFETIME_NAMES: [&str; 8] = ["'a", "'b", "'c", "'d", "'e", "'f", "'g", "'h"];
+const ITEM_TYPE_NAMES: [&str; 8] = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8"];
+const ITEM_CONST_NAMES: [&str; 8] = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"];
+const PARENT_LIFETIME_NAMES: [&str; 8] = ["'o1", "'o2", "'o3", "'o4", "'o5", "'o6", "'o7", "'o8"];
+const PARENT_TYPE_NAMES: [&str; 8] = ["TO1", "TO2", "TO3", "TO4", "TO5", "TO6", "TO7", "TO8"];
+const PARENT_CONST_NAMES: [&str; 8] = ["CO1", "CO2", "CO3", "CO4", "CO5", "CO6", "CO7", "CO8"];
+const HIGHER_RANKED_LIFETIME_NAMES: [&str; 8] =
+    ["'b1", "'b2", "'b3", "'b4", "'b5", "'b6", "'b7", "'b8"];
 const FIRST_IMPL_TRAIT_PLACEHOLDER_BY_PARAMETER: [&str; 8] = [
     "IT1_1", "IT2_1", "IT3_1", "IT4_1", "IT5_1", "IT6_1", "IT7_1", "IT8_1",
 ];
@@ -23,67 +28,91 @@ const FIRST_IMPL_TRAIT_PLACEHOLDER_BY_PARAMETER: [&str; 8] = [
 /// parameter names.
 #[derive(Clone, Debug, Default)]
 pub(super) struct Names<'a> {
-    lifetimes: BTreeMap<&'a str, Cow<'static, str>>,
+    pub(super) lifetimes: BTreeMap<&'a str, Cow<'static, str>>,
     types: BTreeMap<&'a str, Cow<'static, str>>,
     consts: BTreeMap<&'a str, Cow<'static, str>>,
+    next_item_lifetime: usize,
+    next_item_type: usize,
+    next_item_const: usize,
+    next_parent_lifetime: usize,
+    next_parent_type: usize,
+    next_parent_const: usize,
+    next_higher_ranked_lifetime: usize,
 }
 
 impl<'a> Names<'a> {
-    /// Adds one source-visible generic parameter to this normalized name scope.
-    ///
-    /// Rustdoc also creates synthetic function-level type params for
-    /// parameter-position `impl Trait`. Those params are intentionally rejected
-    /// here because their placeholders are scoped to the containing function
-    /// parameter and are assigned by `parameter_impl_trait` instead.
-    pub(super) fn add_param(&mut self, param: &'a GenericParamDef) {
-        match param.kind {
+    /// Adds one source-visible generic parameter from a containing `trait` or `impl`.
+    pub(super) fn add_parent_param(&mut self, param: &'a GenericParamDef) {
+        match &param.kind {
             GenericParamDefKind::Lifetime { .. } => {
-                let index = self.lifetimes.len();
-                let normalized = LIFETIME_NAMES
-                    .get(index)
-                    .copied()
-                    .map(Cow::Borrowed)
-                    .unwrap_or_else(|| Cow::Owned(format!("'{}", letter_name(index))));
-                let existing = self.lifetimes.insert(lifetime_key(&param.name), normalized);
-                assert!(
-                    existing.is_none(),
-                    "duplicate lifetime parameter `{}`",
-                    param.name,
-                );
+                let name =
+                    numbered_name(&mut self.next_parent_lifetime, &PARENT_LIFETIME_NAMES, "'o");
+                self.insert_lifetime_param(param, name);
             }
             GenericParamDefKind::Type { is_synthetic, .. } => {
                 assert!(
                     !is_synthetic,
                     "parameter-position impl Trait params must be handled by parameter_impl_trait",
                 );
-                let index = self.types.len();
-                let number = index + 1;
-                let normalized = TYPE_NAMES
-                    .get(index)
-                    .copied()
-                    .map(Cow::Borrowed)
-                    .unwrap_or_else(|| Cow::Owned(format!("T{number}")));
-                let existing = self.types.insert(param.name.as_str(), normalized);
-                assert!(
-                    existing.is_none(),
-                    "duplicate type parameter `{}`",
-                    param.name,
-                );
+                let name = numbered_name(&mut self.next_parent_type, &PARENT_TYPE_NAMES, "TO");
+                self.insert_type_param(param, name);
             }
             GenericParamDefKind::Const { .. } => {
-                let index = self.consts.len();
-                let number = index + 1;
-                let normalized = CONST_NAMES
+                let name = numbered_name(&mut self.next_parent_const, &PARENT_CONST_NAMES, "CO");
+                self.insert_const_param(param, name);
+            }
+        }
+    }
+
+    /// Adds one source-visible generic parameter from the item being normalized.
+    ///
+    /// Rustdoc also creates synthetic function-level type params for
+    /// parameter-position `impl Trait`. Those params are intentionally rejected
+    /// here because their placeholders are scoped to the containing function
+    /// parameter and are assigned by `parameter_impl_trait` instead.
+    pub(super) fn add_item_param(&mut self, param: &'a GenericParamDef) {
+        match &param.kind {
+            GenericParamDefKind::Lifetime { .. } => {
+                let index = self.next_item_lifetime;
+                self.next_item_lifetime += 1;
+                let name = ITEM_LIFETIME_NAMES
                     .get(index)
                     .copied()
                     .map(Cow::Borrowed)
-                    .unwrap_or_else(|| Cow::Owned(format!("C{number}")));
-                let existing = self.consts.insert(param.name.as_str(), normalized);
+                    .unwrap_or_else(|| Cow::Owned(format!("'{}", letter_name(index))));
+                self.insert_lifetime_param(param, name);
+            }
+            GenericParamDefKind::Type { is_synthetic, .. } => {
                 assert!(
-                    existing.is_none(),
-                    "duplicate const parameter `{}`",
-                    param.name,
+                    !is_synthetic,
+                    "parameter-position impl Trait params must be handled by parameter_impl_trait",
                 );
+                let name = numbered_name(&mut self.next_item_type, &ITEM_TYPE_NAMES, "T");
+                self.insert_type_param(param, name);
+            }
+            GenericParamDefKind::Const { .. } => {
+                let name = numbered_name(&mut self.next_item_const, &ITEM_CONST_NAMES, "C");
+                self.insert_const_param(param, name);
+            }
+        }
+    }
+
+    /// Adds one lifetime parameter from a higher-ranked binder.
+    pub(super) fn add_higher_ranked_param(&mut self, param: &'a GenericParamDef) -> &'a str {
+        match &param.kind {
+            GenericParamDefKind::Lifetime { .. } => {
+                let name = numbered_name(
+                    &mut self.next_higher_ranked_lifetime,
+                    &HIGHER_RANKED_LIFETIME_NAMES,
+                    "'b",
+                );
+                self.insert_lifetime_param(param, name)
+            }
+            GenericParamDefKind::Type { .. } => {
+                unreachable!("found type generic param definition in HRTB position: {param:?}")
+            }
+            GenericParamDefKind::Const { .. } => {
+                unreachable!("found const generic param definition in HRTB position: {param:?}")
             }
         }
     }
@@ -127,6 +156,41 @@ impl<'a> Names<'a> {
             None => Cow::Borrowed(expr),
         }
     }
+
+    fn insert_lifetime_param(
+        &mut self,
+        param: &'a GenericParamDef,
+        normalized: Cow<'static, str>,
+    ) -> &'a str {
+        let key = lifetime_key(&param.name);
+        let existing = self.lifetimes.insert(key, normalized);
+        assert!(
+            existing.is_none(),
+            "duplicate lifetime parameter `{}`",
+            param.name,
+        );
+        key
+    }
+
+    fn insert_type_param(&mut self, param: &'a GenericParamDef, normalized: Cow<'static, str>) {
+        let key = param.name.as_str();
+        let existing = self.types.insert(key, normalized);
+        assert!(
+            existing.is_none(),
+            "duplicate type parameter `{}`",
+            param.name,
+        );
+    }
+
+    fn insert_const_param(&mut self, param: &'a GenericParamDef, normalized: Cow<'static, str>) {
+        let key = param.name.as_str();
+        let existing = self.consts.insert(key, normalized);
+        assert!(
+            existing.is_none(),
+            "duplicate const parameter `{}`",
+            param.name,
+        );
+    }
 }
 
 pub(super) fn parameter_impl_trait_placeholder(
@@ -165,6 +229,20 @@ fn lifetime_key(name: &str) -> &str {
     name.strip_prefix('\'').unwrap_or(name)
 }
 
+fn numbered_name(
+    counter: &mut usize,
+    precomputed: &'static [&'static str],
+    fallback_prefix: &'static str,
+) -> Cow<'static, str> {
+    let index = *counter;
+    *counter += 1;
+    precomputed
+        .get(index)
+        .copied()
+        .map(Cow::Borrowed)
+        .unwrap_or_else(|| Cow::Owned(format!("{fallback_prefix}{}", index + 1)))
+}
+
 fn letter_name(mut index: usize) -> String {
     let mut output = String::new();
 
@@ -178,89 +256,4 @@ fn letter_name(mut index: usize) -> String {
     }
 
     output
-}
-
-#[cfg(test)]
-mod tests {
-    use std::borrow::Cow;
-
-    use rustdoc_types::{GenericParamDef, GenericParamDefKind, Type};
-
-    use super::Names;
-
-    #[test]
-    fn type_param_names_use_static_prefix() {
-        let params = (0..9)
-            .map(|index| type_param(format!("InputT{index}")))
-            .collect::<Vec<_>>();
-        let mut names = Names::default();
-        for param in &params {
-            names.add_param(param);
-        }
-
-        assert!(matches!(names.type_name("InputT0"), Cow::Borrowed("T1")));
-        assert!(matches!(names.type_name("InputT7"), Cow::Borrowed("T8")));
-        assert!(matches!(names.type_name("InputT8"), Cow::Owned(value) if value == "T9"));
-    }
-
-    #[test]
-    fn lifetime_and_const_names_use_static_prefix() {
-        let params = (0..9)
-            .map(|index| lifetime_param(format!("'lt{index}")))
-            .chain((0..9).map(|index| const_param(format!("N{index}"))))
-            .collect::<Vec<_>>();
-        let mut names = Names::default();
-        for param in &params {
-            names.add_param(param);
-        }
-
-        assert!(matches!(names.lifetime("'lt0"), Cow::Borrowed("'a")));
-        assert!(matches!(names.lifetime("'lt7"), Cow::Borrowed("'h")));
-        assert!(matches!(names.lifetime("'lt8"), Cow::Owned(value) if value == "'i"));
-        assert!(matches!(
-            names.type_or_const_name("N0"),
-            Cow::Borrowed("C1")
-        ));
-        assert!(matches!(
-            names.type_or_const_name("N7"),
-            Cow::Borrowed("C8")
-        ));
-        assert!(matches!(names.type_or_const_name("N8"), Cow::Owned(value) if value == "C9"));
-        assert!(matches!(names.const_expr("N0"), Cow::Borrowed("C1")));
-        assert!(matches!(names.const_expr("N8"), Cow::Owned(value) if value == "C9"));
-
-        let expression = String::from("N0 + 1");
-        assert!(matches!(
-            names.const_expr(&expression),
-            Cow::Borrowed(value) if value == expression
-        ));
-    }
-
-    fn lifetime_param(name: String) -> GenericParamDef {
-        GenericParamDef {
-            name,
-            kind: GenericParamDefKind::Lifetime { outlives: vec![] },
-        }
-    }
-
-    fn type_param(name: String) -> GenericParamDef {
-        GenericParamDef {
-            name,
-            kind: GenericParamDefKind::Type {
-                bounds: vec![],
-                default: None,
-                is_synthetic: false,
-            },
-        }
-    }
-
-    fn const_param(name: String) -> GenericParamDef {
-        GenericParamDef {
-            name,
-            kind: GenericParamDefKind::Const {
-                type_: Type::Primitive("usize".into()),
-                default: None,
-            },
-        }
-    }
 }

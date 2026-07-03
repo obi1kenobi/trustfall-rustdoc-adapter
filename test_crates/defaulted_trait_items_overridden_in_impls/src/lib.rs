@@ -31,3 +31,16 @@ impl Trait for Example {
         println!("hello world!");
     }
 }
+
+#[allow(non_camel_case_types)]
+pub trait SameNameTrait {
+    type method;
+
+    fn method() {}
+}
+
+struct SameNameExample;
+
+impl SameNameTrait for SameNameExample {
+    type method = u8;
+}

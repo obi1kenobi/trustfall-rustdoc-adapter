@@ -1,101 +1,197 @@
-//! Temporary canonical sort keys for rustdoc type subtrees.
+//! Canonical sort keys for unordered rustdoc type subtrees.
 //!
-//! Parameter-position `impl Trait` placeholders are assigned before final type
-//! formatting is possible. These helpers render enough of the relevant rustdoc
-//! subtrees to sort bounds and constraints deterministically during that
-//! precomputation. They are not user-facing normalized signatures.
+//! Rustdoc preserves source/traversal order for semantically unordered groups,
+//! such as trait bounds and associated-item constraints. These internal strings
+//! let the formatter sort those groups before rendering them. Sort keys
+//! normalize paths and generic names like final formatting does. These keys
+//! are not user-facing normalized signatures.
 //!
-//! Sort keys deliberately use the same path and generic-name normalization as
-//! final formatting. `Type::ImplTrait` nodes still render as `impl _` markers
-//! because the enclosing associated item, generic arg, or bound determines
-//! sort order; the nested `impl Trait` bounds are consumed separately for
-//! placeholder assignment and do not affect that enclosing sort key. Skipping
-//! those bounds here is a small optimization based on that invariant.
+//! Parameter-position `impl Trait` needs a separate key mode because rustdoc
+//! reports each use site separately from its synthetic generic param.
+//! Parameter type signatures render those use sites as `IT...` placeholders,
+//! so their nested bounds are erased from the enclosing key. Final output
+//! renders the same nodes as opaque `impl ...` types, keeping their bounds
+//! in the key. That avoids falling back to rustdoc/source order for otherwise
+//! equal components.
 
 use rustdoc_types::{
     AssocItemConstraint, AssocItemConstraintKind, FunctionSignature, GenericArg, GenericArgs,
     GenericBound, GenericParamDef, GenericParamDefKind, Path, Term, TraitBoundModifier, Type,
 };
 
-use super::names::Names;
+use crate::PackageIndex;
 
-/// Returns the canonical sort key for a poly-trait bound.
-pub(super) fn poly_trait<'a>(
+use super::{function_pointer, names::Names, paths};
+
+#[derive(Clone, Copy)]
+enum ImplTraitSortMode {
+    /// Parameter sort keys render `impl Trait` use sites as `impl _`,
+    /// because `impl Trait` parameters are normalized as synthetic generics
+    /// whose bounds are reported separately on the synthetic generic itself.
+    /// Including nested bounds would make sort order depend on details erased
+    /// from the containing parameter type signature; see the module comment.
+    EraseNestedBounds,
+    /// Final-output sort keys include opaque `impl ...` bounds so that
+    /// otherwise-equal components do not fall back to rustdoc/source order.
+    IncludeNestedBounds,
+}
+
+/// Returns the canonical sort key for a poly-trait bound in parameter type mode.
+pub(super) fn parameter_poly_trait<'a>(
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
     poly_trait: &'a rustdoc_types::PolyTrait,
-    normalize_path: &impl Fn(&Path) -> String,
+) -> String {
+    poly_trait_key(
+        crate_,
+        names,
+        poly_trait,
+        ImplTraitSortMode::EraseNestedBounds,
+    )
+}
+
+/// Returns the canonical sort key for a poly-trait bound in final output mode.
+pub(super) fn output_poly_trait<'a>(
+    crate_: &PackageIndex<'_>,
+    names: &Names<'a>,
+    poly_trait: &'a rustdoc_types::PolyTrait,
+) -> String {
+    poly_trait_key(
+        crate_,
+        names,
+        poly_trait,
+        ImplTraitSortMode::IncludeNestedBounds,
+    )
+}
+
+fn poly_trait_key<'a>(
+    crate_: &PackageIndex<'_>,
+    names: &Names<'a>,
+    poly_trait: &'a rustdoc_types::PolyTrait,
+    impl_trait_sort_mode: ImplTraitSortMode,
 ) -> String {
     let mut output = String::new();
     // TODO: If this cloning ends up being expensive,
     // we can look to replace it with an immutable hierarchical design instead.
     let mut scoped_names = names.clone();
     for param in &poly_trait.generic_params {
-        scoped_names.add_param(param);
+        scoped_names.add_higher_ranked_param(param);
     }
     format_generic_params(&scoped_names, &poly_trait.generic_params, &mut output);
     format_path(
+        crate_,
         &scoped_names,
         &poly_trait.trait_,
-        normalize_path,
+        impl_trait_sort_mode,
         &mut output,
     );
     output
 }
 
-/// Returns the canonical sort key for an associated item constraint.
-pub(super) fn assoc_item_constraint<'a>(
+/// Returns the canonical sort key for an associated item constraint
+/// in parameter type mode.
+pub(super) fn parameter_assoc_item_constraint<'a>(
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
     constraint: &'a AssocItemConstraint,
-    normalize_path: &impl Fn(&Path) -> String,
+) -> String {
+    assoc_item_constraint_key(
+        crate_,
+        names,
+        constraint,
+        ImplTraitSortMode::EraseNestedBounds,
+    )
+}
+
+/// Returns the canonical sort key for an associated item constraint
+/// in final output mode.
+pub(super) fn output_assoc_item_constraint<'a>(
+    crate_: &PackageIndex<'_>,
+    names: &Names<'a>,
+    constraint: &'a AssocItemConstraint,
+) -> String {
+    assoc_item_constraint_key(
+        crate_,
+        names,
+        constraint,
+        ImplTraitSortMode::IncludeNestedBounds,
+    )
+}
+
+fn assoc_item_constraint_key<'a>(
+    crate_: &PackageIndex<'_>,
+    names: &Names<'a>,
+    constraint: &'a AssocItemConstraint,
+    impl_trait_sort_mode: ImplTraitSortMode,
 ) -> String {
     let mut output = String::new();
-    format_assoc_item_constraint(names, constraint, normalize_path, &mut output);
+    format_assoc_item_constraint(crate_, names, constraint, impl_trait_sort_mode, &mut output);
     output
 }
 
-/// Returns the canonical sort key for a generic bound.
-pub(super) fn generic_bound<'a>(
+/// Returns the canonical sort key for a generic bound in parameter type mode.
+pub(super) fn parameter_generic_bound<'a>(
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
     bound: &'a GenericBound,
-    normalize_path: &impl Fn(&Path) -> String,
+) -> String {
+    generic_bound_key(crate_, names, bound, ImplTraitSortMode::EraseNestedBounds)
+}
+
+/// Returns the canonical sort key for a generic bound in final output mode.
+pub(super) fn output_generic_bound<'a>(
+    crate_: &PackageIndex<'_>,
+    names: &Names<'a>,
+    bound: &'a GenericBound,
+) -> String {
+    generic_bound_key(crate_, names, bound, ImplTraitSortMode::IncludeNestedBounds)
+}
+
+fn generic_bound_key<'a>(
+    crate_: &PackageIndex<'_>,
+    names: &Names<'a>,
+    bound: &'a GenericBound,
+    impl_trait_sort_mode: ImplTraitSortMode,
 ) -> String {
     let mut output = String::new();
-    format_generic_bound(names, bound, normalize_path, &mut output);
+    format_generic_bound(crate_, names, bound, impl_trait_sort_mode, &mut output);
     output
 }
 
 fn format_assoc_item_constraint<'a>(
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
     constraint: &'a AssocItemConstraint,
-    normalize_path: &impl Fn(&Path) -> String,
+    impl_trait_sort_mode: ImplTraitSortMode,
     output: &mut String,
 ) {
     output.push_str(&constraint.name);
     if let Some(args) = constraint.args.as_deref() {
-        format_generic_args(names, args, normalize_path, output);
+        format_generic_args(crate_, names, args, impl_trait_sort_mode, output);
     }
 
     match &constraint.binding {
         AssocItemConstraintKind::Constraint(bounds) => {
             output.push_str(": ");
-            format_bounds(names, bounds, normalize_path, output);
+            format_bounds(crate_, names, bounds, impl_trait_sort_mode, output);
         }
         AssocItemConstraintKind::Equality(term) => {
             output.push_str(" = ");
-            format_term(names, term, normalize_path, output);
+            format_term(crate_, names, term, impl_trait_sort_mode, output);
         }
     }
 }
 
 fn format_bounds<'a>(
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
     bounds: &'a [GenericBound],
-    normalize_path: &impl Fn(&Path) -> String,
+    impl_trait_sort_mode: ImplTraitSortMode,
     output: &mut String,
 ) {
     let mut bounds = bounds
         .iter()
-        .map(|bound| generic_bound(names, bound, normalize_path))
+        .map(|bound| generic_bound_key(crate_, names, bound, impl_trait_sort_mode))
         .collect::<Vec<_>>();
     bounds.sort_unstable();
     let mut bounds_iter = bounds.iter();
@@ -109,9 +205,10 @@ fn format_bounds<'a>(
 }
 
 fn format_generic_bound<'a>(
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
     bound: &'a GenericBound,
-    normalize_path: &impl Fn(&Path) -> String,
+    impl_trait_sort_mode: ImplTraitSortMode,
     output: &mut String,
 ) {
     match bound {
@@ -124,48 +221,62 @@ fn format_generic_bound<'a>(
             // we can look to replace it with an immutable hierarchical design instead.
             let mut scoped_names = names.clone();
             for param in generic_params {
-                scoped_names.add_param(param);
+                scoped_names.add_higher_ranked_param(param);
             }
             format_generic_params(&scoped_names, generic_params, output);
             match modifier {
                 TraitBoundModifier::None => {}
                 TraitBoundModifier::Maybe => output.push('?'),
-                TraitBoundModifier::MaybeConst => output.push_str("~const "),
+                // The final normalized signature hides nightly-only const-trait
+                // markers, so canonical sort keys must ignore them too.
+                TraitBoundModifier::MaybeConst => {}
             }
-            format_path(&scoped_names, trait_, normalize_path, output);
+            format_path(crate_, &scoped_names, trait_, impl_trait_sort_mode, output);
         }
         GenericBound::Outlives(lifetime) => {
             let lifetime = names.lifetime(lifetime);
             output.push_str(lifetime.as_ref());
         }
         GenericBound::Use(args) => {
-            // Sort keys are used only while assigning parameter-position
-            // `impl Trait` placeholders. As of Rust 1.96, hypothetical
-            // `fn f(_: impl Trait + use<T>)` syntax is rejected, so precise
-            // capture bounds cannot appear here.
-            unreachable!(
-                "found precise-capture `use<...>` bound in parameter-position impl Trait: {args:?}"
-            );
+            output.push_str("use<");
+            for (index, arg) in args.iter().enumerate() {
+                if index != 0 {
+                    output.push_str(", ");
+                }
+                match arg {
+                    rustdoc_types::PreciseCapturingArg::Lifetime(lifetime) => {
+                        let lifetime = names.lifetime(lifetime);
+                        output.push_str(lifetime.as_ref());
+                    }
+                    rustdoc_types::PreciseCapturingArg::Param(param) => {
+                        let param = names.type_or_const_name(param);
+                        output.push_str(param.as_ref());
+                    }
+                }
+            }
+            output.push('>');
         }
     }
 }
 
 fn format_path<'a>(
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
     path: &'a Path,
-    normalize_path: &impl Fn(&Path) -> String,
+    impl_trait_sort_mode: ImplTraitSortMode,
     output: &mut String,
 ) {
-    output.push_str(&normalize_path(path));
+    output.push_str(&paths::normalized_path(crate_, path));
     if let Some(args) = path.args.as_deref() {
-        format_generic_args(names, args, normalize_path, output);
+        format_generic_args(crate_, names, args, impl_trait_sort_mode, output);
     }
 }
 
 fn format_generic_args<'a>(
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
     args: &'a GenericArgs,
-    normalize_path: &impl Fn(&Path) -> String,
+    impl_trait_sort_mode: ImplTraitSortMode,
     output: &mut String,
 ) {
     match args {
@@ -180,13 +291,15 @@ fn format_generic_args<'a>(
                 if needs_separator {
                     output.push_str(", ");
                 }
-                format_generic_arg(names, arg, normalize_path, output);
+                format_generic_arg(crate_, names, arg, impl_trait_sort_mode, output);
                 needs_separator = true;
             }
 
             let mut constraints = constraints
                 .iter()
-                .map(|constraint| assoc_item_constraint(names, constraint, normalize_path))
+                .map(|constraint| {
+                    assoc_item_constraint_key(crate_, names, constraint, impl_trait_sort_mode)
+                })
                 .collect::<Vec<_>>();
             constraints.sort_unstable();
             for constraint in constraints {
@@ -207,12 +320,12 @@ fn format_generic_args<'a>(
                 if index != 0 {
                     output.push_str(", ");
                 }
-                format_type(names, type_, normalize_path, output);
+                format_type(crate_, names, type_, impl_trait_sort_mode, output);
             }
             output.push(')');
             if let Some(return_type) = return_type {
                 output.push_str(" -> ");
-                format_type(names, return_type, normalize_path, output);
+                format_type(crate_, names, return_type, impl_trait_sort_mode, output);
             }
         }
         GenericArgs::ReturnTypeNotation => output.push_str("(..)"),
@@ -220,9 +333,10 @@ fn format_generic_args<'a>(
 }
 
 fn format_generic_arg<'a>(
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
     arg: &'a GenericArg,
-    normalize_path: &impl Fn(&Path) -> String,
+    impl_trait_sort_mode: ImplTraitSortMode,
     output: &mut String,
 ) {
     match arg {
@@ -230,24 +344,29 @@ fn format_generic_arg<'a>(
             let lifetime = names.lifetime(lifetime);
             output.push_str(lifetime.as_ref());
         }
-        GenericArg::Type(type_) => format_type(names, type_, normalize_path, output),
+        GenericArg::Type(type_) => {
+            format_type(crate_, names, type_, impl_trait_sort_mode, output);
+        }
         GenericArg::Const(constant) => format_constant(names, constant, output),
         GenericArg::Infer => output.push('_'),
     }
 }
 
 fn format_term<'a>(
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
     term: &'a Term,
-    normalize_path: &impl Fn(&Path) -> String,
+    impl_trait_sort_mode: ImplTraitSortMode,
     output: &mut String,
 ) {
     match term {
-        Term::Type(type_) => format_type(names, type_, normalize_path, output),
+        Term::Type(type_) => {
+            format_type(crate_, names, type_, impl_trait_sort_mode, output);
+        }
         Term::Constant(constant) => {
             // As of Rust 1.96, associated const equality constraints such as
-            // `T: Trait<N = 3>` are incomplete and rejected, so there is no sort
-            // key to compute for such a term.
+            // `T: Trait<N = 3>` are incomplete and rejected.
+            // No sort key can be computed for such a term.
             unreachable!("found associated const equality constraint term: {constant:?}");
         }
     }
@@ -264,19 +383,22 @@ fn format_constant<'a>(
 }
 
 fn format_type<'a>(
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
     type_: &'a Type,
-    normalize_path: &impl Fn(&Path) -> String,
+    impl_trait_sort_mode: ImplTraitSortMode,
     output: &mut String,
 ) {
     match type_ {
-        Type::ResolvedPath(path) => format_path(names, path, normalize_path, output),
+        Type::ResolvedPath(path) => {
+            format_path(crate_, names, path, impl_trait_sort_mode, output);
+        }
         Type::DynTrait(dyn_trait) => {
             output.push_str("dyn ");
             let mut traits = dyn_trait
                 .traits
                 .iter()
-                .map(|trait_| poly_trait(names, trait_, normalize_path))
+                .map(|trait_| poly_trait_key(crate_, names, trait_, impl_trait_sort_mode))
                 .collect::<Vec<_>>();
             traits.sort_unstable();
             let mut traits_iter = traits.iter();
@@ -305,11 +427,18 @@ fn format_type<'a>(
         Type::FunctionPointer(pointer) => {
             let mut scoped_names = names.clone();
             for param in &pointer.generic_params {
-                scoped_names.add_param(param);
+                scoped_names.add_higher_ranked_param(param);
             }
             format_generic_params(&scoped_names, &pointer.generic_params, output);
+            function_pointer::format_fn_pointer_header(&pointer.header, output);
             output.push_str("fn");
-            format_function_signature(&scoped_names, &pointer.sig, normalize_path, output);
+            format_function_signature(
+                crate_,
+                &scoped_names,
+                &pointer.sig,
+                impl_trait_sort_mode,
+                output,
+            );
         }
         Type::Tuple(types) => {
             output.push('(');
@@ -317,7 +446,7 @@ fn format_type<'a>(
                 if index != 0 {
                     output.push_str(", ");
                 }
-                format_type(names, type_, normalize_path, output);
+                format_type(crate_, names, type_, impl_trait_sort_mode, output);
             }
             if types.len() == 1 {
                 output.push(',');
@@ -326,26 +455,24 @@ fn format_type<'a>(
         }
         Type::Slice(type_) => {
             output.push('[');
-            format_type(names, type_, normalize_path, output);
+            format_type(crate_, names, type_, impl_trait_sort_mode, output);
             output.push(']');
         }
         Type::Array { type_, len } => {
             output.push('[');
-            format_type(names, type_, normalize_path, output);
+            format_type(crate_, names, type_, impl_trait_sort_mode, output);
             output.push_str("; ");
             let len = names.const_expr(len);
             output.push_str(len.as_ref());
             output.push(']');
         }
-        Type::ImplTrait(_) => {
-            // Nested `impl Trait` bounds are consumed separately and receive
-            // placeholders after the enclosing associated item, generic arg, or
-            // bound has been placed in canonical order. Including those bounds
-            // here would make sort order depend on details that are erased from
-            // the containing parameter type signature, so `impl _` also avoids
-            // formatting data that cannot affect ordering.
-            output.push_str("impl _");
-        }
+        Type::ImplTrait(bounds) => match impl_trait_sort_mode {
+            ImplTraitSortMode::EraseNestedBounds => output.push_str("impl _"),
+            ImplTraitSortMode::IncludeNestedBounds => {
+                output.push_str("impl ");
+                format_bounds(crate_, names, bounds, impl_trait_sort_mode, output);
+            }
+        },
         Type::Infer => output.push('_'),
         Type::RawPointer { is_mutable, type_ } => {
             if *is_mutable {
@@ -353,7 +480,7 @@ fn format_type<'a>(
             } else {
                 output.push_str("*const ");
             }
-            format_type(names, type_, normalize_path, output);
+            format_type(crate_, names, type_, impl_trait_sort_mode, output);
         }
         Type::BorrowedRef {
             lifetime,
@@ -369,7 +496,7 @@ fn format_type<'a>(
             if *is_mutable {
                 output.push_str("mut ");
             }
-            format_type(names, type_, normalize_path, output);
+            format_type(crate_, names, type_, impl_trait_sort_mode, output);
         }
         Type::QualifiedPath {
             name,
@@ -378,38 +505,49 @@ fn format_type<'a>(
             trait_,
         } => {
             output.push('<');
-            format_type(names, self_type, normalize_path, output);
+            format_type(crate_, names, self_type, impl_trait_sort_mode, output);
             if let Some(trait_) = trait_ {
                 output.push_str(" as ");
-                format_path(names, trait_, normalize_path, output);
+                format_path(crate_, names, trait_, impl_trait_sort_mode, output);
             }
             output.push_str(">::");
             output.push_str(name);
             if let Some(args) = args.as_deref() {
-                format_generic_args(names, args, normalize_path, output);
+                format_generic_args(crate_, names, args, impl_trait_sort_mode, output);
             }
         }
-        Type::Pat { type_, .. } => format_type(names, type_, normalize_path, output),
+        Type::Pat { type_, .. } => {
+            format_type(crate_, names, type_, impl_trait_sort_mode, output);
+        }
     }
 }
 
 fn format_function_signature<'a>(
+    crate_: &PackageIndex<'_>,
     names: &Names<'a>,
     signature: &'a FunctionSignature,
-    normalize_path: &impl Fn(&Path) -> String,
+    impl_trait_sort_mode: ImplTraitSortMode,
     output: &mut String,
 ) {
     output.push('(');
-    for (index, (_, type_)) in signature.inputs.iter().enumerate() {
-        if index != 0 {
+    let mut needs_separator = false;
+    for (_, type_) in &signature.inputs {
+        if needs_separator {
             output.push_str(", ");
         }
-        format_type(names, type_, normalize_path, output);
+        format_type(crate_, names, type_, impl_trait_sort_mode, output);
+        needs_separator = true;
+    }
+    if signature.is_c_variadic {
+        if needs_separator {
+            output.push_str(", ");
+        }
+        output.push_str("...");
     }
     output.push(')');
     if let Some(return_type) = &signature.output {
         output.push_str(" -> ");
-        format_type(names, return_type, normalize_path, output);
+        format_type(crate_, names, return_type, impl_trait_sort_mode, output);
     }
 }
 
@@ -444,14 +582,14 @@ fn format_hrtb_generic_param_def<'a>(
         }
         GenericParamDefKind::Type { .. } => {
             // HRTB generic params model `for<...>` binders. As of Rust 1.96,
-            // hypothetical `for<T>` binders are rejected, so there is no sort
-            // key to compute for such a parameter.
+            // hypothetical `for<T>` binders are rejected.
+            // No sort key can be computed for such a parameter.
             unreachable!("found type generic param definition in HRTB position: {param:?}");
         }
         GenericParamDefKind::Const { .. } => {
             // HRTB generic params model `for<...>` binders. As of Rust 1.96,
-            // hypothetical `for<const N: usize>` binders are rejected, so there
-            // is no sort key to compute for such a parameter.
+            // hypothetical `for<const N: usize>` binders are rejected.
+            // No sort key can be computed for such a parameter.
             unreachable!("found const generic param definition in HRTB position: {param:?}");
         }
     }

@@ -2099,12 +2099,20 @@ type NormalizedTypeSignature {
   """
   Canonical normalized string representation of one Rust type.
 
-  The signature is scoped to the item that contains the type.
-  Generic parameter names from that scope are normalized in declaration order:
-  lifetimes become `'a`, `'b`, and so on; non-synthetic type parameters
+  For free functions, generic parameter names are normalized in declaration
+  order: lifetimes become `'a`, `'b`, and so on; non-synthetic type parameters
   become `T1`, `T2`, and so on; const parameters become `C1`, `C2`, and so on.
-  For example, in `impl<A> Example<A> { fn f<B>(&self, a: A, b: B) }`,
-  parameter `a` has signature `T1` while parameter `b` has signature `T2`.
+
+  Method signatures distinguish generics in the method's own item scope from
+  generics inherited from the containing `trait` or `impl`. Method generics use
+  the same item-scope names as free functions. Parent `trait` or `impl` type
+  parameters become `TO1`, `TO2`, and so on; parent const parameters become
+  `CO1`, `CO2`, and so on; parent lifetimes become `'o1`, `'o2`, and so on.
+  For example, in `impl<A> Example<A> { fn f<B>(&self, x: A, y: B) }`,
+  parameter `x` has signature `TO1` while parameter `y` has signature `T1`.
+
+  Higher-ranked binder lifetimes use `'b1`, `'b2`, and so on. For example,
+  `for<'a> fn(&'a u8)` has signature `for<'b1> fn(&'b1 u8)`.
 
   A single function parameter may contain multiple parameter-position `impl Trait`
   uses, for example: `impl Iterator<Item = impl Into<String>>`.
