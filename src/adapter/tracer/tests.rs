@@ -190,15 +190,16 @@ fn tracing_adapter() {
             1..=1,
         ),
         // Rust 1.96 nightly rustdoc emits a synthetic `impl UnsafeUnpin for Foo`,
-        // which adds one more top-level `Item` candidate and therefore one more
-        // attempted `Item -> Trait` coercion than older toolchains.
+        // and Rust 1.99 nightly rustdoc emits a synthetic blanket `SizeHint` impl.
+        // These add top-level `Item` candidates and therefore attempted
+        // `Item -> Trait` coercions compared to older toolchains.
         (
             FunctionCall::ResolveNeighborsInner(
                 Vid::new(NonZero::new(1).unwrap()),
                 "Crate".into(),
                 Eid::new(NonZero::new(1).unwrap()),
             ),
-            20..=21,
+            20..=22,
         ),
         (
             FunctionCall::ResolveNeighborsInner(
@@ -214,7 +215,7 @@ fn tracing_adapter() {
                 "Item".into(),
                 "Trait".into(),
             ),
-            20..=21,
+            20..=22,
         ),
     ];
 
