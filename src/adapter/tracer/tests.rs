@@ -147,6 +147,11 @@ fn tracing_adapter() {
 
     let tracer = tracing_adapter.finish();
 
+    // The blanket impls and auto-trait impls that rustdoc inlines into a downstream crate can
+    // change between Rust versions. Those impls appear in `Crate.item`, so allow generous
+    // headroom while still bounding the amount of work traced here.
+    let expected_item_count = 20..=30;
+
     // List of (function call, acceptable count range) tuples.
     let desired: [(FunctionCall, RangeInclusive<u32>); 8] = [
         (
@@ -189,17 +194,13 @@ fn tracing_adapter() {
             ),
             1..=1,
         ),
-        // Rust 1.96 nightly rustdoc emits a synthetic `impl UnsafeUnpin for Foo`,
-        // and Rust 1.99 nightly rustdoc emits a synthetic blanket `SizeHint` impl.
-        // These add top-level `Item` candidates and therefore attempted
-        // `Item -> Trait` coercions compared to older toolchains.
         (
             FunctionCall::ResolveNeighborsInner(
                 Vid::new(NonZero::new(1).unwrap()),
                 "Crate".into(),
                 Eid::new(NonZero::new(1).unwrap()),
             ),
-            20..=22,
+            expected_item_count.clone(),
         ),
         (
             FunctionCall::ResolveNeighborsInner(
@@ -215,7 +216,7 @@ fn tracing_adapter() {
                 "Item".into(),
                 "Trait".into(),
             ),
-            20..=22,
+            expected_item_count,
         ),
     ];
 

@@ -5247,12 +5247,6 @@ fn generic_parameters() {
             ... on GenericItem {
                 name @output
 
-                # TODO: HACK, remove this -- workaround for issue:
-                # https://github.com/obi1kenobi/trustfall-rustdoc-adapter/issues/400
-                #
-                # This clause ensures this query doesn't return methods while #400 isn't resolved.
-                name @filter(op: "!=", value: ["$method_name"])
-
                 generic_parameter {
                     generic_kind: __typename @output
                     generic_name: name @output
@@ -5302,8 +5296,7 @@ fn generic_parameters() {
 "#;
 
     let variables: BTreeMap<&str, i64> = BTreeMap::default();
-    let mut top_level_variables: BTreeMap<&str, &str> = BTreeMap::default();
-    top_level_variables.insert("method_name", "method");
+    let top_level_variables: BTreeMap<&str, &str> = BTreeMap::default();
 
     let schema =
         Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
@@ -5425,6 +5418,21 @@ fn generic_parameters() {
             generic_name: "M".into(),
         },
         Output {
+            name: "impl_method".into(),
+            generic_kind: "GenericLifetimeParameter".into(),
+            generic_name: "'b".into(),
+        },
+        Output {
+            name: "impl_method".into(),
+            generic_kind: "GenericTypeParameter".into(),
+            generic_name: "U".into(),
+        },
+        Output {
+            name: "impl_method".into(),
+            generic_kind: "GenericConstParameter".into(),
+            generic_name: "M".into(),
+        },
+        Output {
             name: "generic_fn".into(),
             generic_kind: "GenericLifetimeParameter".into(),
             generic_name: "'a".into(),
@@ -5523,12 +5531,6 @@ fn generic_type_parameters() {
             ... on GenericItem {
                 name @output
 
-                # TODO: HACK, remove this -- workaround for issue:
-                # https://github.com/obi1kenobi/trustfall-rustdoc-adapter/issues/400
-                #
-                # This clause ensures this query doesn't return methods while #400 isn't resolved.
-                name @filter(op: "!=", value: ["$method_name"])
-
                 generic_parameter {
                     ... on GenericTypeParameter {
                         generic_name: name @output
@@ -5599,8 +5601,7 @@ fn generic_type_parameters() {
 "#;
 
     let variables: BTreeMap<&str, i64> = BTreeMap::default();
-    let mut top_level_variables: BTreeMap<&str, &str> = BTreeMap::default();
-    top_level_variables.insert("method_name", "method");
+    let top_level_variables: BTreeMap<&str, &str> = BTreeMap::default();
 
     let schema =
         Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
@@ -5693,6 +5694,13 @@ fn generic_type_parameters() {
         },
         Output {
             name: "method".into(),
+            generic_name: "U".into(),
+            synthetic: false,
+            has_default: false,
+            bound: ["Hash"].into_iter().map(ToString::to_string).collect(),
+        },
+        Output {
+            name: "impl_method".into(),
             generic_name: "U".into(),
             synthetic: false,
             has_default: false,
@@ -5813,12 +5821,6 @@ fn generic_const_parameters() {
             ... on GenericItem {
                 name @output
 
-                # TODO: HACK, remove this -- workaround for issue:
-                # https://github.com/obi1kenobi/trustfall-rustdoc-adapter/issues/400
-                #
-                # This clause ensures this query doesn't return methods while #400 isn't resolved.
-                name @filter(op: "!=", value: ["$method_name"])
-
                 generic_parameter {
                     ... on GenericConstParameter {
                         generic_name: name @output
@@ -5874,8 +5876,7 @@ fn generic_const_parameters() {
 "#;
 
     let variables: BTreeMap<&str, i64> = BTreeMap::default();
-    let mut top_level_variables: BTreeMap<&str, &str> = BTreeMap::default();
-    top_level_variables.insert("method_name", "method");
+    let top_level_variables: BTreeMap<&str, &str> = BTreeMap::default();
 
     let schema =
         Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
@@ -5941,17 +5942,16 @@ fn generic_const_parameters() {
             generic_name: "N".into(),
             has_default: false,
         },
-        // TODO: The below items in principle should only be reachable via the trait's contents,
-        //       not from top-level. This is unintentional behavior on the part of the adapter
-        //       due to code unrelated to what we're testing here.
-        //       When that change is applied, we'll need separate test queries
-        //       for generic methods that navigate both via `ImplOwner` and via `Trait`.
         Output {
             name: "method".into(),
             generic_name: "M".into(),
             has_default: false,
         },
-        // ^ end TODO region ^
+        Output {
+            name: "impl_method".into(),
+            generic_name: "M".into(),
+            has_default: false,
+        },
         Output {
             name: "generic_fn".into(),
             generic_name: "N".into(),
