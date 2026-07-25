@@ -2,6 +2,7 @@
 name = "trustfall-rustdoc-adapter"
 version = "60.0.0"
 edition = "2024"
+rust-version = "1.93"
 authors = ["Predrag Gruevski <obi1kenobi82@gmail.com>"]
 license = "Apache-2.0 OR MIT"
 description = "Trustfall query adapter for rustdoc JSON data."

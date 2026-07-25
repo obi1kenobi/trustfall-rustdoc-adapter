@@ -1,7 +1,7 @@
 #![no_std]
 
 //! Notes on test completeness, as of Rust 1.81:
-//! - Functions annotated with `#[proc_macro]` must be private, or else it's a compile error.
+//! - Functions annotated with `#[proc_macro]` must be public, or else it's a compile error.
 //! - All proc macros must be defined at the root of the crate, or else it's a compile error.
 //! - Proc macro crates cannot export any other items other than proc macros. Not even pub modules
 //!   are allowed!

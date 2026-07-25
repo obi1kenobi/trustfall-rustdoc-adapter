@@ -19,6 +19,10 @@ pub trait GenericTrait<'a, T: Clone + PartialOrd<i64>, const N: usize> {
     fn method<'b, U: Hash, const M: usize>(value: &'a PhantomData<&'b ([T; N], [U; M])>);
 }
 
+impl<'a, T: Clone + PartialOrd<i64>, const N: usize> GenericStruct<'a, T, N> {
+    pub fn impl_method<'b, U: Hash, const M: usize>(value: &'a PhantomData<&'b ([T; N], [U; M])>) {}
+}
+
 pub fn generic_fn<'a, T: Clone + PartialOrd<i64>, const N: usize>(x: &'a PhantomData<[T; N]>) {}
 
 pub fn impl_trait<'a, T: Clone + PartialOrd<i64>, const N: usize>(
