@@ -1038,9 +1038,16 @@ struct ManualTraitItem {
     const_stability_feature: Option<&'static str>,
 }
 
-/// Limiting the creation of manually inlined traits to only those that are used by the lints.
-/// There are other foreign traits, but it is not obvious how the manually inlined traits
-/// should look like for them.
+/// Traits that the adapter knows how to manually inline when they appear in rustdoc's `paths`.
+///
+/// Rustdoc does not necessarily include every one of these traits. Since
+/// <https://github.com/rust-lang/rust/pull/159623>, external auto traits are recorded when
+/// rustdoc constructs their synthesized impls, so traits with no emitted impl may be absent.
+/// This is therefore an allowlist, not a list of traits that every rustdoc JSON is expected
+/// to contain.
+///
+/// This allowlist is limited to traits used by the lints. There are other foreign traits, but
+/// it is not obvious how the manually inlined traits should look for them.
 const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 14] = [
     ManualTraitItem {
         name: "Debug",
@@ -1246,12 +1253,8 @@ fn create_manually_inlined_builtin_traits(crate_: &Crate) -> (HashMap<Id, Item>,
         })
         .collect();
 
-    assert_eq!(
-        manually_inlined_builtin_traits.len(),
-        MANUAL_TRAIT_ITEMS.len(),
-        "failed to find some expected built-in traits: found only {manually_inlined_builtin_traits:?} and expected {MANUAL_TRAIT_ITEMS:?}",
-    );
-
+    // Unlike the other allowlisted traits, `Sized` is required to model implicit `Sized`
+    // bounds, so its path must be available even if other allowlisted traits are absent.
     let sized_id = manually_inlined_builtin_traits
         .iter()
         .find(|(_, item)| item.name.as_deref() == Some("Sized"))
