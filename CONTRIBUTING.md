@@ -3,6 +3,7 @@
 - [Making your first contribution](#making-your-first-contribution)
 - [Running `cargo test` for the first time](#running-cargo-test-for-the-first-time)
 - [Extending the adapter](#extending-the-adapter)
+- [Before submitting a pull request](#before-submitting-a-pull-request)
 - [Development Environment](#development-environment)
 
 ## Making your first contribution
@@ -42,6 +43,9 @@ To generate this data, please run `./scripts/regenerate_test_rustdocs.sh`.
 To use a specific toolchain, like beta or nightly, pass it as
 an argument: `./scripts/regenerate_test_rustdocs.sh +nightly`.
 
+Run this script again whenever you add or modify a test crate. You may pass
+one or more test-crate names to regenerate only those crates.
+
 ## Extending the adapter
 
 First, identify which information you want to access (whether a function has a body, if a trait is sealed, etc.)
@@ -64,9 +68,39 @@ Crawl `src/adapter/mod.rs` to find the part that handle the query fragment you m
 
   TODO
 
-Create a test crate in `test_crates` with `cargo new <test_crate_name> --lib` and add query tests in `src/adapter/tests.rs`.
+Expose the relevant Rust construct in a crate under `test_crates`,
+then add query tests in `src/adapter/tests.rs`.
+
+Tests should query rustdoc-generated data through Trustfall rather than
+constructing `rustdoc_types` values by hand.
+
+When adding a test crate:
+
+- Set `publish = false` in its `Cargo.toml`.
+- Keep it free of unrelated warnings and unused code.
+- Check it with `cargo check --manifest-path test_crates/<name>/Cargo.toml`.
 
 Congrats on extending the adapter!
+
+## Before submitting a pull request
+
+Run the basic checks used by CI:
+
+```console
+cargo fmt --check
+cargo clippy --all-targets --no-deps -- -D warnings --allow deprecated
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
+cargo test
+```
+
+Then, as you get ready to open the pull request, note that the GitHub screen for opening PRs
+shows your code changes that will be part of that PR.
+Please self-review your changes in that UI.
+Lots of small bugs that are missed when working in your editor are easily found
+through a "change of scenery" to a different UI.
+Doing this self-review is very important, and will make sure your PR is more likely to merge quickly
+because it means you'll catch and fix bugs that would otherwise have required a slow back-and-forth
+with a reviewer.
 
 ## Development Environment
 
