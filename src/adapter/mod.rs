@@ -337,7 +337,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 edges::resolve_normalized_type_signature_edge(contexts, edge_name)
             }
             "GenericItem" | "ImplOwner" | "Struct" | "Enum" | "Union" | "Trait" | "Function"
-            | "Method" | "Impl"
+            | "Method" | "Impl" | "AssociatedType"
                 if matches!(edge_name.as_ref(), "generic_parameter") =>
             {
                 edges::resolve_generic_parameter_edge(contexts, edge_name)
@@ -405,7 +405,13 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                         ),
                         "GenericItem" => matches!(
                             actual_type_name,
-                            "Struct" | "Enum" | "Union" | "Trait" | "Function" | "Method"
+                            "Struct"
+                                | "Enum"
+                                | "Union"
+                                | "Trait"
+                                | "Function"
+                                | "Method"
+                                | "AssociatedType"
                         ),
                         "Variant" => matches!(
                             actual_type_name,
