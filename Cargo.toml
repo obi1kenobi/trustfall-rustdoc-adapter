@@ -1,6 +1,6 @@
 [package]
 name = "trustfall-rustdoc-adapter"
-version = "57.1.0"
+version = "57.1.1"
 edition = "2024"
 rust-version = "1.93"
 authors = ["Predrag Gruevski <obi1kenobi82@gmail.com>"]
