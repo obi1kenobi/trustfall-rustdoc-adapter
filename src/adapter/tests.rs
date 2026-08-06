@@ -13247,3 +13247,156 @@ fn function_parameter_normalized_type_signature_lint_shape() {
 
     similar_asserts::assert_eq!(expected_results, results);
 }
+
+#[test]
+fn rustdoc_trait_has_generic_associated_types() {
+    get_test_data!(data, generic_associated_types);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                trait_name: name @output
+                associated_type {
+                    type_name: name @output
+                    generic_parameter {
+                        generic_name: name @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        trait_name: String,
+        type_name: String,
+        generic_name: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![
+            Output {
+                trait_name: "ConstGenericTrait".into(),
+                type_name: "ConstTrait".into(),
+                generic_name: "N".into(),
+            },
+            Output {
+                trait_name: "LifetimeGenericTrait".into(),
+                type_name: "Item".into(),
+                generic_name: "'a".into(),
+            },
+            Output {
+                trait_name: "TypeGenericTrait".into(),
+                type_name: "Item".into(),
+                generic_name: "T".into(),
+            },
+            Output {
+                trait_name: "TypeLifetimeGenericTrait".into(),
+                type_name: "Item".into(),
+                generic_name: "'a".into(),
+            },
+            Output {
+                trait_name: "TypeLifetimeGenericTrait".into(),
+                type_name: "Item".into(),
+                generic_name: "T".into(),
+            },
+        ],
+        results
+    );
+}
+
+#[test]
+fn rustdoc_item_has_generic_associated_types() {
+    get_test_data!(data, generic_associated_types);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on GenericItem {
+                type_name: name @output
+                generic_parameter {
+                    generic_name: name @output
+                    generic_kind: __typename @output
+                }
+            }
+        }
+    }
+}
+"#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        type_name: String,
+        generic_name: String,
+        generic_kind: String,
+    }
+
+    let mut results: Vec<_> =
+        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![
+            Output {
+                type_name: "ConstTrait".into(),
+                generic_name: "N".into(),
+                generic_kind: "GenericConstParameter".into(),
+            },
+            Output {
+                type_name: "ConstTrait".into(),
+                generic_name: "N".into(),
+                generic_kind: "GenericConstParameter".into(),
+            },
+            Output {
+                type_name: "Item".into(),
+                generic_name: "'a".into(),
+                generic_kind: "GenericLifetimeParameter".into(),
+            },
+            Output {
+                type_name: "Item".into(),
+                generic_name: "'a".into(),
+                generic_kind: "GenericLifetimeParameter".into(),
+            },
+            Output {
+                type_name: "Item".into(),
+                generic_name: "T".into(),
+                generic_kind: "GenericTypeParameter".into(),
+            },
+            Output {
+                type_name: "Item".into(),
+                generic_name: "T".into(),
+                generic_kind: "GenericTypeParameter".into(),
+            },
+        ],
+        results
+    );
+}

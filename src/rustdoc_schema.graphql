@@ -2520,7 +2520,7 @@ type ImplementedTrait {
 https://docs.rs/rustdoc-types/0.11.0/rustdoc_types/struct.Item.html
 https://docs.rs/rustdoc-types/latest/rustdoc_types/enum.ItemEnum.html#variant.AssocType
 """
-type AssociatedType implements Item {
+type AssociatedType implements Item & GenericItem {
   # properties from Item
   id: String!
   crate_id: Int!
@@ -2586,6 +2586,12 @@ type AssociatedType implements Item {
   Associated type defaults are currently unstable: https://github.com/rust-lang/rust/issues/29661
   """
   has_default: Boolean!
+
+  # edges from GenericItem
+  """
+  Generic type, lifetime, or const parameters by which this associated type is parameterized.
+  """
+  generic_parameter: [GenericParameter]
 
   # edges from Item
   span: Span
