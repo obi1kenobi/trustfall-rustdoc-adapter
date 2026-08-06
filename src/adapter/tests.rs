@@ -13322,7 +13322,7 @@ fn rustdoc_item_has_generic_associated_types() {
 {
     Crate {
         item {
-        ... on GenericItem {
+            ... on GenericItem {
                 type_name: name @output
                 generic_parameter {
                     generic_name: name @output
