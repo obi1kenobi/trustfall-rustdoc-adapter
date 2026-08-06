@@ -422,6 +422,7 @@ impl<'a> Vertex<'a> {
             rustdoc_types::ItemEnum::Trait(x) => Some(&x.generics),
             rustdoc_types::ItemEnum::Union(x) => Some(&x.generics),
             rustdoc_types::ItemEnum::Impl(x) => Some(&x.generics),
+            rustdoc_types::ItemEnum::AssocType { generics, .. } => Some(generics),
             _ => None,
         })
     }
