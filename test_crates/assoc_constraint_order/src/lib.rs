@@ -10,10 +10,14 @@ impl AssocConstraintOrder for ConcreteAssoc {
     type B = u8;
 }
 
-pub trait Takes<T> {}
+pub trait Takes<T> {
+    type Witness;
+}
 pub trait AlsoTakes<T> {}
 pub trait TakesConst<const N: usize> {}
-impl<T, U> Takes<T> for U {}
+impl<T, U> Takes<T> for U {
+    type Witness = T;
+}
 impl<T, U> AlsoTakes<T> for U {}
 impl<T, const N: usize> TakesConst<N> for T {}
 
@@ -89,12 +93,12 @@ pub fn return_nested_parenthesized_dyn_bound(
 }
 
 pub fn return_nested_opaque_bound_clone_then_copy(
-) -> impl HasItem<Item: Takes<impl Clone> + Takes<impl Copy>> {
+) -> impl HasItem<Item: Takes<impl Clone, Witness = ()> + Takes<impl Copy, Witness = ()>> {
     ConcreteAssoc
 }
 
 pub fn return_nested_opaque_bound_copy_then_clone(
-) -> impl HasItem<Item: Takes<impl Copy> + Takes<impl Clone>> {
+) -> impl HasItem<Item: Takes<impl Copy, Witness = ()> + Takes<impl Clone, Witness = ()>> {
     ConcreteAssoc
 }
 
