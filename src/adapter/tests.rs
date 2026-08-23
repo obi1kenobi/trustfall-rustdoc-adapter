@@ -12369,11 +12369,11 @@ fn function_return_normalized_type_signature_handles_assoc_constraint_bound() {
             },
             Output {
                 name: "return_nested_opaque_bound_clone_then_copy".into(),
-                signature: "impl ::assoc_constraint_order::HasItem<Item: ::assoc_constraint_order::Takes<impl ::core::clone::Clone> + ::assoc_constraint_order::Takes<impl ::core::marker::Copy>>".into(),
+                signature: "impl ::assoc_constraint_order::HasItem<Item: ::assoc_constraint_order::Takes<impl ::core::clone::Clone, Witness = ()> + ::assoc_constraint_order::Takes<impl ::core::marker::Copy, Witness = ()>>".into(),
             },
             Output {
                 name: "return_nested_opaque_bound_copy_then_clone".into(),
-                signature: "impl ::assoc_constraint_order::HasItem<Item: ::assoc_constraint_order::Takes<impl ::core::clone::Clone> + ::assoc_constraint_order::Takes<impl ::core::marker::Copy>>".into(),
+                signature: "impl ::assoc_constraint_order::HasItem<Item: ::assoc_constraint_order::Takes<impl ::core::clone::Clone, Witness = ()> + ::assoc_constraint_order::Takes<impl ::core::marker::Copy, Witness = ()>>".into(),
             },
             Output {
                 name: "return_function_pointer_bound_safe_then_unsafe".into(),
