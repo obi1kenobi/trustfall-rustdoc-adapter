@@ -21,3 +21,8 @@ test_crates/**/Cargo.lock
 flamegraph.svg
 perf.data
 perf.data.old
+
+# Python bytecode and cache files
+**/__pycache__/
+**/*.pyc
+**/*.pyo
