@@ -2,9 +2,12 @@ version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
-    target-branch: "rustdoc-v60"
     schedule:
       interval: "weekly"
       day: "saturday"
       time: "01:12"
       timezone: "America/New_York"
+    # Delay version updates to reduce exposure to newly published releases.
+    # Security updates are not subject to this cooldown.
+    cooldown:
+      default-days: 7
