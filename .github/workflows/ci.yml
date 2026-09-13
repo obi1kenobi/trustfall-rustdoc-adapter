@@ -144,7 +144,7 @@ jobs:
           rustflags: ""
 
       - name: cargo clippy
-        run: cargo clippy --workspace --all-features --all-targets -- -D warnings -Dclippy::print_stdout -Dclippy::print_stderr -Dclippy::dbg_macro --allow deprecated
+        run: cargo clippy --locked --workspace --all-features --all-targets -- -D warnings -Dclippy::print_stdout -Dclippy::print_stderr -Dclippy::dbg_macro --allow deprecated
 
       - name: cargo fmt
         run: cargo fmt -- --check
@@ -152,7 +152,7 @@ jobs:
       - name: cargo doc
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --workspace --all-features --no-deps --document-private-items
+        run: cargo doc --locked --workspace --all-features --no-deps --document-private-items
 
   rust-tests:
     name: Run tests
@@ -178,22 +178,22 @@ jobs:
         run: ./scripts/regenerate_test_rustdocs.sh +${{ matrix.toolchain }}
 
       - name: compile
-        run: cargo test --no-run
+        run: cargo test --locked --no-run
 
       - name: test
-        run: cargo test
+        run: cargo test --locked
 
       - name: compile with rayon
-        run: cargo test --no-run --features rayon
+        run: cargo test --locked --no-run --features rayon
 
       - name: test with rayon
-        run: cargo test --features rayon
+        run: cargo test --locked --features rayon
 
       - name: compile with rayon and rustc-hash
-        run: cargo test --no-run --features rayon,rustc-hash
+        run: cargo test --locked --no-run --features rayon,rustc-hash
 
       - name: test with rayon and rustc-hash
-        run: cargo test --features rayon,rustc-hash
+        run: cargo test --locked --features rayon,rustc-hash
 
   test-crates:
     name: Run test crate tests
