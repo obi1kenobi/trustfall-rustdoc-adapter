@@ -97,7 +97,10 @@ jobs:
       - lint
       - rust-tests
       - test-crates
-    if: ${{ success() || failure() }}  # Run this job even if a dependency has failed.
+    # Run unless the workflow was cancelled so every completed dependency is checked.
+    # Unlike `success() || failure()`, `!cancelled()` also runs when a dependency is
+    # skipped, preventing this required aggregate job from being skipped too.
+    if: ${{ !cancelled() }}
     steps:
       - name: Job outcomes
         run: |
