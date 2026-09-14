@@ -175,7 +175,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 "FunctionLike" | "ExportableFunction" | "Function" | "Method"
                     if matches!(
                         property_name.as_ref(),
-                        "const" | "unsafe" | "async" | "has_body" | "signature"
+                        "const" | "unsafe" | "async" | "c_variadic" | "has_body" | "signature"
                     ) =>
                 {
                     properties::resolve_function_like_property(contexts, property_name, self)

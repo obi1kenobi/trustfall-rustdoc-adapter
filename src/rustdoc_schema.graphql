@@ -1373,6 +1373,14 @@ interface FunctionLike {
   async: Boolean!
 
   """
+  Whether the function accepts C-style variadic arguments, written as `...`.
+
+  The `parameter` edge includes only the fixed parameters, excluding `...`.
+  A variadic function may have zero fixed parameters.
+  """
+  c_variadic: Boolean!
+
+  """
   Whether the function includes an implementation ("body") or is just a declaration.
 
   For example, `fn example() {}` has a body (an empty one), whereas a trait function that
@@ -1389,6 +1397,8 @@ interface FunctionLike {
   original source code as possible.  May not preserve whitespace, constant
   expressions in types, or path names, but the output will be semantically
   equivalent to the original.
+
+  Variadic binding patterns are rendered as `_: ...`.
   """
   signature: String!
 
@@ -1398,6 +1408,8 @@ interface FunctionLike {
 
   There can be zero or more parameters. Any `self` receiver parameter is also included here,
   if one is present on the function (i.e. the method).
+
+  For a C-variadic function, only the fixed parameters are included; `...` is excluded.
   """
   parameter: [FunctionParameter!]
 
@@ -1486,6 +1498,14 @@ interface ExportableFunction implements Item & FunctionLike {
   async: Boolean!
 
   """
+  Whether the function accepts C-style variadic arguments, written as `...`.
+
+  The `parameter` edge includes only the fixed parameters, excluding `...`.
+  A variadic function may have zero fixed parameters.
+  """
+  c_variadic: Boolean!
+
+  """
   Whether the function includes an implementation ("body") or is just a declaration.
 
   For example, `fn example() {}` has a body (an empty one), whereas a trait function that
@@ -1502,6 +1522,8 @@ interface ExportableFunction implements Item & FunctionLike {
   original source code as possible.  May not preserve whitespace, constant
   expressions in types, or path names, but the output will be semantically
   equivalent to the original.
+
+  Variadic binding patterns are rendered as `_: ...`.
   """
   signature: String!
 
@@ -1539,6 +1561,8 @@ interface ExportableFunction implements Item & FunctionLike {
 
   There can be zero or more parameters. Any `self` receiver parameter is also included here,
   if one is present on the function (i.e. the method).
+
+  For a C-variadic function, only the fixed parameters are included; `...` is excluded.
   """
   parameter: [FunctionParameter!]
 
@@ -1737,6 +1761,14 @@ type Function implements Item & FunctionLike & Importable & ExportableFunction &
   async: Boolean!
 
   """
+  Whether the function accepts C-style variadic arguments, written as `...`.
+
+  The `parameter` edge includes only the fixed parameters, excluding `...`.
+  A variadic function may have zero fixed parameters.
+  """
+  c_variadic: Boolean!
+
+  """
   Whether the function includes an implementation ("body") or is just a declaration.
 
   For example, `fn example() {}` has a body (an empty one), whereas a trait function that
@@ -1753,6 +1785,8 @@ type Function implements Item & FunctionLike & Importable & ExportableFunction &
   original source code as possible.  May not preserve whitespace, constant
   expressions in types, or path names, but the output will be semantically
   equivalent to the original.
+
+  Variadic binding patterns are rendered as `_: ...`.
   """
   signature: String!
 
@@ -1787,6 +1821,8 @@ type Function implements Item & FunctionLike & Importable & ExportableFunction &
   # edges from FunctionLike
   """
   A parameter to this function. There can be zero or more parameters.
+
+  For a C-variadic function, only the fixed parameters are included; `...` is excluded.
   """
   parameter: [FunctionParameter!]
 
@@ -1908,6 +1944,14 @@ type Method implements Item & FunctionLike & GenericItem {
   async: Boolean!
 
   """
+  Whether the function accepts C-style variadic arguments, written as `...`.
+
+  The `parameter` edge includes only the fixed parameters, excluding `...`.
+  A variadic function may have zero fixed parameters.
+  """
+  c_variadic: Boolean!
+
+  """
   Whether the function includes an implementation ("body") or is just a declaration.
 
   For example, `fn example() {}` has a body (an empty one), whereas a trait function that
@@ -1924,6 +1968,8 @@ type Method implements Item & FunctionLike & GenericItem {
   original source code as possible.  May not preserve whitespace, constant
   expressions in types, or path names, but the output will be semantically
   equivalent to the original.
+
+  Variadic binding patterns are rendered as `_: ...`.
   """
   signature: String!
 
@@ -1961,6 +2007,8 @@ type Method implements Item & FunctionLike & GenericItem {
 
   There can be zero or more parameters. Any `self` receiver parameter is also included here,
   if one is present on the function (i.e. the method).
+
+  For a C-variadic function, only the fixed parameters are included; `...` is excluded.
   """
   parameter: [FunctionParameter!]
 
