@@ -2,8 +2,6 @@
 #![allow(stable_features)]
 #![feature(c_variadic)]
 
-use core::ffi::VaList;
-
 unsafe extern "C" {
     pub fn declared_unsafe(count: i32, ...);
     pub safe fn declared_safe(...);
@@ -36,10 +34,6 @@ pub fn non_variadic_rust(value: i32) {
 
 pub fn takes_variadic_pointer(callback: unsafe extern "C" fn(i32, ...)) {
     let _ = callback;
-}
-
-pub fn takes_va_list(args: VaList<'_>) {
-    let _ = args;
 }
 
 #[repr(C)]

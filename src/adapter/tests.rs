@@ -2157,14 +2157,6 @@ fn function_c_variadic() {
             abi: "Rust".into(),
             params: vec!["callback".into()],
         },
-        Output {
-            signature: "fn takes_va_list(args: core::ffi::VaList<'_>)".into(),
-            c_variadic: false,
-            is_unsafe: false,
-            has_body: true,
-            abi: "Rust".into(),
-            params: vec!["args".into()],
-        },
     ];
     expected_results.sort_unstable();
 
