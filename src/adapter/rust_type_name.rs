@@ -250,7 +250,7 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
                 f,
                 "{}fn{}",
                 FunctionHeader(&fnp.header, fnp.header.is_const),
-                FunctionSignature(&fnp.sig, this.1)
+                FunctionSignature(&fnp.sig, this.1, FunctionSignatureContext::FunctionPointer)
             )?;
 
             Ok(())
@@ -549,6 +549,12 @@ fn fmt_function_header(this: &FunctionHeader, f: &mut Formatter<'_>) -> Result {
 // and should not be leaked in the function signature.
 display_wrapper!(FunctionHeader, fmt_function_header, bool);
 
+#[derive(Debug, Clone, Copy)]
+enum FunctionSignatureContext {
+    Item,
+    FunctionPointer,
+}
+
 fn fmt_function_signature(this: &FunctionSignature, f: &mut Formatter<'_>) -> Result {
     write!(f, "(")?;
     enum Arg<'a> {
@@ -578,7 +584,12 @@ fn fmt_function_signature(this: &FunctionSignature, f: &mut Formatter<'_>) -> Re
             .chain(this.0.is_c_variadic.then_some(Arg::Dots)),
         |arg, f| match arg {
             Arg::Named(name, ty) => write!(f, "{name}: {ty}"),
-            Arg::Dots => write!(f, "..."),
+            Arg::Dots => f.write_str(match this.2 {
+                // Rustdoc omits the variadic pattern, but function definitions and
+                // trait declarations require one. `_` is also valid in foreign declarations.
+                FunctionSignatureContext::Item => "_: ...",
+                FunctionSignatureContext::FunctionPointer => "...",
+            }),
         },
     )?;
 
@@ -594,7 +605,12 @@ fn fmt_function_signature(this: &FunctionSignature, f: &mut Formatter<'_>) -> Re
     Ok(())
 }
 
-display_wrapper!(FunctionSignature, fmt_function_signature, bool);
+display_wrapper!(
+    FunctionSignature,
+    fmt_function_signature,
+    bool,
+    FunctionSignatureContext
+);
 
 fn fmt_where_predicate(this: &WherePredicate, f: &mut Formatter<'_>) -> Result {
     match &this.0 {
@@ -637,7 +653,11 @@ fn fmt_function(this: &Function, f: &mut Formatter<'_>) -> Result {
         write!(f, "<{}>", GenericParamDefs(&this.0.generics.params))?;
     }
 
-    write!(f, "{}", FunctionSignature(&this.0.sig, false))?;
+    write!(
+        f,
+        "{}",
+        FunctionSignature(&this.0.sig, false, FunctionSignatureContext::Item)
+    )?;
 
     if !this.0.generics.where_predicates.is_empty() {
         write!(f, " where ")?;
