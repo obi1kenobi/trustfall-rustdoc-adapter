@@ -2050,6 +2050,336 @@ fn function_abi() {
 }
 
 #[test]
+fn function_c_variadic() {
+    get_test_data!(data, c_variadic);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        signature: String,
+        c_variadic: bool,
+        is_unsafe: bool,
+        has_body: bool,
+        abi: String,
+        params: Vec<String>,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            signature: r#"unsafe extern "C" fn declared_unsafe(count: i32, _: ...)"#.into(),
+            c_variadic: true,
+            is_unsafe: true,
+            has_body: false,
+            abi: "C".into(),
+            params: vec!["count".into()],
+        },
+        Output {
+            signature: r#"extern "C" fn declared_safe(_: ...)"#.into(),
+            c_variadic: true,
+            is_unsafe: false,
+            has_body: false,
+            abi: "C".into(),
+            params: vec![],
+        },
+        Output {
+            signature: r#"unsafe extern "C" fn declared_non_variadic(value: i32)"#.into(),
+            c_variadic: false,
+            is_unsafe: true,
+            has_body: false,
+            abi: "C".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            signature: r#"unsafe extern "C-unwind" fn declared_unwind(count: i32, _: ...)"#.into(),
+            c_variadic: true,
+            is_unsafe: true,
+            has_body: false,
+            abi: "C-unwind".into(),
+            params: vec!["count".into()],
+        },
+        Output {
+            signature: r#"unsafe extern "C" fn defined_named(count: i32, _: ...) -> i32"#.into(),
+            c_variadic: true,
+            is_unsafe: true,
+            has_body: true,
+            abi: "C".into(),
+            params: vec!["count".into()],
+        },
+        Output {
+            signature: r#"unsafe extern "C" fn defined_unnamed(count: i32, _: ...)"#.into(),
+            c_variadic: true,
+            is_unsafe: true,
+            has_body: true,
+            abi: "C".into(),
+            params: vec!["count".into()],
+        },
+        Output {
+            signature: r#"unsafe extern "C" fn defined_no_fixed_params(_: ...)"#.into(),
+            c_variadic: true,
+            is_unsafe: true,
+            has_body: true,
+            abi: "C".into(),
+            params: vec![],
+        },
+        Output {
+            signature: r#"unsafe extern "C-unwind" fn defined_unwind(_: ...)"#.into(),
+            c_variadic: true,
+            is_unsafe: true,
+            has_body: true,
+            abi: "C-unwind".into(),
+            params: vec![],
+        },
+        Output {
+            signature: r#"extern "C" fn non_variadic_c(value: i32)"#.into(),
+            c_variadic: false,
+            is_unsafe: false,
+            has_body: true,
+            abi: "C".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            signature: "fn non_variadic_rust(value: i32)".into(),
+            c_variadic: false,
+            is_unsafe: false,
+            has_body: true,
+            abi: "Rust".into(),
+            params: vec!["value".into()],
+        },
+        Output {
+            signature: r#"fn takes_variadic_pointer(callback: unsafe extern "C" fn(_: i32, ...))"#
+                .into(),
+            c_variadic: false,
+            is_unsafe: false,
+            has_body: true,
+            abi: "Rust".into(),
+            params: vec!["callback".into()],
+        },
+        Output {
+            signature: "fn takes_va_list(args: core::ffi::VaList<'_>)".into(),
+            c_variadic: false,
+            is_unsafe: false,
+            has_body: true,
+            abi: "Rust".into(),
+            params: vec!["args".into()],
+        },
+    ];
+    expected_results.sort_unstable();
+
+    // Query the concrete type and its `Item` subinterface. Traversing the root module
+    // restricts the results to free functions, excluding associated functions.
+    for type_name in ["Function", "ExportableFunction"] {
+        let query = r#"
+{
+    Crate {
+        root_module {
+            item {
+                ... on FUNCTION_TYPE {
+                    signature @output
+                    c_variadic @output
+                    is_unsafe: unsafe @output
+                    has_body @output
+                    abi {
+                        raw_name @output(name: "abi")
+                    }
+                    parameter @fold {
+                        name @output(name: "params")
+                    }
+                }
+            }
+        }
+    }
+}
+"#
+        .replace("FUNCTION_TYPE", type_name);
+        let variables: BTreeMap<&str, &str> = BTreeMap::new();
+        let mut results: Vec<Output> =
+            trustfall::execute_query(&schema, adapter.clone(), &query, variables)
+                .expect("failed to run query")
+                .map(|row| row.try_into_struct().expect("shape mismatch"))
+                .collect();
+        results.sort_unstable();
+        similar_asserts::assert_eq!(expected_results, results, "{type_name}");
+    }
+}
+
+#[test]
+fn method_c_variadic() {
+    get_test_data!(data, c_variadic);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        signature: String,
+        c_variadic: bool,
+        has_body: bool,
+        params: Vec<String>,
+    }
+
+    let check_query = |query, variables: BTreeMap<&str, &str>, mut expected: Vec<Output>| {
+        let mut results: Vec<Output> =
+            trustfall::execute_query(&schema, adapter.clone(), query, variables)
+                .expect("failed to run query")
+                .map(|row| row.try_into_struct().expect("shape mismatch"))
+                .collect();
+        results.sort_unstable();
+        expected.sort_unstable();
+        similar_asserts::assert_eq!(expected, results);
+    };
+
+    check_query(
+        r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                inherent_impl {
+                    method {
+                        name @output
+                        signature @output
+                        c_variadic @output
+                        has_body @output
+                        parameter @fold {
+                            name @output(name: "params")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#,
+        BTreeMap::new(),
+        vec![
+            Output {
+                name: "inherent_variadic".into(),
+                signature: r#"unsafe extern "C" fn inherent_variadic(_: ...)"#.into(),
+                c_variadic: true,
+                has_body: true,
+                params: vec![],
+            },
+            Output {
+                name: "variadic_receiver".into(),
+                signature: r#"unsafe extern "C" fn variadic_receiver(self: &Self, _: ...)"#.into(),
+                c_variadic: true,
+                has_body: true,
+                params: vec!["self".into()],
+            },
+            Output {
+                name: "inherent_non_variadic".into(),
+                signature: "fn inherent_non_variadic()".into(),
+                c_variadic: false,
+                has_body: true,
+                params: vec![],
+            },
+        ],
+    );
+
+    check_query(
+        r#"
+{
+    Crate {
+        item {
+            ... on Trait {
+                method {
+                    name @output
+                    signature @output
+                    c_variadic @output
+                    has_body @output
+                    parameter @fold {
+                        name @output(name: "params")
+                    }
+                }
+            }
+        }
+    }
+}
+"#,
+        BTreeMap::new(),
+        vec![
+            Output {
+                name: "required_variadic".into(),
+                signature: r#"unsafe extern "C" fn required_variadic(count: i32, _: ...)"#.into(),
+                c_variadic: true,
+                has_body: false,
+                params: vec!["count".into()],
+            },
+            Output {
+                name: "default_variadic".into(),
+                signature: r#"unsafe extern "C-unwind" fn default_variadic(_: ...)"#.into(),
+                c_variadic: true,
+                has_body: true,
+                params: vec![],
+            },
+            Output {
+                name: "non_variadic".into(),
+                signature: "fn non_variadic()".into(),
+                c_variadic: false,
+                has_body: true,
+                params: vec![],
+            },
+        ],
+    );
+    // Include inherited default methods as well as the method implemented in this `impl`.
+    check_query(
+        r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                impl {
+                    implemented_trait {
+                        bare_name @filter(op: "=", value: ["$trait"])
+                    }
+                    method {
+                        name @output
+                        signature @output
+                        c_variadic @output
+                        has_body @output
+                        parameter @fold {
+                            name @output(name: "params")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#,
+        btreemap! { "trait" => "VariadicTrait" },
+        vec![
+            Output {
+                name: "required_variadic".into(),
+                signature: r#"unsafe extern "C" fn required_variadic(count: i32, _: ...)"#.into(),
+                c_variadic: true,
+                has_body: true,
+                params: vec!["count".into()],
+            },
+            Output {
+                name: "default_variadic".into(),
+                signature: r#"unsafe extern "C-unwind" fn default_variadic(_: ...)"#.into(),
+                c_variadic: true,
+                has_body: true,
+                params: vec![],
+            },
+            Output {
+                name: "non_variadic".into(),
+                signature: "fn non_variadic()".into(),
+                c_variadic: false,
+                has_body: true,
+                params: vec![],
+            },
+        ],
+    );
+}
+
+#[test]
 fn function_export_name() {
     get_test_data!(data2021, function_export_name_2021);
     get_test_data!(data, function_export_name);

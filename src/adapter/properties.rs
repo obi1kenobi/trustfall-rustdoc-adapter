@@ -279,6 +279,10 @@ pub(super) fn resolve_function_like_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             contexts,
             field_property!(as_function, header, { header.is_unsafe.into() }),
         ),
+        "c_variadic" => resolve_property_with(
+            contexts,
+            field_property!(as_function, sig, { sig.is_c_variadic.into() }),
+        ),
         "has_body" => resolve_property_with(contexts, move |vertex| {
             let function = vertex.as_function().expect("FunctionLike not a function");
 
