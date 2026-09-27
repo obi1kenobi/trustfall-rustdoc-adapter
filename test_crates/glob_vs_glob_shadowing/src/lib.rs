@@ -14,5 +14,9 @@ mod b {
     pub struct Baz;
 }
 
+#[expect(
+    ambiguous_glob_reexports,
+    reason = "test that conflicting glob re-exports make `Foo` unimportable"
+)]
 pub use a::*;
 pub use b::*;
