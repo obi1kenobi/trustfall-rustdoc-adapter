@@ -1,5 +1,6 @@
 // Emit structured stdlib-style stability data by enabling unstable Rust features.
 #![allow(internal_features)]
+#![expect(ineffective_unstable_reexports, reason = "we're testing that these work correctly")]
 #![feature(associated_type_defaults)]
 #![feature(const_trait_impl)]
 #![feature(rustc_attrs)]
