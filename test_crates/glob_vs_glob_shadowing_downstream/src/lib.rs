@@ -15,6 +15,10 @@ mod first {
         pub struct Foo;
     }
 
+    #[expect(
+        ambiguous_glob_reexports,
+        reason = "test that conflicting glob re-exports make `Foo` unimportable"
+    )]
     pub use a::*;
     pub use b::*;
 }
@@ -26,6 +30,10 @@ pub mod second {
         pub struct Bar;
     }
 
+    #[expect(
+        ambiguous_glob_reexports,
+        reason = "test that re-exporting conflicting globs propagates the `Foo` conflict"
+    )]
     pub use super::first::*;
     pub use inner::*;
 }
