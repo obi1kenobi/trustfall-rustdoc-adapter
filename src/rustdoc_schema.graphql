@@ -1257,10 +1257,14 @@ type Trait implements Item & Importable & GenericItem {
   Whether downstream crates are unconditionally prevented from implementing this trait themselves.
 
   Required implementation items can be added to sealed traits without causing a breaking change,
-  since no implementations of that trait may exist in other crates.
+  since downstream crates cannot write their own implementations.
 
   This is a stronger property than `public_api_sealed`, which shows whether the trait
   is prevented from being implemented with *only public API items*.
+
+  The manually inlined `Sized` trait is sealed because its implementations can only be
+  provided by the compiler. Those automatic implementations still let downstream types
+  implement traits that have a `Sized` supertrait.
   """
   unconditionally_sealed: Boolean!
 
@@ -1268,7 +1272,7 @@ type Trait implements Item & Importable & GenericItem {
   Whether downstream crates are unconditionally prevented from implementing this trait themselves.
 
   Required implementation items can be added to sealed traits without causing a breaking change,
-  since no implementations of that trait may exist in other crates.
+  since downstream crates cannot write their own implementations.
 
   This is a stronger property than `public_api_sealed`, which shows whether the trait
   is prevented from being implemented with *only public API items*.
