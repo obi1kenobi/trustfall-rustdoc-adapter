@@ -66,7 +66,7 @@ pub enum VertexKind<'a> {
     Receiver(Receiver<'a>),
 
     #[non_exhaustive]
-    Discriminant(Cow<'a, str>),
+    Discriminant(Cow<'a, str>, bool),
 
     #[non_exhaustive]
     Variant(EnumVariant<'a>),
@@ -377,9 +377,9 @@ impl<'a> Vertex<'a> {
         }
     }
 
-    pub(super) fn as_discriminant(&self) -> Option<&Cow<'a, str>> {
+    pub(super) fn as_discriminant(&self) -> Option<(&Cow<'a, str>, bool)> {
         match &self.kind {
-            VertexKind::Discriminant(variant) => Some(variant),
+            VertexKind::Discriminant(value, explicit) => Some((value, *explicit)),
             _ => None,
         }
     }
