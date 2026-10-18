@@ -4257,6 +4257,30 @@ fn importable_items_cover_more_kinds() {
                 kind: "StructVariant".into(),
             },
             Output {
+                name: "EmptyStructVariant".into(),
+                kind: "Enum".into(),
+            },
+            Output {
+                name: "Unit".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Struct".into(),
+                kind: "StructVariant".into(),
+            },
+            Output {
+                name: "FieldfulStructVariant".into(),
+                kind: "Enum".into(),
+            },
+            Output {
+                name: "Unit".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Struct".into(),
+                kind: "StructVariant".into(),
+            },
+            Output {
                 name: "Pathological".into(),
                 kind: "Enum".into(),
             },
@@ -5237,6 +5261,16 @@ fn enum_discriminants() {
                 value: Some("0".into(),),
             },
             Output {
+                enum_name: "EmptyStructVariant".into(),
+                variant_name: "Struct".into(),
+                value: Some("1".into()),
+            },
+            Output {
+                enum_name: "EmptyStructVariant".into(),
+                variant_name: "Unit".into(),
+                value: Some("0".into()),
+            },
+            Output {
                 enum_name: "Fieldful".into(),
                 variant_name: "Struct".into(),
                 value: Some("2".into(),),
@@ -5268,6 +5302,16 @@ fn enum_discriminants() {
             },
             Output {
                 enum_name: "FieldfulNoRepr".into(),
+                variant_name: "Unit".into(),
+                value: None,
+            },
+            Output {
+                enum_name: "FieldfulStructVariant".into(),
+                variant_name: "Struct".into(),
+                value: None,
+            },
+            Output {
+                enum_name: "FieldfulStructVariant".into(),
                 variant_name: "Unit".into(),
                 value: None,
             },
