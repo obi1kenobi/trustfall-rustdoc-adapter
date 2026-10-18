@@ -57,6 +57,16 @@ Prefer Rust unit tests over integration tests whenever either option is viable.
 Always consider what behaviors in your new code are worth testing, and add appropriate tests
 making sure to cover all relevant edge cases.
 
+Prioritize readability over deduplication in tests. Write structured expected results directly
+as struct literals with named fields. Do not encode them as positional tuples and then convert
+them into structs: readers should see what each expected value means where it is specified,
+especially for booleans.
+
+Put distinct test scenarios in separate, descriptively named test functions rather than a loop
+over queries and expectations. Add a brief doc comment explaining each test's purpose unless
+that purpose is already obvious. Repeating setup and named fields is preferable to abstractions
+that obscure what a test verifies.
+
 Do not add entries to the `[features]` table in `Cargo.toml` unless explicitly asked to do so.
 
 If working with the file system, prefer `fs_err` APIs over the equivalent `std::fs` ones
