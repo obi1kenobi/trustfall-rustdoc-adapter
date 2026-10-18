@@ -5383,7 +5383,7 @@ fn declarative_macros() {
             name: "not_exported".into(),
             public_api_eligible: false,
             visibility_limit: "crate".into(),
-            raw_attribute: Some("#[allow(unused_macros)]".into()),
+            raw_attribute: None,
         },
         Output {
             name: "hidden_parent".into(),
