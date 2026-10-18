@@ -186,7 +186,7 @@ impl Origin {
     pub(super) fn make_variant_vertex<'a>(
         &self,
         item: &'a Item,
-        discriminants: Option<Rc<LazyDiscriminants<'a>>>,
+        discriminants: Rc<LazyDiscriminants<'a>>,
         index: usize,
     ) -> Vertex<'a> {
         Vertex {
