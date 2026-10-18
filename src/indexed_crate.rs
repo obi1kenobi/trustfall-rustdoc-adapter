@@ -1059,7 +1059,7 @@ struct ManualTraitItem {
 ///
 /// This allowlist is limited to traits used by the lints. There are other foreign traits, but
 /// it is not obvious how the manually inlined traits should look for them.
-const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 14] = [
+const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "Debug",
         path: &["core", "fmt", "Debug"],
@@ -1075,6 +1075,12 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 14] = [
     ManualTraitItem {
         name: "Copy",
         path: &["core", "marker", "Copy"],
+        is_auto: false,
+        is_unsafe: false,
+    },
+    ManualTraitItem {
+        name: "Drop",
+        path: &["core", "ops", "drop", "Drop"],
         is_auto: false,
         is_unsafe: false,
     },
@@ -1163,6 +1169,7 @@ fn new_trait(manual_trait_item: &ManualTraitItem, id: Id, crate_id: u32) -> Item
             is_dyn_compatible: matches!(
                 manual_trait_item.name,
                 "Debug"
+                    | "Drop"
                     | "PartialEq"
                     | "PartialOrd"
                     | "Send"
@@ -1171,10 +1178,8 @@ fn new_trait(manual_trait_item: &ManualTraitItem, id: Id, crate_id: u32) -> Item
                     | "UnwindSafe"
                     | "RefUnwindSafe"
             ),
-            // The `item`, `generics`, `bounds` and `implementations`
-            // are not currently present in the schema,
-            // so it is safe to fill them with empty containers,
-            // even though some traits in reality have some values in them.
+            // These placeholders model trait identity and basic metadata only.
+            // Members, generics, supertraits, and implementations are not reconstructed.
             items: Vec::new(),
             generics: rustdoc_types::Generics {
                 params: Vec::new(),
