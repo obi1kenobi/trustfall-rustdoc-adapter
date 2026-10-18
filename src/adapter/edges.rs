@@ -9,7 +9,6 @@ use trustfall::provider::{
 };
 
 use crate::{
-    adapter::supported_item_kind,
     attributes::Attribute,
     hashtables::{HashMap, HashSet},
 };
@@ -417,14 +416,15 @@ pub(super) fn resolve_module_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let origin = vertex.origin;
             let module_item = vertex.as_module().expect("vertex was not a Module");
 
-            let item_index = &adapter.crate_at_origin(origin).own_crate.inner.index;
-
-            Box::new(module_item.items.iter().filter_map(move |item_id| {
-                item_index
-                    .get(item_id)
-                    .filter(|item| supported_item_kind(item))
-                    .map(|item| origin.make_item_vertex(item))
-            }))
+            let crate_ = &adapter.crate_at_origin(origin).own_crate;
+            optimizations::item_lookup::resolve_item_vertices(
+                crate_,
+                origin,
+                module_item
+                    .items
+                    .iter()
+                    .filter_map(|item_id| crate_.inner.index.get(item_id)),
+            )
         }),
         _ => unreachable!("resolve_module_edge {edge_name}"),
     }

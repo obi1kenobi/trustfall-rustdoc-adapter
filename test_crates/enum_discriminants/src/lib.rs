@@ -52,6 +52,11 @@ pub enum EmptyStructVariant {
     Struct {},
 }
 
+pub enum EmptyTupleVariant {
+    Unit,
+    Tuple(),
+}
+
 pub enum FieldfulStructVariant {
     Unit,
     Struct { value: bool },
