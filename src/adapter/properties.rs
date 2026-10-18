@@ -767,7 +767,15 @@ pub(crate) fn resolve_discriminant_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             vertex
                 .as_discriminant()
                 .expect("vertex was not a Discriminant")
+                .0
                 .to_string()
+                .into()
+        }),
+        "explicit" => resolve_property_with(contexts, |vertex| {
+            vertex
+                .as_discriminant()
+                .expect("vertex was not a Discriminant")
+                .1
                 .into()
         }),
         _ => unreachable!("Discriminant property {property_name}"),

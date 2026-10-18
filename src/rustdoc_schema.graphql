@@ -555,22 +555,27 @@ interface Variant implements Item & Importable {
   field: [StructField!]
 
   """
-  The discriminant value of this variant, if its value is well-defined.
+  The numerical discriminant value of this variant, when available.
 
-  A discriminant is an integer value that is logically associated with an enum variant,
-  and is used to determine which variant an enum value holds.
+  This edge is present when the enum either:
+  - specifies a primitive integer representation, such as `#[repr(u8)]`, or
+  - is fieldless: none of its variants contain fields. This includes unit variants,
+    empty tuple variants (`Tuple()`), and empty struct variants (`Struct {}`).
 
-  Discriminant values are not always well-defined.
-
-  In order for variants to have well-defined discriminants, their enum must either
-  - define a primitive representation (e.g., `#[repr(u8)]`), or
-  - be "unit-only" i.e. consisting solely of unit variants.
-
-  The variants of such enums may be explicitly assigned a discriminant value, or
-  the discriminant may be defined implicitly:
-  - The first variant has a discriminant of zero, unless explicitly assigned a value.
-  - Subsequent variants have a discriminant one higher than the previous variant,
+  The value may be explicitly assigned or computed implicitly:
+  - The first variant defaults to zero unless explicitly assigned a value.
+  - Each subsequent variant defaults to one higher than the previous variant,
     unless explicitly assigned a value.
+
+  `Discriminant.explicit` indicates whether this variant supplies its own explicit assignment.
+
+  Rust permits explicit assignments only for unit-only enums or enums with
+  a primitive integer representation. Fieldless enums containing tuple or struct variants
+  therefore require an integer representation to use explicit assignments.
+
+  The presence of this edge does not imply that the enum supports integer casts.
+  For example, an enum with fields and `#[repr(u8)]` exposes numerical discriminants
+  but cannot be converted using an `as` cast.
   """
   discriminant: Discriminant
 }
@@ -584,6 +589,15 @@ type Discriminant {
   The numerical value of the discriminant. Stored as a string. Ranges from `i128::MIN` to `u128::MAX`.
   """
   value: String!
+
+  """
+  Whether this variant's discriminant is explicitly assigned using `= const_expression`.
+
+  An explicit assignment remains explicit even if its value equals the value Rust would assign
+  implicitly. A variant without its own assignment is implicit, including when it follows a variant
+  with an explicit assignment.
+  """
+  explicit: Boolean!
 }
 
 """
@@ -649,22 +663,27 @@ type PlainVariant implements Item & Importable & Variant {
   field: [StructField!]
 
   """
-  The discriminant value of this variant, if its value is well-defined.
+  The numerical discriminant value of this variant, when available.
 
-  A discriminant is an integer value that is logically associated with an enum variant,
-  and is used to determine which variant an enum value holds.
+  This edge is present when the enum either:
+  - specifies a primitive integer representation, such as `#[repr(u8)]`, or
+  - is fieldless: none of its variants contain fields. This includes unit variants,
+    empty tuple variants (`Tuple()`), and empty struct variants (`Struct {}`).
 
-  Discriminant values are not always well-defined.
-
-  In order for variants to have well-defined discriminants, their enum must either
-  - define a primitive representation (e.g., `#[repr(u8)]`), or
-  - be "unit-only" i.e. consisting solely of unit variants.
-
-  The variants of such enums may be explicitly assigned a discriminant value, or
-  the discriminant may be defined implicitly:
-  - The first variant has a discriminant of zero, unless explicitly assigned a value.
-  - Subsequent variants have a discriminant one higher than the previous variant,
+  The value may be explicitly assigned or computed implicitly:
+  - The first variant defaults to zero unless explicitly assigned a value.
+  - Each subsequent variant defaults to one higher than the previous variant,
     unless explicitly assigned a value.
+
+  `Discriminant.explicit` indicates whether this variant supplies its own explicit assignment.
+
+  Rust permits explicit assignments only for unit-only enums or enums with
+  a primitive integer representation. Fieldless enums containing tuple or struct variants
+  therefore require an integer representation to use explicit assignments.
+
+  The presence of this edge does not imply that the enum supports integer casts.
+  For example, an enum with fields and `#[repr(u8)]` exposes numerical discriminants
+  but cannot be converted using an `as` cast.
   """
   discriminant: Discriminant
 }
@@ -732,22 +751,27 @@ type TupleVariant implements Item & Importable & Variant {
   field: [StructField!]
 
   """
-  The discriminant value of this variant, if its value is well-defined.
+  The numerical discriminant value of this variant, when available.
 
-  A discriminant is an integer value that is logically associated with an enum variant,
-  and is used to determine which variant an enum value holds.
+  This edge is present when the enum either:
+  - specifies a primitive integer representation, such as `#[repr(u8)]`, or
+  - is fieldless: none of its variants contain fields. This includes unit variants,
+    empty tuple variants (`Tuple()`), and empty struct variants (`Struct {}`).
 
-  Discriminant values are not always well-defined.
-
-  In order for variants to have well-defined discriminants, their enum must either
-  - define a primitive representation (e.g., `#[repr(u8)]`), or
-  - be "unit-only" i.e. consisting solely of unit variants.
-
-  The variants of such enums may be explicitly assigned a discriminant value, or
-  the discriminant may be defined implicitly:
-  - The first variant has a discriminant of zero, unless explicitly assigned a value.
-  - Subsequent variants have a discriminant one higher than the previous variant,
+  The value may be explicitly assigned or computed implicitly:
+  - The first variant defaults to zero unless explicitly assigned a value.
+  - Each subsequent variant defaults to one higher than the previous variant,
     unless explicitly assigned a value.
+
+  `Discriminant.explicit` indicates whether this variant supplies its own explicit assignment.
+
+  Rust permits explicit assignments only for unit-only enums or enums with
+  a primitive integer representation. Fieldless enums containing tuple or struct variants
+  therefore require an integer representation to use explicit assignments.
+
+  The presence of this edge does not imply that the enum supports integer casts.
+  For example, an enum with fields and `#[repr(u8)]` exposes numerical discriminants
+  but cannot be converted using an `as` cast.
   """
   discriminant: Discriminant
 }
@@ -815,22 +839,27 @@ type StructVariant implements Item & Importable & Variant {
   field: [StructField!]
 
   """
-  The discriminant value of this variant, if its value is well-defined.
+  The numerical discriminant value of this variant, when available.
 
-  A discriminant is an integer value that is logically associated with an enum variant,
-  and is used to determine which variant an enum value holds.
+  This edge is present when the enum either:
+  - specifies a primitive integer representation, such as `#[repr(u8)]`, or
+  - is fieldless: none of its variants contain fields. This includes unit variants,
+    empty tuple variants (`Tuple()`), and empty struct variants (`Struct {}`).
 
-  Discriminant values are not always well-defined.
-
-  In order for variants to have well-defined discriminants, their enum must either
-  - define a primitive representation (e.g., `#[repr(u8)]`), or
-  - be "unit-only" i.e. consisting solely of unit variants.
-
-  The variants of such enums may be explicitly assigned a discriminant value, or
-  the discriminant may be defined implicitly:
-  - The first variant has a discriminant of zero, unless explicitly assigned a value.
-  - Subsequent variants have a discriminant one higher than the previous variant,
+  The value may be explicitly assigned or computed implicitly:
+  - The first variant defaults to zero unless explicitly assigned a value.
+  - Each subsequent variant defaults to one higher than the previous variant,
     unless explicitly assigned a value.
+
+  `Discriminant.explicit` indicates whether this variant supplies its own explicit assignment.
+
+  Rust permits explicit assignments only for unit-only enums or enums with
+  a primitive integer representation. Fieldless enums containing tuple or struct variants
+  therefore require an integer representation to use explicit assignments.
+
+  The presence of this edge does not imply that the enum supports integer casts.
+  For example, an enum with fields and `#[repr(u8)]` exposes numerical discriminants
+  but cannot be converted using an `as` cast.
   """
   discriminant: Discriminant
 }
