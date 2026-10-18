@@ -264,6 +264,9 @@ pub struct IndexedCrate<'a> {
     #[expect(clippy::type_complexity)]
     pub(crate) variant_name_index: Option<HashMap<(Id, &'a str), (&'a Item, usize)>>,
 
+    /// index: variant id -> owning enum, index of variant inside enum.
+    pub(crate) variant_owner_index: HashMap<Id, (&'a Item, usize)>,
+
     /// Trait items defined in external crates are not present in the `inner: &Crate` field,
     /// even if they are implemented by a type in that crate. This also includes
     /// Rust's built-in traits like `Debug, Send, Eq` etc.
@@ -606,6 +609,16 @@ impl<'a> IndexedCrate<'a> {
     ) -> Self {
         let fn_owner_index = build_fn_owner_index(&crate_.index);
         let pub_item_kind_index = PubItemKindIndex::from_crate(crate_, &fn_owner_index);
+        let variant_name_index = build_variant_name_index(&crate_.index);
+
+        #[cfg(feature = "rayon")]
+        let iter = variant_name_index.par_iter();
+        #[cfg(not(feature = "rayon"))]
+        let iter = variant_name_index.iter();
+
+        let variant_owner_index = iter
+            .map(|((enum_id, _), (variant, index))| (variant.id, (&crate_.index[enum_id], *index)))
+            .collect();
 
         let (manually_inlined_builtin_traits, sized_trait) =
             create_manually_inlined_builtin_traits(crate_);
@@ -629,6 +642,7 @@ impl<'a> IndexedCrate<'a> {
             fn_owner_index: None,
             export_name_index: None,
             variant_name_index: None,
+            variant_owner_index,
             target_features,
             pub_item_kind_index,
         };
@@ -677,7 +691,7 @@ impl<'a> IndexedCrate<'a> {
             Some(build_impl_index(&crate_.index, value.stability_policy).into_inner());
         value.fn_owner_index = Some(fn_owner_index);
         value.export_name_index = Some(build_export_name_index(&crate_.index));
-        value.variant_name_index = Some(build_variant_name_index(&crate_.index));
+        value.variant_name_index = Some(variant_name_index);
 
         value
     }
