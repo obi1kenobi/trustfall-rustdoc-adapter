@@ -36,6 +36,16 @@ pub enum FieldfulNoRepr {
     Struct{a: bool},
 }
 
+pub enum EmptyStructVariant {
+    Unit,
+    Struct {},
+}
+
+pub enum FieldfulStructVariant {
+    Unit,
+    Struct { value: bool },
+}
+
 #[repr(i128)]
 pub enum Pathological {
     Min = i128::MIN,
