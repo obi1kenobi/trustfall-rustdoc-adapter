@@ -5,21 +5,23 @@ use std::num::ParseIntError;
 use std::rc::Rc;
 use std::str::FromStr;
 
-use rustdoc_types::{Item, ItemEnum, Variant};
+use rustdoc_types::{Id, Item, ItemEnum, Variant, VariantKind};
+
+use crate::hashtables::HashMap;
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct EnumVariant<'a> {
     item: &'a Item,
-    discriminants: Option<Rc<LazyDiscriminants<'a>>>,
+    discriminants: Rc<LazyDiscriminants<'a>>,
     index: usize,
 }
 
 #[non_exhaustive]
 pub(super) struct LazyDiscriminants<'a> {
-    // TODO: Consider replacing Vec with an impl Iterator for performance
-    variants: Vec<&'a Variant>,
-    discriminants: OnceCell<Vec<Cow<'a, str>>>,
+    enum_item: &'a Item,
+    item_index: &'a HashMap<Id, Item>,
+    discriminants: OnceCell<Option<Vec<Cow<'a, str>>>>,
 }
 
 impl Debug for LazyDiscriminants<'_> {
@@ -31,23 +33,55 @@ impl Debug for LazyDiscriminants<'_> {
 }
 
 impl<'a> LazyDiscriminants<'a> {
-    pub(super) fn new(variants: Vec<&'a Variant>) -> Self {
+    pub(super) fn new(enum_item: &'a Item, item_index: &'a HashMap<Id, Item>) -> Self {
         Self {
-            variants,
+            enum_item,
+            item_index,
             discriminants: OnceCell::new(),
         }
     }
 
-    pub(super) fn get_discriminants(&self) -> &Vec<Cow<'a, str>> {
+    pub(super) fn get_discriminants(&self) -> Option<&[Cow<'a, str>]> {
+        // Direct item traversal also constructs variant vertices for queries that only need
+        // item properties. Defer the enum-wide scan until a discriminant is requested.
         self.discriminants
-            .get_or_init(|| assign_discriminants(&self.variants))
+            .get_or_init(|| {
+                let has_integer_repr = self.enum_item.attrs.iter().any(|attr| match attr {
+                    rustdoc_types::Attribute::Repr(repr) => repr.int.is_some(),
+                    _ => false,
+                });
+                let ItemEnum::Enum(enum_) = &self.enum_item.inner else {
+                    unreachable!("discriminant owner was not an Enum")
+                };
+
+                let variants = enum_.variants.iter().map(|id| {
+                    let item = self.item_index.get(id).expect("missing enum variant");
+                    let ItemEnum::Variant(variant) = &item.inner else {
+                        unreachable!("enum variant item was not a Variant")
+                    };
+                    variant
+                });
+
+                if !has_integer_repr
+                    && variants.clone().any(|variant| match &variant.kind {
+                        VariantKind::Plain => false,
+                        VariantKind::Tuple(fields) => !fields.is_empty(),
+                        VariantKind::Struct { fields, .. } => !fields.is_empty(),
+                    })
+                {
+                    return None;
+                }
+
+                Some(assign_discriminants(variants))
+            })
+            .as_deref()
     }
 }
 
 impl<'a> EnumVariant<'a> {
     pub(super) fn new(
         item: &'a Item,
-        discriminants: Option<Rc<LazyDiscriminants<'a>>>,
+        discriminants: Rc<LazyDiscriminants<'a>>,
         index: usize,
     ) -> Self {
         Self {
@@ -65,13 +99,18 @@ impl<'a> EnumVariant<'a> {
     }
 
     pub(super) fn discriminant(&self) -> Option<Cow<'a, str>> {
-        self.discriminants.as_ref().map(|inner| {
-            inner
-                .get_discriminants()
+        self.discriminants.get_discriminants().map(|values| {
+            values
                 .get(self.index)
                 .expect("self.index should exist in self.discriminants")
                 .clone()
         })
+    }
+
+    // Query results cannot reveal redundant computation, so tests also inspect cache identity.
+    #[cfg(test)]
+    pub(super) fn discriminant_cache(&self) -> &Rc<LazyDiscriminants<'a>> {
+        &self.discriminants
     }
 
     #[inline]
@@ -183,7 +222,9 @@ impl FromStr for DiscriminantValue {
 }
 
 /// <https://doc.rust-lang.org/reference/items/enumerations.html#assigning-discriminant-values>
-pub(super) fn assign_discriminants<'a>(variants: &[&'a Variant]) -> Vec<Cow<'a, str>> {
+pub(super) fn assign_discriminants<'a>(
+    variants: impl ExactSizeIterator<Item = &'a Variant>,
+) -> Vec<Cow<'a, str>> {
     let mut last: DiscriminantValue = DiscriminantValue::I64(0);
     let mut discriminants: Vec<Cow<'a, str>> = Vec::with_capacity(variants.len());
     for v in variants {
@@ -251,7 +292,7 @@ mod tests {
                 kind: VariantKind::Plain,
             },
         ];
-        let actual = assign_discriminants(&variants);
+        let actual = assign_discriminants(variants.into_iter());
         let expected: Vec<String> = vec![
             "0".into(),
             "1".into(),
@@ -312,7 +353,7 @@ mod tests {
             },
             &explicit_4,
         ];
-        let actual = assign_discriminants(&variants);
+        let actual = assign_discriminants(variants.into_iter());
         let expected: Vec<String> = vec![
             "9223372036854775807".into(),
             "9223372036854775808".into(),
