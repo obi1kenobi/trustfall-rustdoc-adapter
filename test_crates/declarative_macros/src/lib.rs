@@ -78,10 +78,12 @@ pub mod public {
 ///
 /// not_exported!();
 /// ```
-#[allow(unused_macros)]
 macro_rules! not_exported {
     () => {}
 }
+
+// Invoke the macro only to suppress the `unused_macros` lint.
+not_exported!();
 
 #[doc(hidden)]
 pub mod hidden {
