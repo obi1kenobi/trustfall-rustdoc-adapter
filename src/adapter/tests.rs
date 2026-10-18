@@ -10386,6 +10386,462 @@ fn drop_trait() {
     similar_asserts::assert_eq!(expected_results, results);
 }
 
+/// Built-in supertraits expose all three sealing properties: `Sized` is sealed,
+/// while the other manually inlined built-in traits are unsealed.
+#[test]
+fn builtin_trait_sealing_through_supertraits() {
+    get_test_data!(data, builtin_trait_sealing);
+    let adapter = RustdocAdapter::new(&data, None);
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        owner: String,
+        path: Vec<String>,
+        unconditionally_sealed: bool,
+        sealed: bool,
+        public_api_sealed: bool,
+    }
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Trait {
+                    owner: name @output
+                    supertrait {
+                        trait {
+                            unconditionally_sealed @output
+                            sealed @output
+                            public_api_sealed @output
+                            canonical_path {
+                                path @output
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let mut expected_results = vec![
+        Output {
+            owner: "DerivedSupertraits".into(),
+            path: ["core", "clone", "Clone"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "DerivedSupertraits".into(),
+            path: ["core", "marker", "Copy"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "DerivedSupertraits".into(),
+            path: ["core", "fmt", "Debug"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "DerivedSupertraits".into(),
+            path: ["core", "cmp", "PartialEq"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "DerivedSupertraits".into(),
+            path: ["core", "cmp", "Eq"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "DerivedSupertraits".into(),
+            path: ["core", "cmp", "PartialOrd"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "DerivedSupertraits".into(),
+            path: ["core", "cmp", "Ord"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "DerivedSupertraits".into(),
+            path: ["core", "hash", "Hash"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "AutoSupertraits".into(),
+            path: ["core", "marker", "Send"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "AutoSupertraits".into(),
+            path: ["core", "marker", "Sync"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "AutoSupertraits".into(),
+            path: ["core", "marker", "Unpin"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "AutoSupertraits".into(),
+            path: ["core", "panic", "unwind_safe", "UnwindSafe"]
+                .map(String::from)
+                .into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "AutoSupertraits".into(),
+            path: ["core", "panic", "unwind_safe", "RefUnwindSafe"]
+                .map(String::from)
+                .into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "DropSupertrait".into(),
+            path: ["core", "ops", "drop", "Drop"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "SizedSupertrait".into(),
+            path: ["core", "marker", "Sized"].map(String::from).into(),
+            unconditionally_sealed: true,
+            sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            owner: "Clone".into(),
+            path: ["builtin_trait_sealing", "private", "Sealed"]
+                .map(String::from)
+                .into(),
+            unconditionally_sealed: true,
+            sealed: true,
+            public_api_sealed: true,
+        },
+    ];
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Derived, automatic, and explicit implementations expose unsealed built-in traits
+/// through the `implemented_trait` edge.
+#[test]
+fn builtin_trait_sealing_through_implemented_traits() {
+    get_test_data!(data, builtin_trait_sealing);
+    let adapter = RustdocAdapter::new(&data, None);
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        owner: String,
+        path: Vec<String>,
+        unconditionally_sealed: bool,
+        sealed: bool,
+        public_api_sealed: bool,
+    }
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on ImplOwner {
+                    owner: name @output
+                    impl {
+                        implemented_trait {
+                            trait {
+                                name @filter(op: "one_of", value: ["$impl_traits"])
+                                unconditionally_sealed @output
+                                sealed @output
+                                public_api_sealed @output
+                                canonical_path {
+                                    path @output
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables = btreemap! {
+        "impl_traits" => FieldValue::from(vec!["Clone", "Send", "Drop"]),
+    };
+
+    let mut expected_results = vec![
+        Output {
+            owner: "Derived".into(),
+            path: ["core", "clone", "Clone"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "Derived".into(),
+            path: ["core", "marker", "Send"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "Dropped".into(),
+            path: ["core", "ops", "drop", "Drop"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "Dropped".into(),
+            path: ["core", "marker", "Send"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+    ];
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Generic bounds expose the same sealing properties as other trait references,
+/// including the distinction between sealed `Sized` and unsealed `Clone`.
+#[test]
+fn builtin_trait_sealing_through_generic_bounds() {
+    get_test_data!(data, builtin_trait_sealing);
+    let adapter = RustdocAdapter::new(&data, None);
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        owner: String,
+        path: Vec<String>,
+        unconditionally_sealed: bool,
+        sealed: bool,
+        public_api_sealed: bool,
+    }
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Function {
+                    owner: name @output
+                    generic_parameter {
+                        ... on GenericTypeParameter {
+                            type_bound {
+                                trait {
+                                    unconditionally_sealed @output
+                                    sealed @output
+                                    public_api_sealed @output
+                                    canonical_path {
+                                        path @output
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let mut expected_results = vec![
+        Output {
+            owner: "generic_bounds".into(),
+            path: ["core", "clone", "Clone"].map(String::from).into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "generic_bounds".into(),
+            path: ["core", "marker", "Sized"].map(String::from).into(),
+            unconditionally_sealed: true,
+            sealed: true,
+            public_api_sealed: true,
+        },
+    ];
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Built-in supertraits do not themselves seal local traits, even for `Sized`.
+/// Local traits named `Clone` or `Sized` retain their own sealing classification.
+#[test]
+fn builtin_trait_sealing_of_local_traits() {
+    get_test_data!(data, builtin_trait_sealing);
+    let adapter = RustdocAdapter::new(&data, None);
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        owner: String,
+        path: Vec<String>,
+        unconditionally_sealed: bool,
+        sealed: bool,
+        public_api_sealed: bool,
+    }
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Trait {
+                    owner: name @output
+                    unconditionally_sealed @output
+                    sealed @output
+                    public_api_sealed @output
+                    canonical_path {
+                        path @output
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables: BTreeMap<&str, &str> = BTreeMap::default();
+
+    let mut expected_results = vec![
+        Output {
+            owner: "DerivedSupertraits".into(),
+            path: ["builtin_trait_sealing", "DerivedSupertraits"]
+                .map(String::from)
+                .into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "AutoSupertraits".into(),
+            path: ["builtin_trait_sealing", "AutoSupertraits"]
+                .map(String::from)
+                .into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "DropSupertrait".into(),
+            path: ["builtin_trait_sealing", "DropSupertrait"]
+                .map(String::from)
+                .into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "SizedSupertrait".into(),
+            path: ["builtin_trait_sealing", "SizedSupertrait"]
+                .map(String::from)
+                .into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+        Output {
+            owner: "Sealed".into(),
+            path: ["builtin_trait_sealing", "private", "Sealed"]
+                .map(String::from)
+                .into(),
+            unconditionally_sealed: true,
+            sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            owner: "Clone".into(),
+            path: ["builtin_trait_sealing", "shadow", "Clone"]
+                .map(String::from)
+                .into(),
+            unconditionally_sealed: true,
+            sealed: true,
+            public_api_sealed: true,
+        },
+        Output {
+            owner: "Sized".into(),
+            path: ["builtin_trait_sealing", "shadow", "Sized"]
+                .map(String::from)
+                .into(),
+            unconditionally_sealed: false,
+            sealed: false,
+            public_api_sealed: false,
+        },
+    ];
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    expected_results.sort_unstable();
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
 #[test]
 fn struct_repr_attributes() {
     get_test_data!(data, struct_fields_position);

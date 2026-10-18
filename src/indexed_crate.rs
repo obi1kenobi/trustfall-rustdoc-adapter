@@ -243,6 +243,9 @@ pub struct IndexedCrate<'a> {
     pub(crate) imports_index: Option<HashMap<Path<'a>, Vec<(&'a Item, Modifiers)>>>,
 
     /// index: item ID -> bit flags recording yes-no indicators for various item states
+    ///
+    /// For manually inlined built-in traits absent from rustdoc's index, only sealing
+    /// information is populated.
     pub(crate) flags: Option<HashMap<Id, ItemFlag>>,
 
     /// index: impl owner + impl'd method item name -> list of (impl itself, the named item));
@@ -680,11 +683,23 @@ impl<'a> IndexedCrate<'a> {
             .flatten()
             .collect::<MapList<_, _>>()
             .into_inner();
-        value.flags = Some(build_flags_index(
-            &crate_.index,
-            &imports_index,
-            value.stability_policy,
-        ));
+        let mut flags = build_flags_index(&crate_.index, &imports_index, value.stability_policy);
+
+        // The manually inlined traits permit downstream impls except for `Sized`,
+        // whose impls can only be provided by the compiler. Record this after local
+        // trait analysis: `Sized` itself is sealed, but its automatic impls let
+        // downstream types implement traits with a `Sized` supertrait.
+        // Preserve analysis results when the full trait definition is available.
+        for id in value.manually_inlined_builtin_traits.keys() {
+            flags.entry(*id).or_insert_with(|| {
+                let mut flags = ItemFlag::default();
+                if *id == value.sized_trait {
+                    flags.set_unconditionally_sealed();
+                }
+                flags
+            });
+        }
+        value.flags = Some(flags);
         value.imports_index = Some(imports_index);
 
         value.impl_method_index =
@@ -746,9 +761,14 @@ impl<'a> IndexedCrate<'a> {
     /// The analysis here looks for such techniques, which are always applied at the type signature
     /// level. It does not inspect function bodies or do interprocedural analysis.
     ///
+    /// Manually inlined built-in traits use their known implementation restrictions instead.
+    /// Of these, only `Sized` is sealed: downstream crates cannot write its implementations,
+    /// although the compiler automatically provides them for types with a known size.
+    ///
     /// ## Panics
     ///
-    /// This method will panic if the provided `Id` is not an item in this crate.
+    /// This method will panic if the provided `Id` is neither an item in this crate
+    /// nor one of its manually inlined built-in traits.
     ///
     /// If the provided `Id` is not a trait, the result is sound but not specified.
     /// It could be any return value or a panic, but not undefined behavior.
@@ -759,7 +779,7 @@ impl<'a> IndexedCrate<'a> {
             .is_unconditionally_sealed()
     }
 
-    /// Report whether our analysis indicates the trait can be implemented within public API.
+    /// Report whether our analysis indicates the trait cannot be implemented within public API.
     ///
     /// A trait can be implemented within public API if the trait is not sealed, and implementing it
     /// does not require using any non-public-API items in the `impl`. A non-public-API item is
@@ -775,7 +795,8 @@ impl<'a> IndexedCrate<'a> {
     ///
     /// ## Panics
     ///
-    /// This method will panic if the provided `Id` is not an item in this crate.
+    /// This method will panic if the provided `Id` is neither an item in this crate
+    /// nor one of its manually inlined built-in traits.
     ///
     /// If the provided `Id` is not a trait, the result is sound but not specified.
     /// It could be any return value or a panic, but not undefined behavior.
