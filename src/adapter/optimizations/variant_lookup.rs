@@ -42,7 +42,7 @@ fn compute_variant_discriminants<'a>(
                         VariantKind::Plain => {}
                         VariantKind::Tuple(t) => has_fields_in_variants |= !t.is_empty(),
                         VariantKind::Struct { fields, .. } => {
-                            has_fields_in_variants |= fields.is_empty()
+                            has_fields_in_variants |= !fields.is_empty()
                         }
                     }
                     v
