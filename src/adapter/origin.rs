@@ -172,10 +172,14 @@ impl Origin {
         }
     }
 
-    pub(super) fn make_discriminant_vertex<'a>(&self, value: Cow<'a, str>) -> Vertex<'a> {
+    pub(super) fn make_discriminant_vertex<'a>(
+        &self,
+        value: Cow<'a, str>,
+        explicit: bool,
+    ) -> Vertex<'a> {
         Vertex {
             origin: *self,
-            kind: VertexKind::Discriminant(value),
+            kind: VertexKind::Discriminant(value, explicit),
         }
     }
 

@@ -500,17 +500,18 @@ pub(super) fn resolve_variant_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 })),
             }
         }),
-        "discriminant" => resolve_neighbors_with(contexts, move |vertex: &'_ Vertex<'a>| {
-            let origin = vertex.origin;
-            let enum_var = vertex.as_variant().expect("vertex was not a Variant");
-            let maybe_discriminant = enum_var.discriminant();
+        "discriminant" => {
+            resolve_neighbors_with(contexts, move |vertex: &'_ Vertex<'a>| {
+                let origin = vertex.origin;
+                let enum_var = vertex.as_variant().expect("vertex was not a Variant");
+                let maybe_discriminant = enum_var.discriminant();
+                let explicit = enum_var.variant().discriminant.is_some();
 
-            Box::new(
-                maybe_discriminant
-                    .into_iter()
-                    .map(move |discriminant| origin.make_discriminant_vertex(discriminant)),
-            )
-        }),
+                Box::new(maybe_discriminant.into_iter().map(move |discriminant| {
+                    origin.make_discriminant_vertex(discriminant, explicit)
+                }))
+            })
+        }
         _ => unreachable!("resolve_variant_edge {edge_name}"),
     }
 }
