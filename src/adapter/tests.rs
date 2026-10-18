@@ -10306,6 +10306,84 @@ fn automatically_derived() {
 }
 
 #[test]
+fn drop_trait() {
+    get_test_data!(data, drop_trait);
+    let adapter = RustdocAdapter::new(&data, None);
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on ImplOwner {
+                    name @output
+
+                    impl @fold @transform(op: "count") @output(name: "drop_impl_count") {
+                        implemented_trait {
+                            trait {
+                                name @filter(op: "=", value: ["$drop"])
+                                unsafe @filter(op: "=", value: ["$false"])
+                                dyn_compatible @filter(op: "=", value: ["$true"])
+                                canonical_path {
+                                    path @filter(op: "=", value: ["$drop_path"])
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "#;
+
+    let variables = btreemap! {
+        "drop" => FieldValue::from("Drop"),
+        "drop_path" => FieldValue::from(vec!["core", "ops", "drop", "Drop"]),
+        "false" => FieldValue::from(false),
+        "true" => FieldValue::from(true),
+    };
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        drop_impl_count: u64,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let expected_results = vec![
+        Output {
+            name: "EnumWithDrop".into(),
+            drop_impl_count: 1,
+        },
+        Output {
+            name: "EnumWithDropField".into(),
+            drop_impl_count: 0,
+        },
+        Output {
+            name: "PlainEnum".into(),
+            drop_impl_count: 0,
+        },
+        Output {
+            name: "ShadowDropEnum".into(),
+            drop_impl_count: 0,
+        },
+        Output {
+            name: "StructWithDrop".into(),
+            drop_impl_count: 1,
+        },
+    ];
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+#[test]
 fn struct_repr_attributes() {
     get_test_data!(data, struct_fields_position);
     let adapter = RustdocAdapter::new(&data, None);
