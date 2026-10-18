@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{rc::Rc, sync::Arc};
 
-use rustdoc_types::{Id, Item};
+use rustdoc_types::{Id, Item, ItemEnum};
 use trustfall::{
     FieldValue,
     provider::{
@@ -9,9 +9,14 @@ use trustfall::{
     },
 };
 
-use super::super::{RustdocAdapter, origin::Origin, vertex::Vertex};
+use super::super::{
+    RustdocAdapter, enum_variant::LazyDiscriminants, origin::Origin, vertex::Vertex,
+};
 
-use crate::{IndexedCrate, hashtables::HashSet};
+use crate::{
+    IndexedCrate,
+    hashtables::{HashMap, HashSet},
+};
 
 pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
     adapter: &'a RustdocAdapter<'a>,
@@ -275,44 +280,46 @@ pub(crate) fn resolve_crate_items<'a, V: AsVertex<Vertex<'a>> + 'a>(
 
 /// Resolve public items with candidate value `importable_path` and type `destination_type`.
 ///
-/// If the destination is None or an unrecognised string, we conservatively return all
-/// paths that match the candidate value.
+/// If the destination is `None` or an unrecognised string, we conservatively return all
+/// items that match the candidate value.
 fn resolve_items_by_importable_path<'a>(
     crate_vertex: &'a IndexedCrate,
     origin: Origin,
     destination_type: Option<Arc<str>>,
     importable_path: CandidateValue<FieldValue>,
 ) -> VertexIterator<'a, Vertex<'a>> {
-    match importable_path {
-        CandidateValue::Impossible => Box::new(std::iter::empty()),
+    let items = match importable_path {
+        CandidateValue::Impossible => return Box::new(std::iter::empty()),
         CandidateValue::Single(value) => resolve_items_by_importable_path_field_value(
             crate_vertex,
-            origin,
             destination_type.as_deref(),
             &value,
         ),
         CandidateValue::Multiple(values) => {
-            resolve_items_by_any_importable_path(crate_vertex, origin, destination_type, values)
+            resolve_items_by_any_importable_path(crate_vertex, destination_type, values)
         }
         _ => {
             // fall through to slow path
-            resolve_items_slow_path(crate_vertex, origin)
+            return resolve_items_slow_path(crate_vertex, origin);
         }
-    }
+    };
+
+    // All candidate paths must share one vertex iterator so each enum's discriminants
+    // are computed at most once during this traversal.
+    resolve_item_vertices(crate_vertex, origin, items)
 }
 
 fn resolve_items_by_any_importable_path<'a>(
     crate_vertex: &'a IndexedCrate,
-    origin: Origin,
     destination_type: Option<Arc<str>>,
     importable_paths: Vec<FieldValue>,
-) -> VertexIterator<'a, Vertex<'a>> {
+) -> Box<dyn Iterator<Item = &'a Item> + 'a> {
     let mut produced_items: HashSet<&Id> = Default::default();
 
     // This is the `Crate.item` edge, not the nested `importable_path` edge.
     // If we're looking up multiple importable paths and they happen to be on the same item,
     // we must only produce that item's vertex *once*, or else we'll get duplicates.
-    // We need to union the produced item vertices to prevent this.
+    // Union the items before constructing vertices to prevent this.
     // This is analogous to `resolve_impls_based_on_any_method_name()` in `impl_lookup.rs`.
     Box::new(
         importable_paths
@@ -320,17 +327,11 @@ fn resolve_items_by_any_importable_path<'a>(
             .flat_map(move |importable_path| {
                 resolve_items_by_importable_path_field_value(
                     crate_vertex,
-                    origin,
                     destination_type.as_deref(),
                     &importable_path,
                 )
             })
-            .filter(move |vertex| {
-                let item = vertex
-                    .as_item()
-                    .expect("Crate.item optimization produced a non-item vertex");
-                produced_items.insert(&item.id)
-            }),
+            .filter(move |item| produced_items.insert(&item.id)),
     )
 }
 
@@ -340,13 +341,12 @@ fn resolve_items_by_any_importable_path<'a>(
 /// The former has destination type `Some("Struct")`, while the latter has `None`.
 ///
 /// When the destination is `None` or the name of a type that we don't have an index for,
-/// we conservatively return all paths that match the `value`.
+/// we conservatively return all items that match the path.
 fn resolve_items_by_importable_path_field_value<'a>(
     crate_vertex: &'a IndexedCrate,
-    origin: Origin,
     destination_type: Option<&str>,
     path: &FieldValue,
-) -> VertexIterator<'a, Vertex<'a>> {
+) -> Box<dyn Iterator<Item = &'a Item> + 'a> {
     let path_components: Vec<&str> = path
         .as_slice()
         .expect("ImportablePath.path was not a list")
@@ -362,145 +362,109 @@ fn resolve_items_by_importable_path_field_value<'a>(
         let base_iter = items.iter().map(|(item, _)| item).copied();
         if let Some(destination_type) = destination_type {
             match destination_type {
-                "Function" => resolve_item_vertices(
-                    origin,
-                    base_iter.filter(move |item| {
-                        crate_vertex
-                            .pub_item_kind_index
-                            .free_functions
-                            .contains_key(&item.id)
-                    }),
-                ),
-                "Struct" => resolve_item_vertices(
-                    origin,
-                    base_iter.filter(move |item| {
-                        crate_vertex
-                            .pub_item_kind_index
-                            .structs
-                            .contains_key(&item.id)
-                    }),
-                ),
-                "Enum" => resolve_item_vertices(
-                    origin,
-                    base_iter.filter(move |item| {
-                        crate_vertex
+                "Function" => Box::new(base_iter.filter(move |item| {
+                    crate_vertex
+                        .pub_item_kind_index
+                        .free_functions
+                        .contains_key(&item.id)
+                })),
+                "Struct" => Box::new(base_iter.filter(move |item| {
+                    crate_vertex
+                        .pub_item_kind_index
+                        .structs
+                        .contains_key(&item.id)
+                })),
+                "Enum" => Box::new(base_iter.filter(move |item| {
+                    crate_vertex
+                        .pub_item_kind_index
+                        .enums
+                        .contains_key(&item.id)
+                })),
+                "Union" => Box::new(base_iter.filter(move |item| {
+                    crate_vertex
+                        .pub_item_kind_index
+                        .unions
+                        .contains_key(&item.id)
+                })),
+                "Trait" => Box::new(base_iter.filter(move |item| {
+                    crate_vertex
+                        .pub_item_kind_index
+                        .traits
+                        .contains_key(&item.id)
+                })),
+                "ImplOwner" => Box::new(base_iter.filter(move |item| {
+                    crate_vertex
+                        .pub_item_kind_index
+                        .structs
+                        .contains_key(&item.id)
+                        || crate_vertex
                             .pub_item_kind_index
                             .enums
                             .contains_key(&item.id)
-                    }),
-                ),
-                "Union" => resolve_item_vertices(
-                    origin,
-                    base_iter.filter(move |item| {
-                        crate_vertex
+                        || crate_vertex
                             .pub_item_kind_index
                             .unions
                             .contains_key(&item.id)
-                    }),
-                ),
-                "Trait" => resolve_item_vertices(
-                    origin,
-                    base_iter.filter(move |item| {
-                        crate_vertex
-                            .pub_item_kind_index
-                            .traits
-                            .contains_key(&item.id)
-                    }),
-                ),
-                "ImplOwner" => resolve_item_vertices(
-                    origin,
-                    base_iter.filter(move |item| {
-                        crate_vertex
-                            .pub_item_kind_index
-                            .structs
-                            .contains_key(&item.id)
-                            || crate_vertex
-                                .pub_item_kind_index
-                                .enums
-                                .contains_key(&item.id)
-                            || crate_vertex
-                                .pub_item_kind_index
-                                .unions
-                                .contains_key(&item.id)
-                    }),
-                ),
-                "Constant" => resolve_item_vertices(
-                    origin,
-                    base_iter.filter(move |item| {
-                        crate_vertex
-                            .pub_item_kind_index
-                            .free_consts
-                            .contains_key(&item.id)
-                    }),
-                ),
-                "Static" => resolve_item_vertices(
-                    origin,
-                    base_iter.filter(move |item| {
-                        crate_vertex
+                })),
+                "Constant" => Box::new(base_iter.filter(move |item| {
+                    crate_vertex
+                        .pub_item_kind_index
+                        .free_consts
+                        .contains_key(&item.id)
+                })),
+                "Static" => Box::new(base_iter.filter(move |item| {
+                    crate_vertex
+                        .pub_item_kind_index
+                        .statics
+                        .contains_key(&item.id)
+                })),
+                "GlobalValue" => Box::new(base_iter.filter(move |item| {
+                    // const or static
+                    crate_vertex
+                        .pub_item_kind_index
+                        .free_consts
+                        .contains_key(&item.id)
+                        || crate_vertex
                             .pub_item_kind_index
                             .statics
                             .contains_key(&item.id)
-                    }),
-                ),
-                "GlobalValue" => resolve_item_vertices(
-                    origin,
-                    base_iter.filter(move |item| {
-                        // const or static
-                        crate_vertex
-                            .pub_item_kind_index
-                            .free_consts
-                            .contains_key(&item.id)
-                            || crate_vertex
-                                .pub_item_kind_index
-                                .statics
-                                .contains_key(&item.id)
-                    }),
-                ),
-                "Macro" => resolve_item_vertices(
-                    origin,
-                    base_iter.filter(move |item| {
-                        crate_vertex
-                            .pub_item_kind_index
-                            .decl_macros
-                            .contains_key(&item.id)
-                    }),
-                ),
+                })),
+                "Macro" => Box::new(base_iter.filter(move |item| {
+                    crate_vertex
+                        .pub_item_kind_index
+                        .decl_macros
+                        .contains_key(&item.id)
+                })),
                 "ProcMacro"
                 | "FunctionLikeProcMacro"
                 | "AttributeProcMacro"
-                | "DeriveProcMacro" => resolve_item_vertices(
-                    origin,
-                    base_iter.filter(move |item| {
-                        crate_vertex
-                            .pub_item_kind_index
-                            .proc_macros
-                            .contains_key(&item.id)
-                    }),
-                ),
-                "Module" => resolve_item_vertices(
-                    origin,
-                    base_iter.filter(move |item| {
-                        crate_vertex
-                            .pub_item_kind_index
-                            .modules
-                            .contains_key(&item.id)
-                    }),
-                ),
+                | "DeriveProcMacro" => Box::new(base_iter.filter(move |item| {
+                    crate_vertex
+                        .pub_item_kind_index
+                        .proc_macros
+                        .contains_key(&item.id)
+                })),
+                "Module" => Box::new(base_iter.filter(move |item| {
+                    crate_vertex
+                        .pub_item_kind_index
+                        .modules
+                        .contains_key(&item.id)
+                })),
                 _ => {
                     // No index is available for this type.
                     //
                     // If this branch is reached inside time sensitive code, consider
                     // adding the destination type to an index.
-                    resolve_item_vertices(origin, base_iter)
+                    Box::new(base_iter)
                 }
             }
         } else {
             // This query doesn't apply a coercion on the resulting vertex,
-            // so we produce all vertices that matched the path lookup.
-            resolve_item_vertices(origin, base_iter)
+            // so we produce all items that matched the path lookup.
+            Box::new(base_iter)
         }
     } else {
-        // No items at found at the given path.
+        // No items found at the given path.
         Box::new(std::iter::empty())
     }
 }
@@ -573,16 +537,97 @@ fn resolve_items_slow_path<'a>(
                     .is_none()
         });
 
-    resolve_item_vertices(origin, items)
+    resolve_item_vertices(crate_vertex, origin, items)
 }
 
-fn resolve_item_vertices<'a>(
+pub(in crate::adapter) fn resolve_item_vertices<'a>(
+    crate_vertex: &'a IndexedCrate<'a>,
     origin: Origin,
     items: impl Iterator<Item = &'a Item> + 'a,
 ) -> VertexIterator<'a, Vertex<'a>> {
+    let mut discriminants_by_enum: HashMap<_, _> = HashMap::default();
     Box::new(
         items
-            .filter(|value| crate::adapter::supported_item_kind(value))
-            .map(move |value| origin.make_item_vertex(value)),
+            .filter(|item| crate::adapter::supported_item_kind(item))
+            .map(move |item| {
+                if matches!(item.inner, ItemEnum::Variant(_)) {
+                    let (owner, index) = crate_vertex
+                        .variant_owner_index
+                        .get(&item.id)
+                        .expect("variant was missing its owning enum");
+                    // Direct item traversal can interleave variants from different enums.
+                    // Share each enum's lazy discriminants across its variant vertices.
+                    let discriminants =
+                        discriminants_by_enum.entry(owner.id).or_insert_with(|| {
+                            Rc::new(LazyDiscriminants::new(owner, &crate_vertex.inner.index))
+                        });
+                    origin.make_variant_vertex(item, discriminants.clone(), *index)
+                } else {
+                    origin.make_item_vertex(item)
+                }
+            }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn indexed_variant_lookup_shares_discriminant_cache_across_paths() {
+        let data = crate::test_util::load_pregenerated_rustdoc("enum_variant_imports");
+        let indexed = IndexedCrate::new(&data);
+        let paths = [
+            vec!["Base", "Plain"],
+            vec!["glob_same_item", "Source", "SameTuple"],
+            vec!["Base", "Deprecated"],
+            vec!["RenamedPlain"],
+            vec!["glob_same_item", "SameStruct"],
+        ]
+        .into_iter()
+        .map(|path| {
+            FieldValue::from(
+                std::iter::once("enum_variant_imports")
+                    .chain(path)
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+
+        let vertices: Vec<_> = resolve_items_by_importable_path(
+            &indexed,
+            Origin::CurrentCrate,
+            Some("Variant".into()),
+            CandidateValue::Multiple(paths),
+        )
+        .collect();
+        let variants: Vec<_> = vertices
+            .iter()
+            .map(|vertex| vertex.as_variant().expect("expected a variant vertex"))
+            .collect();
+        let expected = [
+            ("Plain", Some("0")),
+            ("SameTuple", None),
+            ("Deprecated", Some("1")),
+            ("SameStruct", None),
+        ];
+        assert_eq!(variants.len(), expected.len(), "duplicate variant alias");
+        for (variant, (name, value)) in variants.iter().zip(expected) {
+            assert_eq!(variant.item().name.as_deref(), Some(name));
+            assert_eq!(variant.discriminant().as_deref(), value);
+        }
+
+        assert!(Rc::ptr_eq(
+            variants[0].discriminant_cache(),
+            variants[2].discriminant_cache(),
+        ));
+        assert!(Rc::ptr_eq(
+            variants[1].discriminant_cache(),
+            variants[3].discriminant_cache(),
+        ));
+        assert!(!Rc::ptr_eq(
+            variants[0].discriminant_cache(),
+            variants[1].discriminant_cache(),
+        ));
+    }
 }
