@@ -1083,9 +1083,6 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
         path: &["core", "ops", "drop", "Drop"],
         is_auto: false,
         is_unsafe: false,
-        stability_feature: "rust1",
-        stability_since: "1.0.0",
-        const_stability_feature: Some("const_destruct"),
     },
     ManualTraitItem {
         name: "PartialOrd",
