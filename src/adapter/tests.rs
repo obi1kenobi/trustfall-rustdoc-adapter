@@ -4293,6 +4293,18 @@ fn importable_items_cover_more_kinds() {
                 kind: "StructVariant".into(),
             },
             Output {
+                name: "EmptyTupleVariant".into(),
+                kind: "Enum".into(),
+            },
+            Output {
+                name: "Unit".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Tuple".into(),
+                kind: "TupleVariant".into(),
+            },
+            Output {
                 name: "FieldfulStructVariant".into(),
                 kind: "Enum".into(),
             },
@@ -5305,6 +5317,18 @@ fn enum_discriminants() {
                 explicit: Some(false),
             },
             Output {
+                enum_name: "EmptyTupleVariant".into(),
+                variant_name: "Tuple".into(),
+                value: Some("1".into()),
+                explicit: Some(false),
+            },
+            Output {
+                enum_name: "EmptyTupleVariant".into(),
+                variant_name: "Unit".into(),
+                value: Some("0".into()),
+                explicit: Some(false),
+            },
+            Output {
                 enum_name: "Fieldful".into(),
                 variant_name: "Struct".into(),
                 value: Some("2".into(),),
@@ -5528,6 +5552,291 @@ fn enum_discriminants_through_concrete_variant_types() {
             .collect();
         similar_asserts::assert_eq!(expected_results, results);
     }
+}
+
+#[test]
+fn direct_plain_variant_discriminants() {
+    check_direct_variant_discriminants(
+        "PlainVariant",
+        &[
+            ("Fieldful", "Unit", Some("0"), Some(false)),
+            ("Fieldful", "Unit2", Some("9"), Some(true)),
+            ("FieldfulNoRepr", "Unit", None, None),
+        ],
+    );
+}
+
+#[test]
+fn direct_tuple_variant_discriminants() {
+    check_direct_variant_discriminants(
+        "TupleVariant",
+        &[
+            ("Fieldful", "Tuple", Some("1"), Some(false)),
+            ("Fieldful", "TupleExplicit", Some("10"), Some(true)),
+            ("FieldfulNoRepr", "Tuple", None, None),
+        ],
+    );
+}
+
+#[test]
+fn direct_struct_variant_discriminants() {
+    check_direct_variant_discriminants(
+        "StructVariant",
+        &[
+            ("Fieldful", "Struct", Some("2"), Some(false)),
+            ("Fieldful", "StructExplicit", Some("11"), Some(true)),
+            ("FieldfulNoRepr", "Struct", None, None),
+        ],
+    );
+}
+
+#[test]
+fn direct_empty_tuple_variant_discriminants() {
+    check_direct_variant_discriminants(
+        "Variant",
+        &[
+            ("EmptyTupleVariant", "Unit", Some("0"), Some(false)),
+            ("EmptyTupleVariant", "Tuple", Some("1"), Some(false)),
+        ],
+    );
+}
+
+fn check_direct_variant_discriminants(
+    variant_kind: &str,
+    expected: &[(&str, &str, Option<&str>, Option<bool>)],
+) {
+    get_test_data!(data, enum_discriminants);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on VARIANT_KIND {
+                discriminant @optional {
+                    value @output
+                    explicit @output
+                }
+                importable_path {
+                    path @output @filter(op: "contains", value: ["$enum_name"])
+                    PATH_FILTER
+                }
+            }
+        }
+    }
+}
+"#;
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        path: Vec<String>,
+        value: Option<String>,
+        explicit: Option<bool>,
+    }
+
+    let enum_names: std::collections::BTreeSet<_> =
+        expected.iter().map(|(owner, ..)| *owner).collect();
+    for enum_name in enum_names {
+        let mut expected_results: Vec<_> = expected
+            .iter()
+            .filter(|(owner, _, _, _)| *owner == enum_name)
+            .map(|(owner, name, value, explicit)| Output {
+                path: vec!["enum_discriminants".into(), (*owner).into(), (*name).into()],
+                value: value.map(str::to_owned),
+                explicit: *explicit,
+            })
+            .collect();
+        expected_results.sort_unstable();
+
+        // A path membership test leaves item lookup unconstrained, whereas an exact
+        // list of paths lets the adapter select variants from its importable path index.
+        for path_filter in ["", r#"@filter(op: "one_of", value: ["$paths"])"#] {
+            let query = query
+                .replace("VARIANT_KIND", variant_kind)
+                .replace("PATH_FILTER", path_filter);
+            let mut variables: BTreeMap<&str, FieldValue> =
+                BTreeMap::from([("enum_name", enum_name.into())]);
+            if !path_filter.is_empty() {
+                variables.insert(
+                    "paths",
+                    expected_results
+                        .iter()
+                        .map(|row| FieldValue::from(row.path.clone()))
+                        .collect::<Vec<_>>()
+                        .into(),
+                );
+            }
+
+            let mut results: Vec<Output> =
+                trustfall::execute_query(&schema, adapter.clone(), &query, variables)
+                    .expect("failed to run direct variant discriminant query")
+                    .map(|row| row.try_into_struct().expect("shape mismatch"))
+                    .collect();
+            results.sort_unstable();
+
+            similar_asserts::assert_eq!(expected_results, results);
+        }
+    }
+}
+
+#[test]
+fn direct_variants_with_multiple_importable_paths() {
+    get_test_data!(data, enum_variant_imports);
+    let adapter = RustdocAdapter::new(&data, None);
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Variant {
+                name @output
+                position @output
+                discriminant @optional {
+                    value @output
+                    explicit @output
+                }
+                field @fold {
+                    field_names: name @output
+                    field_positions: position @output
+                }
+                importable_path {
+                    path @output @filter(op: "one_of", value: ["$paths"])
+                }
+            }
+        }
+    }
+}
+"#;
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        position: u64,
+        value: Option<String>,
+        explicit: Option<bool>,
+        field_names: Vec<String>,
+        field_positions: Vec<u64>,
+        path: Vec<String>,
+    }
+
+    let mut expected_results = vec![
+        Output {
+            name: "Plain".into(),
+            position: 1,
+            value: Some("0".into()),
+            explicit: Some(false),
+            field_names: vec![],
+            field_positions: vec![],
+            path: vec!["enum_variant_imports".into(), "Base".into(), "Plain".into()],
+        },
+        Output {
+            name: "Plain".into(),
+            position: 1,
+            value: Some("0".into()),
+            explicit: Some(false),
+            field_names: vec![],
+            field_positions: vec![],
+            path: vec!["enum_variant_imports".into(), "RenamedPlain".into()],
+        },
+        Output {
+            name: "Deprecated".into(),
+            position: 2,
+            value: Some("1".into()),
+            explicit: Some(false),
+            field_names: vec![],
+            field_positions: vec![],
+            path: vec![
+                "enum_variant_imports".into(),
+                "Base".into(),
+                "Deprecated".into(),
+            ],
+        },
+        Output {
+            name: "Deprecated".into(),
+            position: 2,
+            value: Some("1".into()),
+            explicit: Some(false),
+            field_names: vec![],
+            field_positions: vec![],
+            path: vec!["enum_variant_imports".into(), "Deprecated".into()],
+        },
+        Output {
+            name: "SameTuple".into(),
+            position: 2,
+            value: None,
+            explicit: None,
+            field_names: vec!["0".into()],
+            field_positions: vec![1],
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "Source".into(),
+                "SameTuple".into(),
+            ],
+        },
+        Output {
+            name: "SameTuple".into(),
+            position: 2,
+            value: None,
+            explicit: None,
+            field_names: vec!["0".into()],
+            field_positions: vec![1],
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "SameTuple".into(),
+            ],
+        },
+        Output {
+            name: "SameStruct".into(),
+            position: 3,
+            value: None,
+            explicit: None,
+            field_names: vec!["amount".into()],
+            field_positions: vec![1],
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "Source".into(),
+                "SameStruct".into(),
+            ],
+        },
+        Output {
+            name: "SameStruct".into(),
+            position: 3,
+            value: None,
+            explicit: None,
+            field_names: vec!["amount".into()],
+            field_positions: vec![1],
+            path: vec![
+                "enum_variant_imports".into(),
+                "glob_same_item".into(),
+                "SameStruct".into(),
+            ],
+        },
+    ];
+    expected_results.sort_unstable();
+
+    let variables = btreemap! {
+        "paths" => expected_results
+            .iter()
+            .map(|row| FieldValue::from(row.path.clone()))
+            .collect::<Vec<_>>(),
+    };
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables)
+            .expect("failed to query variants with multiple importable paths")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    // Each variant has two matching paths, but must be emitted by `Crate.item` only once.
+    similar_asserts::assert_eq!(expected_results, results);
 }
 
 #[test]

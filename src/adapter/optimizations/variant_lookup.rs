@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use rustdoc_types::{Id, Item, ItemEnum, VariantKind};
+use rustdoc_types::{Id, Item, ItemEnum};
 use trustfall::FieldValue;
 use trustfall::provider::{
     AsVertex, CandidateValue, ContextIterator, ContextOutcomeIterator, ResolveEdgeInfo, VertexInfo,
@@ -13,58 +13,12 @@ use super::super::{
     RustdocAdapter, enum_variant::LazyDiscriminants, origin::Origin, vertex::Vertex,
 };
 
-fn compute_variant_discriminants<'a>(
-    outer_item: &'a Item,
-    item_index: &'a HashMap<Id, Item>,
-) -> Option<Rc<LazyDiscriminants<'a>>> {
-    // Discriminants are only well-defined if either:
-    // - the enum has a defined `repr` binary representation, or
-    // - none of the enum variants contain any fields of their own.
-    let has_repr = outer_item.attrs.iter().any(|attr| match attr {
-        rustdoc_types::Attribute::Repr(attr_repr) => attr_repr.int.is_some(),
-        _ => false,
-    });
-
-    let enum_item = match &outer_item.inner {
-        ItemEnum::Enum(x) => x,
-        _ => unreachable!("Item {outer_item:?} is not an Enum"),
-    };
-
-    let mut has_fields_in_variants = false;
-    let variants = enum_item
-        .variants
-        .iter()
-        .map(|field_id| {
-            let inner = &item_index.get(field_id).expect("missing item").inner;
-            match inner {
-                ItemEnum::Variant(v) => {
-                    match &v.kind {
-                        VariantKind::Plain => {}
-                        VariantKind::Tuple(t) => has_fields_in_variants |= !t.is_empty(),
-                        VariantKind::Struct { fields, .. } => {
-                            has_fields_in_variants |= !fields.is_empty()
-                        }
-                    }
-                    v
-                }
-                _ => unreachable!("Item {inner:?} not a Variant"),
-            }
-        })
-        .collect();
-
-    if has_repr || !has_fields_in_variants {
-        Some(Rc::new(LazyDiscriminants::new(variants)))
-    } else {
-        None
-    }
-}
-
 fn resolve_enum_variants_slow_path<'a>(
     origin: Origin,
     item_vertex: &'a Item,
     item_index: &'a HashMap<Id, Item>,
 ) -> VertexIterator<'a, Vertex<'a>> {
-    let discriminants = compute_variant_discriminants(item_vertex, item_index);
+    let discriminants = Rc::new(LazyDiscriminants::new(item_vertex, item_index));
     let enum_item = match &item_vertex.inner {
         ItemEnum::Enum(x) => x,
         _ => unreachable!("Item {item_vertex:?} is not an Enum"),
@@ -95,7 +49,7 @@ fn resolve_enum_variant_by_name<'a>(
     match name {
         FieldValue::String(name) => match variant_name_index.get(&(item_vertex.id, &name)) {
             Some((item, index)) => {
-                let discriminants = compute_variant_discriminants(item_vertex, item_index);
+                let discriminants = Rc::new(LazyDiscriminants::new(item_vertex, item_index));
                 Box::new(std::iter::once(origin.make_variant_vertex(
                     item,
                     discriminants.clone(),
