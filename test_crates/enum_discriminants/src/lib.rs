@@ -21,12 +21,23 @@ pub enum FieldlessWithDiscrimants {
     Unit,
 }
 
+#[repr(u8)]
+pub enum FieldlessWithExplicitDiscriminants {
+    First = 10,
+    Tuple() = 11,
+    Second = 20,
+    Struct{} = 21,
+    Unit,
+}
+
 #[repr(C, i64)]
 pub enum Fieldful {
     Unit,
     Tuple(bool),
     Struct{a: bool},
-    Unit2 = 9
+    Unit2 = 9,
+    TupleExplicit(bool) = 10,
+    StructExplicit{a: bool} = 11,
 }
 
 // No discriminants here: no repr + fields in the variants.

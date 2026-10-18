@@ -4233,6 +4233,38 @@ fn importable_items_cover_more_kinds() {
                 kind: "PlainVariant".into(),
             },
             Output {
+                name: "TupleExplicit".into(),
+                kind: "TupleVariant".into(),
+            },
+            Output {
+                name: "StructExplicit".into(),
+                kind: "StructVariant".into(),
+            },
+            Output {
+                name: "FieldlessWithExplicitDiscriminants".into(),
+                kind: "Enum".into(),
+            },
+            Output {
+                name: "First".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Tuple".into(),
+                kind: "TupleVariant".into(),
+            },
+            Output {
+                name: "Second".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
+                name: "Struct".into(),
+                kind: "StructVariant".into(),
+            },
+            Output {
+                name: "Unit".into(),
+                kind: "PlainVariant".into(),
+            },
+            Output {
                 name: "FieldfulNoRepr".into(),
                 kind: "Enum".into(),
             },
@@ -5194,6 +5226,7 @@ fn enum_discriminants() {
                     variant_name: name @output
                     discriminant @optional {
                         value @output
+                        explicit @output
                     }
                 }
             }
@@ -5211,6 +5244,7 @@ fn enum_discriminants() {
         enum_name: String,
         variant_name: String,
         value: Option<String>,
+        explicit: Option<bool>,
     }
 
     let mut results: Vec<Output> =
@@ -5226,135 +5260,274 @@ fn enum_discriminants() {
                 enum_name: "A".into(),
                 variant_name: "Five".into(),
                 value: Some("100".into(),),
+                explicit: Some(false),
             },
             Output {
                 enum_name: "A".into(),
                 variant_name: "Four".into(),
                 value: Some("99".into(),),
+                explicit: Some(true),
             },
             Output {
                 enum_name: "A".into(),
                 variant_name: "One".into(),
                 value: Some("1".into(),),
+                explicit: Some(true),
             },
             Output {
                 enum_name: "A".into(),
                 variant_name: "Three".into(),
                 value: Some("3".into(),),
+                explicit: Some(false),
             },
             Output {
                 enum_name: "A".into(),
                 variant_name: "Two".into(),
                 value: Some("2".into(),),
+                explicit: Some(true),
             },
             Output {
                 enum_name: "A".into(),
                 variant_name: "Zero".into(),
                 value: Some("0".into(),),
+                explicit: Some(false),
             },
             Output {
                 enum_name: "EmptyStructVariant".into(),
                 variant_name: "Struct".into(),
                 value: Some("1".into()),
+                explicit: Some(false),
             },
             Output {
                 enum_name: "EmptyStructVariant".into(),
                 variant_name: "Unit".into(),
                 value: Some("0".into()),
+                explicit: Some(false),
             },
             Output {
                 enum_name: "Fieldful".into(),
                 variant_name: "Struct".into(),
                 value: Some("2".into(),),
+                explicit: Some(false),
+            },
+            Output {
+                enum_name: "Fieldful".into(),
+                variant_name: "StructExplicit".into(),
+                value: Some("11".into()),
+                explicit: Some(true),
             },
             Output {
                 enum_name: "Fieldful".into(),
                 variant_name: "Tuple".into(),
                 value: Some("1".into(),),
+                explicit: Some(false),
+            },
+            Output {
+                enum_name: "Fieldful".into(),
+                variant_name: "TupleExplicit".into(),
+                value: Some("10".into()),
+                explicit: Some(true),
             },
             Output {
                 enum_name: "Fieldful".into(),
                 variant_name: "Unit".into(),
                 value: Some("0".into(),),
+                explicit: Some(false),
             },
             Output {
                 enum_name: "Fieldful".into(),
                 variant_name: "Unit2".into(),
                 value: Some("9".into(),),
+                explicit: Some(true),
             },
             Output {
                 enum_name: "FieldfulNoRepr".into(),
                 variant_name: "Struct".into(),
                 value: None,
+                explicit: None,
             },
             Output {
                 enum_name: "FieldfulNoRepr".into(),
                 variant_name: "Tuple".into(),
                 value: None,
+                explicit: None,
             },
             Output {
                 enum_name: "FieldfulNoRepr".into(),
                 variant_name: "Unit".into(),
                 value: None,
+                explicit: None,
             },
             Output {
                 enum_name: "FieldfulStructVariant".into(),
                 variant_name: "Struct".into(),
                 value: None,
+                explicit: None,
             },
             Output {
                 enum_name: "FieldfulStructVariant".into(),
                 variant_name: "Unit".into(),
                 value: None,
+                explicit: None,
             },
             Output {
                 enum_name: "FieldlessWithDiscrimants".into(),
                 variant_name: "First".into(),
                 value: Some("10".into(),),
+                explicit: Some(true),
             },
             Output {
                 enum_name: "FieldlessWithDiscrimants".into(),
                 variant_name: "Second".into(),
                 value: Some("20".into(),),
+                explicit: Some(true),
             },
             Output {
                 enum_name: "FieldlessWithDiscrimants".into(),
                 variant_name: "Struct".into(),
                 value: Some("21".into(),),
+                explicit: Some(false),
             },
             Output {
                 enum_name: "FieldlessWithDiscrimants".into(),
                 variant_name: "Tuple".into(),
                 value: Some("11".into(),),
+                explicit: Some(false),
             },
             Output {
                 enum_name: "FieldlessWithDiscrimants".into(),
                 variant_name: "Unit".into(),
                 value: Some("22".into(),),
+                explicit: Some(false),
+            },
+            Output {
+                enum_name: "FieldlessWithExplicitDiscriminants".into(),
+                variant_name: "First".into(),
+                value: Some("10".into()),
+                explicit: Some(true),
+            },
+            Output {
+                enum_name: "FieldlessWithExplicitDiscriminants".into(),
+                variant_name: "Second".into(),
+                value: Some("20".into()),
+                explicit: Some(true),
+            },
+            Output {
+                enum_name: "FieldlessWithExplicitDiscriminants".into(),
+                variant_name: "Struct".into(),
+                value: Some("21".into()),
+                explicit: Some(true),
+            },
+            Output {
+                enum_name: "FieldlessWithExplicitDiscriminants".into(),
+                variant_name: "Tuple".into(),
+                value: Some("11".into()),
+                explicit: Some(true),
+            },
+            Output {
+                enum_name: "FieldlessWithExplicitDiscriminants".into(),
+                variant_name: "Unit".into(),
+                value: Some("22".into()),
+                explicit: Some(false),
             },
             Output {
                 enum_name: "Pathological".into(),
                 variant_name: "Max".into(),
                 value: Some("170141183460469231731687303715884105727".into(),),
+                explicit: Some(true),
             },
             Output {
                 enum_name: "Pathological".into(),
                 variant_name: "Min".into(),
                 value: Some("-170141183460469231731687303715884105728".into(),),
+                explicit: Some(true),
             },
             Output {
                 enum_name: "Pathological".into(),
                 variant_name: "MinPlusOne".into(),
                 value: Some("-170141183460469231731687303715884105727".into(),),
+                explicit: Some(false),
             },
             Output {
                 enum_name: "Pathological".into(),
                 variant_name: "MinPlusTwo".into(),
                 value: Some("-170141183460469231731687303715884105726".into(),),
+                explicit: Some(false),
             },
         ],
         results
     );
+}
+
+#[test]
+fn enum_discriminants_through_concrete_variant_types() {
+    get_test_data!(data, enum_discriminants);
+    let adapter = RustdocAdapter::new(&data, None);
+    let adapter = Arc::new(&adapter);
+
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Enum {
+                name @filter(op: "=", value: ["$enum_name"])
+                variant {
+                    ... on VariantKind {
+                        name @output
+                        discriminant {
+                            value @output
+                            explicit @output
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables = btreemap! {
+        "enum_name" => "FieldlessWithExplicitDiscriminants",
+    };
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        value: String,
+        explicit: bool,
+    }
+
+    for (variant_kind, expected) in [
+        (
+            "PlainVariant",
+            vec![
+                ("First", "10", true),
+                ("Second", "20", true),
+                ("Unit", "22", false),
+            ],
+        ),
+        ("TupleVariant", vec![("Tuple", "11", true)]),
+        ("StructVariant", vec![("Struct", "21", true)]),
+    ] {
+        let query = query.replace("VariantKind", variant_kind);
+        let mut results: Vec<Output> =
+            trustfall::execute_query(&schema, adapter.clone(), &query, variables.clone())
+                .expect("failed to run discriminant query through concrete variant type")
+                .map(|row| row.try_into_struct().expect("shape mismatch"))
+                .collect();
+        results.sort_unstable();
+
+        let expected_results: Vec<_> = expected
+            .into_iter()
+            .map(|(name, value, explicit)| Output {
+                name: name.into(),
+                value: value.into(),
+                explicit,
+            })
+            .collect();
+        similar_asserts::assert_eq!(expected_results, results);
+    }
 }
 
 #[test]
@@ -9972,6 +10145,12 @@ fn enum_repr_attributes() {
         },
         Output {
             name: "FieldlessWithDiscrimants".into(),
+            attrs: vec!["#[repr(u8)]".into()],
+            attr_raw: "#[repr(u8)]".into(),
+            attr_repr_kind: "u8".into(),
+        },
+        Output {
+            name: "FieldlessWithExplicitDiscriminants".into(),
             attrs: vec!["#[repr(u8)]".into()],
             attr_raw: "#[repr(u8)]".into(),
             attr_repr_kind: "u8".into(),
