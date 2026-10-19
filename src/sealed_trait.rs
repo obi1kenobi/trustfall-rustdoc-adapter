@@ -58,8 +58,9 @@ pub(crate) fn compute_trait_flags(
             // So it's trivially sealed. Nothing further to check here.
             item_flags.set_unconditionally_sealed();
             continue;
-        } else if item_flags.is_non_pub_api_reachable() {
-            // The trait is reachable only via `doc(hidden)` paths.
+        } else if !item_flags.is_pub_reachable() {
+            // The trait is reachable only via non-public API paths: `doc(hidden)`
+            // or, under the standard-library policy, explicitly unstable paths.
             // Downstream crates can only `impl` it by naming such a non-public-API path,
             // so the trait is public-API-sealed.
             item_flags.set_pub_api_sealed();
@@ -452,7 +453,7 @@ fn is_method_or_item_sealed(
                                     .expect("no flags entry for trait item ID")
                                     .set_unconditionally_sealed();
                                 return true;
-                            } else if item_flag.is_non_pub_api_reachable() {
+                            } else if !item_flag.is_pub_reachable() {
                                 flags
                                     .get_mut(trait_id)
                                     .expect("no flags entry for trait item ID")
@@ -472,7 +473,7 @@ fn is_method_or_item_sealed(
                                 .expect("no flags entry for trait item ID")
                                 .set_unconditionally_sealed();
                             return true;
-                        } else if item_flag.is_non_pub_api_reachable() {
+                        } else if !item_flag.is_pub_reachable() {
                             flags
                                 .get_mut(trait_id)
                                 .expect("no flags entry for trait item ID")
@@ -521,7 +522,7 @@ fn is_method_or_item_sealed(
                                 .expect("no flags entry for trait item ID")
                                 .set_unconditionally_sealed();
                             return true;
-                        } else if type_flag.is_non_pub_api_reachable() {
+                        } else if !type_flag.is_pub_reachable() {
                             flags
                                 .get_mut(trait_id)
                                 .expect("no flags entry for trait item ID")

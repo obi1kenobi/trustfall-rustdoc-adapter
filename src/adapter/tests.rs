@@ -317,6 +317,226 @@ fn rustdoc_finds_where_self_supertraits() {
     );
 }
 
+/// A public reexport makes a trait implementable even when another path is hidden.
+#[test]
+fn public_reexports_prevent_sealing_trait() {
+    get_test_data!(data, sealing_with_public_reexports);
+    let adapter = RustdocAdapter::new(&data, None);
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Trait {
+                    name @filter(op: "one_of", value: ["$names"]) @output
+                    unconditionally_sealed @output
+                    public_api_sealed @output
+                }
+            }
+        }
+    }
+    "#;
+    let variables = btreemap! {
+        "names" => FieldValue::from(vec!["HiddenTrait", "PublicTrait"]),
+    };
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        unconditionally_sealed: bool,
+        public_api_sealed: bool,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let expected_results = vec![
+        Output {
+            name: "HiddenTrait".into(),
+            unconditionally_sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "PublicTrait".into(),
+            unconditionally_sealed: false,
+            public_api_sealed: false,
+        },
+    ];
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// A public reexport of a required method parameter type prevents public-API sealing.
+#[test]
+fn public_reexports_prevent_sealing_method_input() {
+    get_test_data!(data, sealing_with_public_reexports);
+    let adapter = RustdocAdapter::new(&data, None);
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Trait {
+                    name @filter(op: "one_of", value: ["$names"]) @output
+                    unconditionally_sealed @output
+                    public_api_sealed @output
+                }
+            }
+        }
+    }
+    "#;
+    let variables = btreemap! {
+        "names" => FieldValue::from(vec!["HiddenMethodInput", "PublicMethodInput"]),
+    };
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        unconditionally_sealed: bool,
+        public_api_sealed: bool,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let expected_results = vec![
+        Output {
+            name: "HiddenMethodInput".into(),
+            unconditionally_sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "PublicMethodInput".into(),
+            unconditionally_sealed: false,
+            public_api_sealed: false,
+        },
+    ];
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// A public reexport of a required method return type prevents public-API sealing.
+#[test]
+fn public_reexports_prevent_sealing_method_return() {
+    get_test_data!(data, sealing_with_public_reexports);
+    let adapter = RustdocAdapter::new(&data, None);
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Trait {
+                    name @filter(op: "one_of", value: ["$names"]) @output
+                    unconditionally_sealed @output
+                    public_api_sealed @output
+                }
+            }
+        }
+    }
+    "#;
+    let variables = btreemap! {
+        "names" => FieldValue::from(vec!["HiddenMethodReturn", "PublicMethodReturn"]),
+    };
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        unconditionally_sealed: bool,
+        public_api_sealed: bool,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let expected_results = vec![
+        Output {
+            name: "HiddenMethodReturn".into(),
+            unconditionally_sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "PublicMethodReturn".into(),
+            unconditionally_sealed: false,
+            public_api_sealed: false,
+        },
+    ];
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// A public reexport of a required associated constant type prevents public-API sealing.
+#[test]
+fn public_reexports_prevent_sealing_associated_const() {
+    get_test_data!(data, sealing_with_public_reexports);
+    let adapter = RustdocAdapter::new(&data, None);
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    let query = r#"
+    {
+        Crate {
+            item {
+                ... on Trait {
+                    name @filter(op: "one_of", value: ["$names"]) @output
+                    unconditionally_sealed @output
+                    public_api_sealed @output
+                }
+            }
+        }
+    }
+    "#;
+    let variables = btreemap! {
+        "names" => FieldValue::from(vec!["HiddenAssociatedConst", "PublicAssociatedConst"]),
+    };
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+        unconditionally_sealed: bool,
+        public_api_sealed: bool,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    let expected_results = vec![
+        Output {
+            name: "HiddenAssociatedConst".into(),
+            unconditionally_sealed: false,
+            public_api_sealed: true,
+        },
+        Output {
+            name: "PublicAssociatedConst".into(),
+            unconditionally_sealed: false,
+            public_api_sealed: false,
+        },
+    ];
+
+    similar_asserts::assert_eq!(expected_results, results);
+}
+
 #[test]
 fn rustdoc_sealed_traits() {
     get_test_data!(data, sealed_traits);
