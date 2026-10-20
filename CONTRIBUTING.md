@@ -46,6 +46,29 @@ an argument: `./scripts/regenerate_test_rustdocs.sh +nightly`.
 Run this script again whenever you add or modify a test crate. You may pass
 one or more test-crate names to regenerate only those crates.
 
+### Testing standard-library JSON
+
+Tests in `src/adapter/rust_std_tests.rs` exercise the full standard-library definitions.
+They compile only when `--cfg rust_std_tests` is set and require the nightly `rust-docs-json`
+component. The nightly entry in the `rust-tests` CI matrix installs the component and runs
+these tests in an additional step. Only that step enables the cfg. Removing nightly from the matrix
+on an older rustdoc branch also disables component installation and these tests.
+To run them locally:
+
+```sh
+rustup component add --toolchain nightly rust-docs-json
+RUSTFLAGS="--cfg rust_std_tests" \
+  cargo +nightly test --locked --lib adapter::rust_std_tests::
+```
+
+The tests find `core.json` in the active compiler's sysroot. To use a different JSON file,
+set `RUSTDOC_CORE_JSON` to its path; this override bypasses automatic discovery.
+Use the same toolchain for component installation and `cargo test`. To use a dated nightly,
+replace `nightly` in both commands with that toolchain's name.
+
+These tests do not require generated fixture data in `localdata`. The JSON format must match
+the version supported by this checkout; the tests fail if it does not.
+
 ## Extending the adapter
 
 First, identify which information you want to access (whether a function has a body, if a trait is sealed, etc.)
