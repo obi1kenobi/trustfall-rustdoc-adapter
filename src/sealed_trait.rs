@@ -24,6 +24,11 @@ pub(crate) fn compute_trait_flags(
             _ => continue,
         };
         let item_flags = flags.get_mut(id).expect("item flags weren't initialized");
+        if item_flags.is_compiler_provided_size_trait() {
+            // Their implementation restrictions are known regardless of visibility,
+            // stability, or supertraits; flag initialization has already sealed them.
+            continue;
+        }
 
         // First, check for blanket impls.
         for impl_id in &trait_inner.implementations {
@@ -129,6 +134,11 @@ pub(crate) fn compute_trait_flags(
             };
 
             let supertrait_flags = flags[&supertrait_item.id];
+            if supertrait_flags.is_compiler_provided_size_trait() {
+                // They cannot seal other traits, since the compiler
+                // provides suitable implementations whenever they apply.
+                continue;
+            }
             if supertrait_flags.trait_has_blanket_impls() {
                 blankets_found = true;
             } else if supertrait_flags.is_unconditionally_sealed() {
@@ -197,6 +207,12 @@ fn determine_if_trait_is_sealed_with_no_external_blankets(
     visited_trait_ids: &mut HashSet<Id>,
     consider_public_api_sealed: bool,
 ) -> bool {
+    if flags[&trait_item.id].is_compiler_provided_size_trait() {
+        // Downstream types can satisfy these bounds through compiler-provided impls,
+        // including when a size bound constrains a blanket implementation.
+        return false;
+    }
+
     if !visited_trait_ids.insert(trait_item.id) {
         // Already visited this supertrait, we're in a cycle. Unwind the cycle,
         // marking all traits in it as sealed.
@@ -612,4 +628,23 @@ fn unwrap_trait(item: &Item) -> &'_ Trait {
         rustdoc_types::ItemEnum::Trait(t) => t,
         _ => unreachable!("item {item:?} is not a trait"),
     }
+}
+
+// A shim to avoid making an internal function `pub(super)` just for test purposes.
+#[cfg(test)]
+#[allow(unused)]
+pub(super) fn is_externally_satisfiable_blanket_impl_shim(
+    index: &HashMap<Id, Item>,
+    impl_item: &rustdoc_types::Impl,
+    flags: &mut HashMap<Id, ItemFlag>,
+    visited_trait_ids: &mut HashSet<Id>,
+    consider_public_api_sealed: bool,
+) -> bool {
+    is_externally_satisfiable_blanket_impl(
+        index,
+        impl_item,
+        flags,
+        visited_trait_ids,
+        consider_public_api_sealed,
+    )
 }
