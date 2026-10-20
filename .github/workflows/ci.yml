@@ -198,6 +198,16 @@ jobs:
       - name: test with rayon and rustc-hash
         run: cargo test --locked --features rayon,rustc-hash
 
+      # Older rustdoc branches stop testing standard-library JSON when nightly
+      # is removed from this matrix, without installing a newer JSON format.
+      - name: Test standard-library JSON
+        if: ${{ matrix.toolchain == 'nightly' }}
+        env:
+          RUSTFLAGS: "--cfg rust_std_tests"
+        run: |
+          rustup component add --toolchain nightly rust-docs-json
+          cargo +nightly test --locked --lib adapter::rust_std_tests::
+
   test-crates:
     name: Run test crate tests
     runs-on: ubuntu-latest
