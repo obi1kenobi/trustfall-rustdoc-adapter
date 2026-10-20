@@ -164,7 +164,7 @@ jobs:
       - build-script-policy
     strategy:
       matrix:
-        toolchain: ["beta", "nightly"]
+        toolchain: ["1.99", "beta", "nightly"]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
