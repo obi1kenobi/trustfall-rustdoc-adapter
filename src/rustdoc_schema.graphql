@@ -2130,12 +2130,15 @@ type Receiver {
   by_mut_reference: Boolean!
 
   """
-  The portion of the receiver type aside from any outer `&`/`&mut` applied to it.
+  The receiver type with its outermost reference (`&` or `&mut`) removed, if present.
+  Only one reference layer is removed; inner references remain part of the kind.
 
   For example:
   - `"Self"` for `self`, `&self`, and `&mut self` receivers.
     `mut self` is identical to `self` for our purposes since its mutability is information
     for the method body only and has no visible effect externally.
+  - `"&Self"` for `&&Self` and `&mut &Self` receivers.
+  - `"&mut Self"` for `&&mut Self` and `&mut &mut Self` receivers.
   - `"Box<Self>"` for `Box<Self>`, `&Box<Self>`, and `&mut Box<Self>` receivers.
   - `"Pin<&mut Self>"` for `Pin<&mut Self>`, `&Pin<&mut Self>`, and `&mut Pin<&mut Self>` receivers.
   - `"Rc<Box<Self>>"` for a receiver like `self: &Rc<Box<Self>`.
