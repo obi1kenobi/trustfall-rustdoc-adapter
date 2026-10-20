@@ -683,13 +683,15 @@ impl<'a> IndexedCrate<'a> {
             .flatten()
             .collect::<MapList<_, _>>()
             .into_inner();
-        let mut flags = build_flags_index(&crate_.index, &imports_index, value.stability_policy);
+        let mut flags = build_flags_index(
+            &crate_.index,
+            &crate_.paths,
+            &imports_index,
+            value.stability_policy,
+        );
 
-        // The manually inlined traits permit downstream impls except for `Sized`,
-        // whose impls can only be provided by the compiler. Record this after local
-        // trait analysis: `Sized` itself is sealed, but its automatic impls let
-        // downstream types implement traits with a `Sized` supertrait.
-        // Preserve analysis results when the full trait definition is available.
+        // Supply sealing metadata for built-in traits whose definitions are absent.
+        // Full definitions, including compiler-provided size traits, were analyzed above.
         for id in value.manually_inlined_builtin_traits.keys() {
             flags.entry(*id).or_insert_with(|| {
                 let mut flags = ItemFlag::default();
@@ -764,6 +766,9 @@ impl<'a> IndexedCrate<'a> {
     /// Manually inlined built-in traits use their known implementation restrictions instead.
     /// Of these, only `Sized` is sealed: downstream crates cannot write its implementations,
     /// although the compiler automatically provides them for types with a known size.
+    /// When full definitions are indexed, `Sized`, `MetaSized`, and `PointeeSized` use
+    /// these implementation restrictions as well. They are sealed themselves, but their
+    /// compiler-provided implementations allow downstream types to satisfy their bounds.
     ///
     /// ## Panics
     ///

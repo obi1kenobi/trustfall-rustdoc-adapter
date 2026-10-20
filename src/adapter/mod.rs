@@ -27,6 +27,8 @@ mod rust_type_name;
 pub mod tracer;
 mod vertex;
 
+#[cfg(all(test, rust_std_tests))]
+mod rust_std_tests;
 #[cfg(test)]
 mod tests;
 

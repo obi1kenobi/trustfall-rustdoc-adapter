@@ -1,4 +1,4 @@
-use rustdoc_types::{Id, Item};
+use rustdoc_types::{Id, Item, ItemSummary};
 
 use crate::{
     attributes::Attribute,
@@ -23,7 +23,7 @@ impl Default for ItemFlag {
 /// +---+---+---+---+---+---+---+---+
 /// | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
 /// +---+---+---+---+---+---+---+---+
-/// | D | S | B | R | R | R | N | P |
+/// | D | S | B | R | R | C | N | P |
 /// +---+---+---+---+---+---+---+---+
 ///
 /// Key:
@@ -31,6 +31,7 @@ impl Default for ItemFlag {
 ///     or a public API associated item of such an item
 /// N = item reachable through non-public API: either a `#[doc(hidden)]` non-deprecated
 ///     path/item or, for Rust standard-library rustdoc, an explicitly unstable path/item
+/// C = compiler-provided size trait: sealed itself, but satisfiable by downstream types
 /// R = reserved for future use
 /// B = trait with blanket impls (`impl<T> Trait for T`, possibly with some bounds on `T`)
 /// S = sealed trait, external crates cannot provide an impl for this trait
@@ -38,6 +39,7 @@ impl Default for ItemFlag {
 impl ItemFlag {
     const PUB_REACHABLE: Self = Self(1 << 0);
     const NON_PUB_API_REACHABLE: Self = Self(1 << 1);
+    const COMPILER_PROVIDED_SIZE_TRAIT: Self = Self(1 << 2);
     const TRAIT_BLANKET_IMPLS: Self = Self(1 << 5);
     const TRAIT_SEALED: Self = Self(1 << 6);
     const TRAIT_PUB_API_SEALED: Self = Self(1 << 7);
@@ -101,6 +103,16 @@ impl ItemFlag {
         self.0 |= Self::NON_PUB_API_REACHABLE.0;
     }
 
+    /// Whether this is a built-in size trait whose bounds downstream types can satisfy.
+    ///
+    /// `Sized`, `MetaSized`, and `PointeeSized` forbid explicit implementations, but the
+    /// compiler supplies them for qualifying types. Their bounds therefore cannot alone
+    /// seal another trait, even when naming the size trait requires an unstable feature.
+    #[inline]
+    pub(crate) fn is_compiler_provided_size_trait(&self) -> bool {
+        (self.0 & Self::COMPILER_PROVIDED_SIZE_TRAIT.0) != 0
+    }
+
     /// Whether the trait has impls like `impl<T> TheTrait for T`, with optional bounds on `T`.
     #[inline]
     pub(crate) fn trait_has_blanket_impls(&self) -> bool {
@@ -134,6 +146,11 @@ impl ItemFlag {
     #[inline]
     pub(crate) fn is_pub_api_implementable(&self) -> bool {
         (self.0 & (Self::TRAIT_PUB_API_SEALED.0 | Self::TRAIT_SEALED.0)) == 0
+    }
+
+    #[inline]
+    pub(crate) fn set_compiler_provided_size_trait(&mut self) {
+        self.0 |= Self::COMPILER_PROVIDED_SIZE_TRAIT.0;
     }
 
     #[inline]
@@ -221,11 +238,27 @@ impl Reachability {
 
 pub(crate) fn build_flags_index(
     index: &HashMap<Id, Item>,
+    paths: &HashMap<Id, ItemSummary>,
     imports_index: &HashMap<Path<'_>, Vec<(&Item, Modifiers)>>,
     stability_policy: PublicApiStabilityPolicy,
 ) -> HashMap<Id, ItemFlag> {
-    let mut flags: HashMap<Id, ItemFlag> =
-        index.keys().map(|id| (*id, Default::default())).collect();
+    let mut flags: HashMap<Id, ItemFlag> = index
+        .iter()
+        .map(|(id, item)| {
+            let mut flags = ItemFlag::default();
+            if matches!(item.inner, rustdoc_types::ItemEnum::Trait(_))
+                && paths.get(id).is_some_and(|summary| {
+                    matches!(summary.path.as_slice(), [crate_name, module, name]
+                        if crate_name == "core" && module == "marker"
+                            && matches!(name.as_str(), "Sized" | "MetaSized" | "PointeeSized"))
+                })
+            {
+                flags.set_compiler_provided_size_trait();
+                flags.set_unconditionally_sealed();
+            }
+            (*id, flags)
+        })
+        .collect();
 
     // First, initialize the flags of all top-level importable items.
     imports_index
