@@ -1,4 +1,4 @@
-#![feature(arbitrary_self_types)]
+#![feature(arbitrary_self_types, arbitrary_self_types_pointers)]
 
 pub struct Example(i64);
 
@@ -28,6 +28,16 @@ impl Example {
 
     pub fn by_mut_ref(&mut self) {}
 
+    pub fn by_ref_to_ref(self: &&Self) {}
+
+    pub fn by_ref_to_mut_ref(self: &&mut Self) {}
+
+    pub fn by_mut_ref_to_ref(self: &mut &Self) {}
+
+    pub fn by_mut_ref_to_mut_ref(self: &mut &mut Self) {}
+
+    pub fn by_ref_to_nested_ref(self: &&&Self) {}
+
     pub fn by_value(self) {}
 
     // From the caller's perspective, the receiver here is still `Self`.
@@ -36,6 +46,24 @@ impl Example {
     pub fn by_mut_value(mut self) {
         self.0 += 1;
     }
+
+    pub fn by_const_pointer(self: *const Self) {}
+
+    pub fn by_mut_pointer(self: *mut Self) {}
+
+    pub fn by_const_pointer_to_ref(self: *const &Self) {}
+
+    pub fn by_mut_pointer_to_mut_ref(self: *mut &mut Self) {}
+
+    pub fn by_const_pointer_to_nested_ref(self: *const &&mut Self) {}
+
+    pub fn by_ref_to_const_pointer(self: &*const Self) {}
+
+    pub fn by_mut_ref_to_mut_pointer(self: &mut *mut Self) {}
+
+    pub fn by_nested_pointer(self: *const *mut Self) {}
+
+    pub fn by_boxed_pointer(self: Box<*const Self>) {}
 
     pub fn by_pinned_mut_ref(self: std::pin::Pin<&mut Self>) {}
 
