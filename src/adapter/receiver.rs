@@ -39,14 +39,36 @@ impl<'a> Receiver<'a> {
     }
 
     pub(super) fn kind(&self) -> Cow<'_, str> {
-        extract_kind_string(self.0)
+        // Up to one outer reference is stripped and reported by the other methods.
+        // Any inner references, as well as other indirections, remain part of the receiver kind.
+        let ty = match self.0 {
+            Type::BorrowedRef { type_, .. } => type_,
+            ty => ty,
+        };
+        extract_kind_string(ty)
     }
 }
 
 fn extract_kind_string(ty: &Type) -> Cow<'_, str> {
     match ty {
-        // For &self and &mut self, we need to extract the inner type
-        Type::BorrowedRef { type_, .. } => extract_kind_string(type_),
+        Type::BorrowedRef {
+            is_mutable, type_, ..
+        } => {
+            let inner = extract_kind_string(type_);
+            if *is_mutable {
+                Cow::Owned(format!("&mut {inner}"))
+            } else {
+                Cow::Owned(format!("&{inner}"))
+            }
+        }
+        Type::RawPointer { is_mutable, type_ } => {
+            let inner = extract_kind_string(type_);
+            if *is_mutable {
+                Cow::Owned(format!("*mut {inner}"))
+            } else {
+                Cow::Owned(format!("*const {inner}"))
+            }
+        }
 
         // Generic receiver components can be `Self` or any named type parameter.
         Type::Generic(name) => Cow::Borrowed(name.as_str()),
@@ -62,22 +84,7 @@ fn extract_kind_string(ty: &Type) -> Cow<'_, str> {
                         let args_str: Vec<Cow<'_, str>> = args
                             .iter()
                             .map(|arg| match arg {
-                                rustdoc_types::GenericArg::Type(t) => {
-                                    // For Pin<&mut Self>, we need to preserve the &mut
-                                    match t {
-                                        Type::BorrowedRef {
-                                            is_mutable, type_, ..
-                                        } => {
-                                            let inner = extract_kind_string(type_);
-                                            if *is_mutable {
-                                                Cow::Owned(format!("&mut {inner}"))
-                                            } else {
-                                                Cow::Owned(format!("&{inner}"))
-                                            }
-                                        }
-                                        _ => extract_kind_string(t),
-                                    }
-                                }
+                                rustdoc_types::GenericArg::Type(t) => extract_kind_string(t),
                                 rustdoc_types::GenericArg::Lifetime(lt) => {
                                     Cow::Borrowed(lt.as_str())
                                 }
