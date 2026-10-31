@@ -1898,6 +1898,16 @@ mod tests {
             assert_exported_items_match(test_crate, &expected_items);
         }
 
+        /// Prelude registration must not reexport items, even when written as `pub use`.
+        #[test]
+        fn prelude_import_does_not_reexport_items() {
+            let expected_items = btreemap! {
+                "PreludeOnly" => btreeset![],
+                "Exported" => btreeset!["prelude_import::Exported"],
+            };
+            assert_exported_items_match("prelude_import", &expected_items);
+        }
+
         #[test]
         fn glob_reexport() {
             let test_crate = "glob_reexport";
@@ -2738,11 +2748,13 @@ expected exactly one importable path for `Foo` items in this crate but got: {act
             }
         }
 
-        /// There's currently no way to detect private imports that shadow glob items.
-        /// Reported as: <https://github.com/rust-lang/rust/issues/111338>
+        /// Private imports shadow public glob exports.
+        #[rustversion::attr(
+            before(1.101),  // fixed in 1.101 in https://github.com/rust-lang/rust/pull/161362
+            should_panic = "expected no importable item names but found \
+                            [\"overlapping_glob_and_private_import::inner::Foo\"]"
+        )]
         #[test]
-        #[should_panic = "expected no importable item names but found \
-                         [\"overlapping_glob_and_private_import::inner::Foo\"]"]
         fn overlapping_glob_and_private_import() {
             let test_crate = "overlapping_glob_and_private_import";
 
