@@ -752,6 +752,7 @@ dependencies = [
  "rayon",
  "rustc-hash",
  "rustdoc-types",
+ "rustversion",
  "serde",
  "serde_json",
  "similar-asserts",
