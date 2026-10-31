@@ -229,9 +229,27 @@ pub(super) struct ParentEdge<'a> {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 struct EdgeModifiers {
+    // `ParentEdge` uses the derived ordering when sorting edges for path traversal.
+    // Preserve the relative order of `doc_hidden`, `deprecated`, and `unstable`
+    // to avoid changing importable-path iteration order.
     doc_hidden: bool,
     deprecated: bool,
     unstable: bool,
+
+    /// Whether import visibility prevents this route from exposing a name publicly.
+    ///
+    /// A route is a specific import chain supplying a name in the module being resolved.
+    /// A given import path may match multiple routes, not all of which might be public.
+    /// When a route matches a non-public import (i.e. an import that isn't a `pub` re-export)
+    /// this field is `true`. Non-public imports matter because they can cause ambiguity
+    /// that affects pub glob re-exports of other items:
+    /// <https://predr.ag/blog/breaking-semver-in-rust-by-adding-private-type-or-import/>
+    ///
+    /// Private routes remain name-resolution candidates because they can shadow
+    /// or conflict with public exports. They are excluded when building public
+    /// parent edges, so this flag is always `false` on [`ParentEdge`] modifiers
+    /// and during public-path reconstruction.
+    non_public: bool,
 }
 
 impl EdgeModifiers {
@@ -240,6 +258,8 @@ impl EdgeModifiers {
             doc_hidden: item.attrs.iter().any(Attribute::is_doc_hidden),
             deprecated: item.deprecation.is_some(),
             unstable: stability_policy.item_is_unstable(item),
+            // Route visibility is set at the import, separately from the items' metadata.
+            non_public: false,
         }
     }
 
@@ -248,11 +268,12 @@ impl EdgeModifiers {
             doc_hidden: self.doc_hidden || other.doc_hidden,
             deprecated: self.deprecated || other.deprecated,
             unstable: self.unstable || other.unstable,
+            non_public: self.non_public || other.non_public,
         }
     }
 
     fn public_api(self) -> bool {
-        !self.unstable && (self.deprecated || !self.doc_hidden)
+        !self.non_public && !self.unstable && (self.deprecated || !self.doc_hidden)
     }
 
     /// Choose one concrete route among two equivalent glob re-export routes.
@@ -262,10 +283,14 @@ impl EdgeModifiers {
     /// routes for exposing the same item under the same path component.
     ///
     /// This method must return either `self` or `other`, not a synthesized combination of
-    /// their fields. Prefer a route that is public API; if both have the same public-API
-    /// status, prefer a route that is not `#[doc(hidden)]`; if still tied, prefer a route
-    /// that is not deprecated.
+    /// their fields. Prefer public routes over private routes, even when the public route
+    /// is hidden or unstable. Then prefer public API, stability, absence of `#[doc(hidden)]`,
+    /// and absence of deprecation, in that order.
     fn least_restrictive_alternative(self, other: Self) -> Self {
+        if self.non_public != other.non_public {
+            return if self.non_public { other } else { self };
+        }
+
         match (self.public_api(), other.public_api()) {
             (true, false) => return self,
             (false, true) => return other,
@@ -325,20 +350,22 @@ struct Definition {
     /// This Id must not point to an import item.
     final_underlying_id: u32,
 
-    /// Modifiers from glob `Use` items in the module where this name is visible.
+    /// Modifiers carried by this definition when it is resolved through a glob.
     ///
     /// Glob re-exports make their resolved names look local to the importing module.
     /// The glob `Use` item itself is not part of the final importable path, and
     /// neither are non-glob `Use` items inside the target module that supplied the visible name.
     /// Their `#[doc(hidden)]`, deprecation, and stability still apply to that path, though.
-    invisible_glob_modifiers: EdgeModifiers,
+    ///
+    /// `non_public` means the name can participate in resolution but has no public reexport route.
+    glob_modifiers: EdgeModifiers,
 }
 
 impl Definition {
     fn new(final_underlying_id: u32) -> Self {
         Self {
             final_underlying_id,
-            invisible_glob_modifiers: EdgeModifiers::default(),
+            glob_modifiers: EdgeModifiers::default(),
         }
     }
 }
@@ -347,14 +374,15 @@ impl Definition {
 /// and whether they are defined directly, or imported directly or via a glob.
 #[derive(Debug, Default)]
 struct NameResolution<'a> {
-    /// Module Id -> { name -> (id, is_public) } for items directly defined in that module.
-    /// Not just public names, since private names can shadow pub glob-exported names.
+    /// Module Id -> { name -> (definition, eligible_for_glob_resolution) }.
+    /// Private names are retained because they can shadow public glob exports.
+    /// Resolution eligibility is separate from whether a definition has a public route.
     names_defined_in_module: HashMap<u32, HashMap<NamespacedName<'a>, (Definition, bool)>>,
 
     /// Modules and the glob imports they contain.
     modules_with_glob_imports: HashMap<u32, HashSet<u32>>,
 
-    /// Names that were glob-imported and re-exported into a module, together with
+    /// Names that were glob-imported into a module, together with
     /// the item Id to which they refer. This is because glob-glob name shadowing doesn't apply
     /// if both names point to the same item.
     glob_imported_names_in_module: HashMap<u32, HashMap<NamespacedName<'a>, Definition>>,
@@ -368,14 +396,13 @@ struct NameResolution<'a> {
 struct GlobResolution<'a> {
     /// Module/modifier combinations already expanded while following glob-of-glob chains.
     ///
-    /// The modifier set is part of the key because the same module can be reached through
-    /// different glob imports, and those paths may carry different visibility metadata.
+    /// Accumulated modifiers are part of the key because different glob chains can
+    /// reach the same module with different visibility or metadata.
     visited: HashSet<(u32, EdgeModifiers)>,
 
     /// Glob-imported names that are usable in the module being resolved.
     ///
-    /// Each name maps to the final non-`Use` item it resolves to, plus any invisible modifiers
-    /// carried by the glob imports that made the name visible.
+    /// Each name maps to its final non-`Use` item and the preferred route's modifiers.
     names: HashMap<NamespacedName<'a>, Definition>,
 
     /// Glob-imported names that resolve to multiple distinct items and therefore cannot be used.
@@ -566,14 +593,15 @@ fn resolve_crate_names<'a>(
                         //
                         // TODO: This only handles within-crate imports. It'll need to be updated
                         //       when we support multiple crates and cross-crate imports.
-                        let mut invisible_glob_modifiers =
+                        let mut glob_modifiers =
                             EdgeModifiers::from_item(inner_item, stability_policy);
                         let mut underlying_item = target;
                         let final_underlying_id = loop {
                             if let ItemEnum::Use(next_import) = &underlying_item.inner {
-                                invisible_glob_modifiers = invisible_glob_modifiers.union(
-                                    EdgeModifiers::from_item(underlying_item, stability_policy),
-                                );
+                                glob_modifiers = glob_modifiers.union(EdgeModifiers::from_item(
+                                    underlying_item,
+                                    stability_policy,
+                                ));
                                 match next_import.id.as_ref().and_then(|id| crate_.index.get(id)) {
                                     None => break None,
                                     Some(item) => underlying_item = item,
@@ -585,11 +613,18 @@ fn resolve_crate_names<'a>(
                         let Some(final_underlying_id) = final_underlying_id else {
                             continue;
                         };
+                        if inner_item.visibility != Visibility::Public {
+                            glob_modifiers.non_public = true;
+                        }
                         let definition = Definition {
                             final_underlying_id: final_underlying_id.0,
-                            invisible_glob_modifiers,
+                            glob_modifiers,
                         };
 
+                        // Retain private imports as resolution candidates even though they
+                        // cannot supply a public route. Their eligibility still approximates
+                        // accessibility using the target's visibility.
+                        // TODO: Determine eligibility from the importing scope instead.
                         result
                             .names_defined_in_module
                             .entry(item.id.0)
@@ -658,12 +693,10 @@ fn resolve_glob_imported_names<'a>(
     for (&module_id, globs) in &traversal_state.modules_with_glob_imports {
         let mut glob_resolution = GlobResolution::default();
 
-        glob_resolution
-            .visited
-            .insert((module_id, EdgeModifiers::default()));
+        let glob_route = EdgeModifiers::default();
+        glob_resolution.visited.insert((module_id, glob_route));
         for &glob_id in globs {
-            // This glob is directly inside the module whose visible names we're resolving,
-            // so its attributes affect the path that downstream users can type.
+            // Resolve private globs too: their names can conflict with public glob exports.
             recursively_compute_visited_names_for_glob(
                 crate_,
                 stability_policy,
@@ -671,7 +704,7 @@ fn resolve_glob_imported_names<'a>(
                 glob_id,
                 &*traversal_state,
                 &mut glob_resolution,
-                EdgeModifiers::default(),
+                glob_route,
             );
         }
 
@@ -705,13 +738,11 @@ fn resolve_glob_imported_names<'a>(
 
 /// Resolve the names made visible by one glob import into `glob_parent_module_id`.
 ///
-/// `glob_modifiers` contains modifiers from glob imports that are already known to affect
-/// the path being synthesized in `glob_parent_module_id`.
+/// `glob_route` records modifiers and whether every import traversed so far is public.
 ///
-/// Each glob traversed here is required to expose the synthesized name. Even when an outer
-/// glob creates the final top-level path, a nested glob may be what made that name visible in
-/// the outer glob's target module, so its `#[doc(hidden)]`, deprecation, and stability metadata
-/// must still be attached to the resulting importable path.
+/// Private routes still contribute candidates for collision resolution. For public routes,
+/// each glob's `#[doc(hidden)]`, deprecation, and stability metadata applies to the synthesized
+/// path, including nested globs that supplied names in the outer glob's target module.
 fn recursively_compute_visited_names_for_glob<'a>(
     crate_: &'a Crate,
     stability_policy: PublicApiStabilityPolicy,
@@ -719,15 +750,17 @@ fn recursively_compute_visited_names_for_glob<'a>(
     glob_id: u32,
     traversal_state: &NameResolution<'a>,
     glob_resolution: &mut GlobResolution<'a>,
-    glob_modifiers: EdgeModifiers,
+    glob_route: EdgeModifiers,
 ) {
     let glob_item = &crate_.index[&rustdoc_types::Id(glob_id)];
     let ItemEnum::Use(glob_import) = &glob_item.inner else {
         unreachable!("Id {glob_id:?} was not a glob: {glob_item:?}");
     };
     assert!(glob_import.is_glob, "not a glob import: {glob_import:?}");
-    let glob_modifiers =
-        glob_modifiers.union(EdgeModifiers::from_item(glob_item, stability_policy));
+    let mut glob_route = glob_route.union(EdgeModifiers::from_item(glob_item, stability_policy));
+    if glob_item.visibility != Visibility::Public {
+        glob_route.non_public = true;
+    }
 
     let module_local_items = traversal_state
         .names_defined_in_module
@@ -747,8 +780,7 @@ fn recursively_compute_visited_names_for_glob<'a>(
                 );
 
                 let mut definition = Definition::new(variant_id.0);
-                definition.invisible_glob_modifiers =
-                    definition.invisible_glob_modifiers.union(glob_modifiers);
+                definition.glob_modifiers = glob_route;
                 register_name(
                     module_local_items,
                     name,
@@ -762,19 +794,18 @@ fn recursively_compute_visited_names_for_glob<'a>(
     }
 
     let module_id = target_id.0;
-    if !glob_resolution.visited.insert((module_id, glob_modifiers)) {
-        // Already checked this module with these accumulated glob modifiers.
+    if !glob_resolution.visited.insert((module_id, glob_route)) {
+        // Already checked this module with this visibility and accumulated glob metadata.
         return;
     }
 
-    // Process the public locally-defined items.
+    // Retain resolution candidates even when their routes cannot reexport them publicly.
     if let Some(names_in_module) = traversal_state.names_defined_in_module.get(&module_id) {
         for (local_name, data) in names_in_module {
-            let (item_defn, is_public) = data;
-            if *is_public {
+            let (item_defn, eligible_for_glob_resolution) = data;
+            if *eligible_for_glob_resolution {
                 let mut item_defn = item_defn.clone();
-                item_defn.invisible_glob_modifiers =
-                    item_defn.invisible_glob_modifiers.union(glob_modifiers);
+                item_defn.glob_modifiers = item_defn.glob_modifiers.union(glob_route);
                 register_name(
                     module_local_items,
                     *local_name,
@@ -797,7 +828,7 @@ fn recursively_compute_visited_names_for_glob<'a>(
                 glob_id,
                 traversal_state,
                 glob_resolution,
-                glob_modifiers,
+                glob_route,
             );
         }
     }
@@ -824,11 +855,11 @@ fn register_name<'a>(
                     duplicated_names.insert(name);
                 } else {
                     // Same item under the same name. No ambiguity here.
-                    // Choose the least restrictive alternative between the two sets of modifiers.
+                    // Private routes cannot weaken the metadata of a public route.
                     let existing = entry.into_mut();
-                    existing.invisible_glob_modifiers = existing
-                        .invisible_glob_modifiers
-                        .least_restrictive_alternative(definition.invisible_glob_modifiers);
+                    existing.glob_modifiers = existing
+                        .glob_modifiers
+                        .least_restrictive_alternative(definition.glob_modifiers);
                 }
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
@@ -900,6 +931,10 @@ fn visit_root_reachable_public_items<'a>(
                 .get(&item.id.0)
             {
                 for (name, inner_defn) in glob_imports {
+                    let modifiers = inner_defn.glob_modifiers;
+                    if modifiers.non_public {
+                        continue;
+                    }
                     if let Some(inner_item) = crate_
                         .index
                         .get(&rustdoc_types::Id(inner_defn.final_underlying_id))
@@ -914,7 +949,7 @@ fn visit_root_reachable_public_items<'a>(
                             inner_item,
                             Some(ParentEdge {
                                 parent_id: item.id.0,
-                                modifiers: inner_defn.invisible_glob_modifiers,
+                                modifiers,
                                 imported_name: Some(name.name()),
                             }),
                         );
