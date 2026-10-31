@@ -7369,7 +7369,11 @@ fn features_directly_enables() {
             enables: None,
         },
         FeatureEnablesOutput {
-            name: "serde".into(),
+            name: "serialization".into(),
+            enables: None,
+        },
+        FeatureEnablesOutput {
+            name: "json_weak".into(),
             enables: None,
         },
         FeatureEnablesOutput {
@@ -7514,7 +7518,11 @@ fn features_transitively_enables() {
             enables: None,
         },
         FeatureEnablesOutput {
-            name: "serde".into(),
+            name: "serialization".into(),
+            enables: None,
+        },
+        FeatureEnablesOutput {
+            name: "json_weak".into(),
             enables: None,
         },
         FeatureEnablesOutput {
@@ -7557,6 +7565,107 @@ fn features_transitively_enables() {
     expected_results.sort_unstable();
 
     similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Strong dependency-feature references directly enable the dependency's package feature.
+/// TODO: Include this activation in the adapter's `directly_enables` edge.
+///
+/// The upstream report documents the same activation missing from recursive resolution:
+/// <https://gitlab.com/lib.rs/cargo_toml/-/work_items/40>.
+#[test]
+#[should_panic(expected = "missing directly enabled package feature")]
+fn features_dependency_feature_directly_enables() {
+    get_test_data!(data, features_dependency_feature);
+    let adapter = RustdocAdapter::new(&data, None);
+
+    let query = r#"
+{
+    Crate {
+        feature {
+            name @filter(op: "=", value: ["$feature"])
+
+            directly_enables {
+                name @output
+            }
+        }
+    }
+}
+"#;
+    let variables = btreemap! { "feature" => "strong" };
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+    }
+
+    let results: Vec<Output> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+
+    assert_eq!(
+        vec![Output {
+            name: "serde_json".into(),
+        }],
+        results,
+        "missing directly enabled package feature",
+    );
+}
+
+/// Strong dependency-feature references also enable the package feature's transitive features.
+/// TODO: Remove `should_panic` once `cargo_toml` resolves this activation correctly.
+///
+/// Upstream issue: <https://gitlab.com/lib.rs/cargo_toml/-/work_items/40>.
+#[test]
+#[should_panic(expected = "missing transitively enabled package features")]
+fn features_dependency_feature_transitively_enables() {
+    get_test_data!(data, features_dependency_feature);
+    let adapter = RustdocAdapter::new(&data, None);
+
+    let query = r#"
+{
+    Crate {
+        feature {
+            name @filter(op: "=", value: ["$feature"])
+
+            transitively_enables {
+                name @output
+            }
+        }
+    }
+}
+"#;
+    let variables = btreemap! { "feature" => "strong" };
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        name: String,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    assert_eq!(
+        vec![
+            Output {
+                name: "marker".into(),
+            },
+            Output {
+                name: "serde_json".into(),
+            },
+        ],
+        results,
+        "missing transitively enabled package features",
+    );
 }
 
 #[test]
