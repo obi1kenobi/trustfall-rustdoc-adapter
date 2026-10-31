@@ -2019,6 +2019,16 @@ mod tests {
             assert_exported_items_match(test_crate, &expected_items);
         }
 
+        /// Prelude registration must not reexport items, even when written as `pub use`.
+        #[test]
+        fn prelude_import_does_not_reexport_items() {
+            let expected_items = btreemap! {
+                "PreludeOnly" => btreeset![],
+                "Exported" => btreeset!["prelude_import::Exported"],
+            };
+            assert_exported_items_match("prelude_import", &expected_items);
+        }
+
         #[test]
         fn glob_reexport() {
             let test_crate = "glob_reexport";
