@@ -2029,6 +2029,140 @@ mod tests {
             assert_exported_items_match("prelude_import", &expected_items);
         }
 
+        /// Named imports expose a route only when the import itself is public.
+        #[test]
+        fn private_named_imports_do_not_create_public_routes() {
+            let expected_items = btreemap! {
+                "PrivateNamed" => btreeset![],
+                "CrateNamed" => btreeset![],
+                "SuperNamed" => btreeset![],
+                "PublicNamed" => btreeset![
+                    "private_import_routes::named_imports::PublicNamed",
+                    "private_import_routes::named_chain::PublicNamed",
+                ],
+            };
+            assert_exported_items_match("private_import_routes", &expected_items);
+        }
+
+        /// A private module alias can still be used to name a public reexport's target.
+        #[test]
+        fn public_named_import_through_private_module_alias() {
+            let expected_items = btreemap! {
+                "Aliased" => btreeset!["private_import_routes::PublicAlias"],
+            };
+            assert_exported_items_match("private_import_routes", &expected_items);
+        }
+
+        /// A non-public glob exposes no paths, including through subsequent public globs.
+        #[test]
+        fn private_glob_chains_do_not_create_public_routes() {
+            let expected_items = btreemap! {
+                "PrivateGlob" => btreeset![],
+                "CrateGlob" => btreeset![],
+                "SuperGlob" => btreeset![],
+            };
+            assert_exported_items_match("private_import_routes", &expected_items);
+        }
+
+        /// Enum variant globs obey the import's visibility just as module globs do.
+        #[test]
+        fn private_enum_globs_do_not_create_public_routes() {
+            let expected_items = btreemap! {
+                "PrivateVariant" => btreeset![],
+                "PublicVariant" => btreeset![
+                    "private_import_routes::public_enum_glob::PublicVariant",
+                ],
+            };
+            assert_exported_items_match("private_import_routes", &expected_items);
+        }
+
+        /// Public routes survive private alternatives, but a private outer glob cannot expose them.
+        #[test]
+        fn parallel_public_glob_routes_remain_exported() {
+            let expected_items = btreemap! {
+                "Shared" => btreeset![
+                    "private_import_routes::shared_direct::Shared",
+                    "private_import_routes::shared_public::Shared",
+                    "private_import_routes::shared_routes::Shared",
+                ],
+            };
+            assert_exported_items_match("private_import_routes", &expected_items);
+        }
+
+        /// An unhidden private route must not weaken a hidden public route's attributes.
+        #[test]
+        fn private_glob_routes_do_not_remove_doc_hidden() {
+            use crate::indexed_crate::{Modifiers, Path};
+
+            let rustdoc = load_pregenerated_rustdoc("private_import_routes");
+            let indexed_crate = IndexedCrate::new(&rustdoc);
+            let item = rustdoc
+                .index
+                .values()
+                .find(|item| item.name.as_deref() == Some("HiddenShared"))
+                .expect("missing hidden-route fixture item");
+            let mut actual_paths = indexed_crate.publicly_importable_names(&item.id);
+            actual_paths.sort_unstable();
+
+            assert_eq!(
+                vec![
+                    ImportablePath {
+                        path: Path {
+                            components: vec![
+                                "private_import_routes",
+                                "hidden_chain",
+                                "HiddenShared"
+                            ],
+                        },
+                        modifiers: Modifiers {
+                            doc_hidden: true,
+                            deprecated: false,
+                            unstable: false,
+                        },
+                    },
+                    ImportablePath {
+                        path: Path {
+                            components: vec![
+                                "private_import_routes",
+                                "hidden_routes",
+                                "HiddenShared"
+                            ],
+                        },
+                        modifiers: Modifiers {
+                            doc_hidden: true,
+                            deprecated: false,
+                            unstable: false,
+                        },
+                    },
+                ],
+                actual_paths,
+            );
+        }
+
+        /// Private glob candidates still conflict with distinct public candidates in the same module.
+        // Earlier rustdoc omits the private import, so its JSON cannot represent this ambiguity.
+        #[rustversion::since(1.101)]
+        #[test]
+        fn private_glob_candidates_preserve_ambiguity() {
+            let expected_items = btreemap! {
+                "PrivateCandidate" => btreeset![],
+                "PublicCandidate" => btreeset![],
+            };
+            assert_exported_items_match("private_import_routes", &expected_items);
+        }
+
+        /// A descendant's glob can encounter a private ancestor name that blocks a public candidate.
+        // Earlier rustdoc omits the ancestor's private import, losing the competing name.
+        #[rustversion::since(1.101)]
+        #[test]
+        fn private_named_ancestor_candidates_preserve_ambiguity() {
+            let expected_items = btreemap! {
+                "AncestorPrivate" => btreeset![],
+                "AncestorPublic" => btreeset![],
+            };
+            assert_exported_items_match("private_import_routes", &expected_items);
+        }
+
         #[test]
         fn glob_reexport() {
             let test_crate = "glob_reexport";
