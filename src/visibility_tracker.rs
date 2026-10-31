@@ -522,6 +522,23 @@ fn resolve_crate_names<'a>(
 
             if let ItemEnum::Use(imp) = &inner_item.inner {
                 if imp.is_glob {
+                    // `#[prelude_import]` selects the compiler's fallback prelude without adding
+                    // module members. Exclude these directives from importable-path resolution;
+                    // expanding them as ordinary globs would give names paths they do not have.
+                    //
+                    // Rustdoc represents such directives as glob imports that can lack a target ID.
+                    // We identify them through an unstructured attribute string, accepting both
+                    // the source spelling and the compiler's debug spelling.
+                    if inner_item.attrs.iter().any(|attr| {
+                        matches!(
+                            attr,
+                            rustdoc_types::Attribute::Other(value)
+                                if value == "#[prelude_import]" || value == "#[attr = PreludeImport]"
+                        )
+                    }) {
+                        continue;
+                    }
+
                     result
                         .modules_with_glob_imports
                         .entry(item.id.0)
