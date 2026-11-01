@@ -1009,6 +1009,24 @@ fn visit_root_reachable_public_items<'a>(
                         .index
                         .get(&rustdoc_types::Id(inner_defn.final_underlying_id))
                     {
+                        // `#[non_exhaustive]` limits the value binding of a unit or tuple struct
+                        // to at most `pub(crate)`, even when the type is public. Keep that binding
+                        // in name resolution within the crate, but exclude it from public paths.
+                        // The type binding can still provide a public path.
+                        //
+                        // A non-exhaustive enum variant can still be imported for use in braced patterns.
+                        // Our name resolution represents variants only in the value namespace,
+                        // so exclude them from this filter.
+                        if matches!(name, NamespacedName::Values(_))
+                            && matches!(inner_item.inner, ItemEnum::Struct(..))
+                            && inner_item
+                                .attrs
+                                .iter()
+                                .any(|attr| matches!(attr, rustdoc_types::Attribute::NonExhaustive))
+                        {
+                            continue;
+                        }
+
                         // The glob import creates this path in the current module. Any `Use` item
                         // that supplied the name in the target module is an internal detail.
                         visit_root_reachable_public_items(
