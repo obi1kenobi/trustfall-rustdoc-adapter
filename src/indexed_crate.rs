@@ -2629,6 +2629,76 @@ mod tests {
             assert_exported_items_match("non_exhaustive_constructor_visibility", &expected_items);
         }
 
+        /// A crate alias shadows glob-imported types while retaining values and independent paths.
+        #[test]
+        fn self_crate_alias_shadows_glob_type() {
+            let expected_items = btreemap! {
+                "SelfShadowed" => btreeset!["extern_crate_shadowing::IndependentType"],
+                "SELF_VALUE" => btreeset!["extern_crate_shadowing::self_alias::SelfAlias"],
+                "SelfAlias" => btreeset!["extern_crate_shadowing::self_alias::SelfAlias"],
+            };
+            assert_exported_items_match("extern_crate_shadowing", &expected_items);
+        }
+
+        /// An external crate alias has the same local type-namespace shadowing behavior.
+        #[test]
+        fn external_crate_alias_shadows_glob_type() {
+            let expected_items = btreemap! {
+                "CoreShadowed" => btreeset![],
+                "CORE_VALUE" => btreeset!["extern_crate_shadowing::core_alias::ExternalAlias"],
+                "ExternalAlias" => btreeset!["extern_crate_shadowing::core_alias::ExternalAlias"],
+            };
+            assert_exported_items_match("extern_crate_shadowing", &expected_items);
+        }
+
+        /// An unrenamed extern declaration binds the crate's original name locally.
+        #[test]
+        fn unrenamed_extern_crate_shadows_glob_type() {
+            let expected_items = btreemap! {
+                "UnrenamedShadowed" => btreeset![],
+                "UNRENAMED_VALUE" => btreeset!["extern_crate_shadowing::unrenamed::core"],
+                "core" => btreeset!["extern_crate_shadowing::unrenamed::core"],
+            };
+            assert_exported_items_match("extern_crate_shadowing", &expected_items);
+        }
+
+        /// Renaming an extern declaration leaves the crate's original name available for other types.
+        #[test]
+        fn renamed_extern_crate_does_not_shadow_original_name() {
+            let expected_items = btreemap! {
+                "OriginalCoreName" => btreeset!["extern_crate_shadowing::core_alias::core"],
+            };
+            assert_exported_items_match("extern_crate_shadowing", &expected_items);
+        }
+
+        /// Importing a crate as `_` does not bind its original name in the type namespace.
+        #[test]
+        fn anonymous_extern_crate_does_not_shadow_original_name() {
+            let expected_items = btreemap! {
+                "AnonymousCoreName" => btreeset!["extern_crate_shadowing::anonymous::core"],
+            };
+            assert_exported_items_match("extern_crate_shadowing", &expected_items);
+        }
+
+        /// An anonymous crate declaration has no importable path even when public.
+        #[test]
+        fn anonymous_extern_crate_is_not_importable() {
+            let expected_items = btreemap! {
+                "_" => btreeset![],
+            };
+            assert_exported_items_match("extern_crate_shadowing", &expected_items);
+        }
+
+        /// Later globs preserve a crate alias's local shadowing without hiding same-named values.
+        #[test]
+        fn extern_crate_shadowing_survives_nested_globs() {
+            let expected_items = btreemap! {
+                "NestedShadowed" => btreeset![],
+                "NESTED_VALUE" => btreeset!["extern_crate_shadowing::nested::NestedAlias"],
+            };
+            assert_exported_items_match("extern_crate_shadowing", &expected_items);
+        }
+
         #[test]
         fn glob_reexport() {
             let test_crate = "glob_reexport";
