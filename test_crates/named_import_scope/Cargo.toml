@@ -1,0 +1,5 @@
+[package]
+name = "named_import_scope"
+version = "0.1.0"
+edition = "2024"
+publish = false
