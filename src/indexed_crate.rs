@@ -2076,6 +2076,100 @@ mod tests {
             assert_exported_items_match("private_import_routes", &expected_items);
         }
 
+        /// A public glob cannot expose variants of a private enum.
+        #[test]
+        fn public_glob_of_private_enum_has_no_public_paths() {
+            let expected_items = btreemap! {
+                "PrivateEnum" => btreeset![],
+                "PrivateVariant" => btreeset![],
+            };
+            assert_exported_items_match("enum_glob_visibility", &expected_items);
+        }
+
+        /// Crate-visible enum variants remain unavailable to downstream crates after a public glob.
+        #[test]
+        fn public_glob_of_crate_visible_enum_has_no_public_paths() {
+            let expected_items = btreemap! {
+                "CrateEnum" => btreeset![],
+                "CrateVariant" => btreeset![],
+            };
+            assert_exported_items_match("enum_glob_visibility", &expected_items);
+        }
+
+        /// A `pub(super)` enum cannot supply public variant paths through a glob chain.
+        #[test]
+        fn public_glob_of_super_visible_enum_has_no_public_paths() {
+            let expected_items = btreemap! {
+                "SuperEnum" => btreeset![],
+                "SuperVariant" => btreeset![],
+            };
+            assert_exported_items_match("enum_glob_visibility", &expected_items);
+        }
+
+        /// A `pub(in ...)` enum cannot supply public variant paths through a glob chain.
+        #[test]
+        fn public_glob_of_restricted_enum_has_no_public_paths() {
+            let expected_items = btreemap! {
+                "RestrictedEnum" => btreeset![],
+                "RestrictedVariant" => btreeset![],
+            };
+            assert_exported_items_match("enum_glob_visibility", &expected_items);
+        }
+
+        /// Additional public globs cannot make a private enum's variants public.
+        #[test]
+        fn nested_public_globs_preserve_private_enum_visibility() {
+            let expected_items = btreemap! {
+                "NestedEnum" => btreeset![],
+                "NestedVariant" => btreeset![],
+            };
+            assert_exported_items_match("enum_glob_visibility", &expected_items);
+        }
+
+        /// A public enum's variants retain both their direct path and their glob path.
+        #[test]
+        fn public_enum_glob_preserves_public_paths() {
+            let expected_items = btreemap! {
+                "PublicEnum" => btreeset!["enum_glob_visibility::public_enum::PublicEnum"],
+                "PublicVariant" => btreeset![
+                    "enum_glob_visibility::public_enum::PublicEnum::PublicVariant",
+                    "enum_glob_visibility::public_enum::PublicVariant",
+                ],
+            };
+            assert_exported_items_match("enum_glob_visibility", &expected_items);
+        }
+
+        /// A private containing module does not prevent reexporting a public enum's variants.
+        #[test]
+        fn enum_glob_through_private_module_preserves_public_paths() {
+            let expected_items = btreemap! {
+                "PublicInPrivateModule" => btreeset![],
+                "PrivateModuleVariant" => btreeset!["enum_glob_visibility::private_module::PrivateModuleVariant"],
+            };
+            assert_exported_items_match("enum_glob_visibility", &expected_items);
+        }
+
+        /// A private alias can name a public enum as the target of a public variant glob.
+        #[test]
+        fn enum_glob_through_private_alias_preserves_public_paths() {
+            let expected_items = btreemap! {
+                "AliasTarget" => btreeset![],
+                "AliasVariant" => btreeset!["enum_glob_visibility::private_alias::AliasVariant"],
+            };
+            assert_exported_items_match("enum_glob_visibility", &expected_items);
+        }
+
+        /// A private enum's variants still collide with public candidates imported into the same scope.
+        // Earlier rustdoc omits the private glob that brings the competing variant into scope.
+        #[rustversion::since(1.101)]
+        #[test]
+        fn nonpublic_enum_glob_retains_collision_candidates() {
+            let expected_items = btreemap! {
+                "Collision" => (2, btreeset![]),
+            };
+            assert_duplicated_exported_items_match("enum_glob_visibility", &expected_items);
+        }
+
         /// Public routes survive private alternatives, but a private outer glob cannot expose them.
         #[test]
         fn parallel_public_glob_routes_remain_exported() {
