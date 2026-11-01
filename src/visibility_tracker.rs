@@ -236,7 +236,7 @@ struct EdgeModifiers {
     deprecated: bool,
     unstable: bool,
 
-    /// Whether import visibility prevents this route from exposing a name publicly.
+    /// Whether visibility prevents this route from exposing a name publicly.
     ///
     /// A route is a specific import chain supplying a name in the module being resolved.
     /// A given import path may match multiple routes, not all of which might be public.
@@ -244,6 +244,9 @@ struct EdgeModifiers {
     /// this field is `true`. Non-public imports matter because they can cause ambiguity
     /// that affects pub glob re-exports of other items:
     /// <https://predr.ag/blog/breaking-semver-in-rust-by-adding-private-type-or-import/>
+    ///
+    /// This field is also `true` for a glob targeting a non-public enum, since its variants
+    /// inherit the enum's visibility.
     ///
     /// Private routes remain name-resolution candidates because they can shadow
     /// or conflict with public exports. They are excluded when building public
@@ -258,7 +261,7 @@ impl EdgeModifiers {
             doc_hidden: item.attrs.iter().any(Attribute::is_doc_hidden),
             deprecated: item.deprecation.is_some(),
             unstable: stability_policy.item_is_unstable(item),
-            // Route visibility is set at the import, separately from the items' metadata.
+            // Import resolution sets route visibility separately from the item's metadata.
             non_public: false,
         }
     }
@@ -764,7 +767,7 @@ fn resolve_glob_imported_names<'a>(
 
 /// Resolve the names made visible by one glob import into `glob_parent_module_id`.
 ///
-/// `glob_route` records modifiers and whether every import traversed so far is public.
+/// `glob_route` records accumulated metadata and visibility restrictions along the import chain.
 ///
 /// Private routes still contribute candidates for collision resolution. For public routes,
 /// each glob's `#[doc(hidden)]`, deprecation, and stability metadata applies to the synthesized
@@ -798,7 +801,14 @@ fn recursively_compute_visited_names_for_glob<'a>(
         .as_ref()
         .expect("no target Id for glob import");
 
-    if let Some(ItemEnum::Enum(enum_item)) = &crate_.index.get(target_id).map(|item| &item.inner) {
+    if let Some(enum_target) = crate_.index.get(target_id)
+        && let ItemEnum::Enum(enum_item) = &enum_target.inner
+    {
+        // Variants inherit the enum's visibility even though rustdoc marks them `Default`.
+        // Keep non-public variants as collision candidates without creating public paths.
+        if enum_target.visibility != Visibility::Public {
+            glob_route.non_public = true;
+        }
         for variant_id in &enum_item.variants {
             if let Some(variant_item) = crate_.index.get(variant_id) {
                 let name = NamespacedName::Values(
