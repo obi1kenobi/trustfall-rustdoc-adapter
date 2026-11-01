@@ -703,6 +703,30 @@ fn resolve_crate_names<'a>(
                             ),
                         );
                 }
+
+                if let ItemEnum::Struct(struct_item) = &inner_item.inner
+                    && matches!(struct_item.kind, rustdoc_types::StructKind::Tuple(..))
+                {
+                    // Tuple struct declarations bind their constructors locally, even when
+                    // `get_names_for_item()` omits the value name because a field is nonpublic.
+                    // Retain that binding for local shadowing, with glob eligibility set to `false`
+                    // to prevent inaccessible constructors from competing with glob-imported values.
+                    //
+                    // This preserves the existing approximation that constructors with nonpublic
+                    // fields are excluded from glob resolution. They can be accessible from some
+                    // importing scopes; the TODO in `get_names_for_item()` tracks checking field
+                    // visibility from the importing scope.
+                    let name = inner_item
+                        .name
+                        .as_deref()
+                        .expect("tuple struct had no name");
+                    result
+                        .names_defined_in_module
+                        .entry(item.id.0)
+                        .or_default()
+                        .entry(NamespacedName::Values(name))
+                        .or_insert((Definition::new(inner_item.id.0), false));
+                }
             }
         }
     }
