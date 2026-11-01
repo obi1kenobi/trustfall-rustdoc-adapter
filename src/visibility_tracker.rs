@@ -127,6 +127,10 @@ impl<'a> VisibilityTracker<'a> {
 
                 (push_name, popped_name)
             }
+            rustdoc_types::ItemEnum::ExternCrate { .. } if item.name.as_deref() == Some("_") => {
+                // Even a public anonymous crate declaration does not bind an importable name.
+                return;
+            }
             _ => (item.name.as_deref(), None),
         };
 
@@ -349,8 +353,11 @@ impl<'a> NamespacedName<'a> {
 
 #[derive(Debug, Clone)]
 struct Definition {
-    /// The actual underlying item this definition resolves to, like a struct or function.
-    /// This Id must not point to an import item.
+    /// ID of the final non-`Use` item represented by this binding.
+    ///
+    /// An `extern crate` binding stores the declaration's ID, not the referenced
+    /// crate's identity. It is retained only for local shadowing and excluded from
+    /// glob resolution.
     final_underlying_id: u32,
 
     /// The module whose descendants can access this named import, including the module itself.
@@ -686,6 +693,27 @@ fn resolve_crate_names<'a>(
                             .insert(name, (Definition::new(inner_item.id.0), true));
                     }
                 }
+            } else if matches!(inner_item.inner, ItemEnum::ExternCrate { .. }) {
+                let name = inner_item
+                    .name
+                    .as_deref()
+                    .expect("extern crate had no name");
+                if name == "_" {
+                    continue;
+                }
+
+                // `extern crate` binds a local type name that can shadow glob imports.
+                // Keep these bindings local until crate aliases can be resolved to a common
+                // definition. Their item IDs identify separate declarations, so glob expansion
+                // would otherwise treat aliases of the same crate as conflicting definitions.
+                result
+                    .names_defined_in_module
+                    .entry(item.id.0)
+                    .or_default()
+                    .insert(
+                        NamespacedName::Types(name),
+                        (Definition::new(inner_item.id.0), false),
+                    );
             } else {
                 for name in get_names_for_item(crate_, inner_item) {
                     result
