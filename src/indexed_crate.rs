@@ -2381,6 +2381,133 @@ mod tests {
             assert_exported_items_match("tuple_constructor_shadowing", &expected_items);
         }
 
+        /// A non-exhaustive unit constructor cannot export a path after its type is shadowed.
+        #[test]
+        fn non_exhaustive_unit_constructor_has_no_glob_path() {
+            let expected_items = btreemap! {
+                "HiddenUnit" => btreeset![],
+                "UnitName" => btreeset![
+                    "non_exhaustive_constructor_visibility::shadowed_types::UnitName",
+                ],
+            };
+            assert_exported_items_match("non_exhaustive_constructor_visibility", &expected_items);
+        }
+
+        /// Public fields do not make a non-exhaustive tuple constructor publicly importable.
+        #[test]
+        fn non_exhaustive_tuple_constructor_has_no_glob_path() {
+            let expected_items = btreemap! {
+                "HiddenTuple" => btreeset![],
+                "TupleName" => btreeset![
+                    "non_exhaustive_constructor_visibility::shadowed_types::TupleName",
+                ],
+            };
+            assert_exported_items_match("non_exhaustive_constructor_visibility", &expected_items);
+        }
+
+        /// A zero-field tuple constructor has the same non-exhaustive visibility restriction.
+        #[test]
+        fn non_exhaustive_zero_field_constructor_has_no_glob_path() {
+            let expected_items = btreemap! {
+                "HiddenZero" => btreeset![],
+                "ZeroName" => btreeset![
+                    "non_exhaustive_constructor_visibility::shadowed_types::ZeroName",
+                ],
+            };
+            assert_exported_items_match("non_exhaustive_constructor_visibility", &expected_items);
+        }
+
+        /// Ordinary constructors remain importable even when a local definition shadows their type.
+        #[test]
+        fn exhaustive_constructors_retain_glob_paths() {
+            let expected_items = btreemap! {
+                "OrdinaryUnit" => btreeset![
+                    "non_exhaustive_constructor_visibility::shadowed_types::OrdinaryUnitName",
+                ],
+                "OrdinaryTuple" => btreeset![
+                    "non_exhaustive_constructor_visibility::shadowed_types::OrdinaryTupleName",
+                ],
+            };
+            assert_exported_items_match("non_exhaustive_constructor_visibility", &expected_items);
+        }
+
+        /// Nested globs must not expose a non-exhaustive constructor,
+        /// but independent type exports survive.
+        #[test]
+        fn non_exhaustive_constructor_nested_globs_preserve_type_export() {
+            let expected_items = btreemap! {
+                "Nested" => btreeset!["non_exhaustive_constructor_visibility::PublicNested"],
+                "NestedName" => btreeset![
+                    "non_exhaustive_constructor_visibility::nested::NestedName",
+                ],
+            };
+            assert_exported_items_match("non_exhaustive_constructor_visibility", &expected_items);
+        }
+
+        /// Excluding constructors must not exclude the corresponding public type bindings.
+        #[test]
+        fn non_exhaustive_types_retain_glob_paths() {
+            let expected_items = btreemap! {
+                "ExportedUnit" => btreeset![
+                    "non_exhaustive_constructor_visibility::type_exports::ExportedUnit",
+                ],
+                "ExportedTuple" => btreeset![
+                    "non_exhaustive_constructor_visibility::type_exports::ExportedTuple",
+                ],
+            };
+            assert_exported_items_match("non_exhaustive_constructor_visibility", &expected_items);
+        }
+
+        /// A local constant can shadow a constructor while the type remains publicly importable.
+        #[test]
+        fn non_exhaustive_type_survives_value_shadowing() {
+            let expected_items = btreemap! {
+                "ValueShadowed" => btreeset![
+                    "non_exhaustive_constructor_visibility::value_shadow::VALUE_SHADOW",
+                ],
+                "VALUE_SHADOW" => btreeset![
+                    "non_exhaustive_constructor_visibility::value_shadow::VALUE_SHADOW",
+                ],
+            };
+            assert_exported_items_match("non_exhaustive_constructor_visibility", &expected_items);
+        }
+
+        /// Non-exhaustive constructors still participate in shadowing within their defining crate.
+        #[test]
+        fn non_exhaustive_constructor_still_shadows_local_glob() {
+            let expected_items = btreemap! {
+                "LocalUnit" => btreeset![
+                    "non_exhaustive_constructor_visibility::local_shadow::LocalConstructor",
+                ],
+                "SHADOWED_VALUE" => btreeset![],
+            };
+            assert_exported_items_match("non_exhaustive_constructor_visibility", &expected_items);
+        }
+
+        /// A non-exhaustive enum can still export its ordinary variants.
+        #[test]
+        fn non_exhaustive_enum_retains_variant_glob_path() {
+            let expected_items = btreemap! {
+                "OrdinaryVariant" => btreeset![
+                    "non_exhaustive_constructor_visibility::ExtensibleEnum::OrdinaryVariant",
+                    "non_exhaustive_constructor_visibility::OrdinaryVariant",
+                ],
+            };
+            assert_exported_items_match("non_exhaustive_constructor_visibility", &expected_items);
+        }
+
+        /// A non-exhaustive tuple variant remains importable for use in braced patterns.
+        #[test]
+        fn non_exhaustive_variant_retains_glob_path() {
+            let expected_items = btreemap! {
+                "ExtensibleVariant" => btreeset![
+                    "non_exhaustive_constructor_visibility::Variants::ExtensibleVariant",
+                    "non_exhaustive_constructor_visibility::ExtensibleVariant",
+                ],
+            };
+            assert_exported_items_match("non_exhaustive_constructor_visibility", &expected_items);
+        }
+
         #[test]
         fn glob_reexport() {
             let test_crate = "glob_reexport";
