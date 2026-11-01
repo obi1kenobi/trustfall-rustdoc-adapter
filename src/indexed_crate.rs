@@ -2269,6 +2269,118 @@ mod tests {
             assert_exported_items_match("named_import_scope", &expected_items);
         }
 
+        /// A local constructor shadows a glob value without hiding the public struct type.
+        #[test]
+        fn local_tuple_constructor_with_private_field_shadows_glob() {
+            let expected_items = btreemap! {
+                "PrivateField" => btreeset![
+                    "tuple_constructor_shadowing::private_field::PrivateField",
+                ],
+                "PRIVATE_FIELD_VALUE" => btreeset![
+                    "tuple_constructor_shadowing::PRIVATE_FIELD_VALUE",
+                ],
+            };
+            assert_exported_items_match("tuple_constructor_shadowing", &expected_items);
+        }
+
+        /// Crate-visible fields also leave a constructor binding in the declaring module.
+        #[test]
+        fn local_tuple_constructor_with_crate_field_shadows_glob() {
+            let expected_items = btreemap! {
+                "CrateField" => btreeset!["tuple_constructor_shadowing::crate_field::CrateField"],
+                "CRATE_FIELD_VALUE" => btreeset![],
+            };
+            assert_exported_items_match("tuple_constructor_shadowing", &expected_items);
+        }
+
+        /// A private tuple declaration blocks a glob value without creating an exported path.
+        #[test]
+        fn private_local_tuple_constructor_shadows_glob() {
+            let expected_items = btreemap! {
+                "PrivateStruct" => btreeset![],
+                "PRIVATE_STRUCT_VALUE" => btreeset![],
+            };
+            assert_exported_items_match("tuple_constructor_shadowing", &expected_items);
+        }
+
+        /// A crate-visible tuple declaration also shadows values in a public glob.
+        #[test]
+        fn crate_visible_local_tuple_constructor_shadows_glob() {
+            let expected_items = btreemap! {
+                "CrateStruct" => btreeset![],
+                "CRATE_STRUCT_VALUE" => btreeset![],
+            };
+            assert_exported_items_match("tuple_constructor_shadowing", &expected_items);
+        }
+
+        /// A glob can export a public constructor even when a local definition shadows its type.
+        #[test]
+        fn public_tuple_constructor_survives_type_shadowing() {
+            let expected_items = btreemap! {
+                "PublicFields" => (2, btreeset![
+                    "tuple_constructor_shadowing::public_constructors::PublicFields",
+                ]),
+            };
+            assert_duplicated_exported_items_match("tuple_constructor_shadowing", &expected_items);
+        }
+
+        /// A public zero-field tuple struct also retains its glob-importable constructor.
+        #[test]
+        fn zero_field_tuple_constructor_survives_type_shadowing() {
+            let expected_items = btreemap! {
+                "ZeroFields" => (2, btreeset![
+                    "tuple_constructor_shadowing::public_constructors::ZeroFields",
+                ]),
+            };
+            assert_duplicated_exported_items_match("tuple_constructor_shadowing", &expected_items);
+        }
+
+        /// Brace structs do not introduce a constructor in the value namespace.
+        #[test]
+        fn local_brace_struct_preserves_glob_value() {
+            let expected_items = btreemap! {
+                "BraceStruct" => btreeset!["tuple_constructor_shadowing::brace_struct::BraceStruct"],
+                "BRACE_STRUCT_VALUE" => btreeset![
+                    "tuple_constructor_shadowing::brace_struct::BraceStruct",
+                ],
+            };
+            assert_exported_items_match("tuple_constructor_shadowing", &expected_items);
+        }
+
+        /// A named import of a tuple type does not bind its inaccessible constructor.
+        #[test]
+        fn named_tuple_import_without_constructor_preserves_glob_value() {
+            let expected_items = btreemap! {
+                "NamedImported" => btreeset!["tuple_constructor_shadowing::named_import::NamedImported"],
+                "NAMED_IMPORT_VALUE" => btreeset![
+                    "tuple_constructor_shadowing::named_import::NamedImported",
+                ],
+            };
+            assert_exported_items_match("tuple_constructor_shadowing", &expected_items);
+        }
+
+        /// A glob import of a tuple type does not bring an inaccessible constructor into scope.
+        #[test]
+        fn glob_tuple_import_without_constructor_preserves_glob_value() {
+            let expected_items = btreemap! {
+                "GlobImported" => btreeset!["tuple_constructor_shadowing::glob_import::GlobImported"],
+                "GLOB_IMPORT_VALUE" => btreeset![
+                    "tuple_constructor_shadowing::glob_import::GlobImported",
+                ],
+            };
+            assert_exported_items_match("tuple_constructor_shadowing", &expected_items);
+        }
+
+        /// A value shadowed at its source must not reappear through subsequent glob reexports.
+        #[test]
+        fn local_tuple_constructor_shadowing_survives_nested_globs() {
+            let expected_items = btreemap! {
+                "NestedField" => btreeset!["tuple_constructor_shadowing::nested_globs::NestedField"],
+                "NESTED_VALUE" => btreeset![],
+            };
+            assert_exported_items_match("tuple_constructor_shadowing", &expected_items);
+        }
+
         #[test]
         fn glob_reexport() {
             let test_crate = "glob_reexport";
