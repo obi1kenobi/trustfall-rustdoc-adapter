@@ -2163,6 +2163,139 @@ mod tests {
             assert_exported_items_match("private_import_routes", &expected_items);
         }
 
+        /// A private named import cannot collide with a public export in a sibling scope.
+        #[test]
+        fn inaccessible_private_named_import_preserves_export() {
+            let expected_items = btreemap! {
+                "PrivateCandidate" => btreeset![],
+                "PrivateExport" => btreeset!["named_import_scope::private_sibling::PrivateExport"],
+            };
+            assert_exported_items_match("named_import_scope", &expected_items);
+        }
+
+        /// A `pub(super)` import is inaccessible outside its parent module.
+        #[test]
+        fn inaccessible_super_named_import_preserves_export() {
+            let expected_items = btreemap! {
+                "SuperCandidate" => btreeset![],
+                "SuperExport" => btreeset!["named_import_scope::super_sibling::SuperExport"],
+            };
+            assert_exported_items_match("named_import_scope", &expected_items);
+        }
+
+        /// A `pub(in ...)` import cannot conflict outside its declared visibility scope.
+        #[test]
+        fn inaccessible_restricted_named_import_preserves_export() {
+            let expected_items = btreemap! {
+                "RestrictedCandidate" => btreeset![],
+                "RestrictedExport" => btreeset!["named_import_scope::restricted_sibling::RestrictedExport"],
+            };
+            assert_exported_items_match("named_import_scope", &expected_items);
+        }
+
+        /// A private ancestor import remains a candidate when the glob is in a descendant.
+        // Earlier rustdoc omits non-public imports, losing the competing name.
+        #[rustversion::since(1.101)]
+        #[test]
+        fn accessible_private_named_import_preserves_conflict() {
+            let expected_items = btreemap! {
+                "AncestorCandidate" => btreeset![],
+                "AncestorExport" => btreeset![],
+            };
+            assert_exported_items_match("named_import_scope", &expected_items);
+        }
+
+        /// A `pub(super)` import can still conflict in its parent module.
+        // Earlier rustdoc omits non-public imports, losing the competing name.
+        #[rustversion::since(1.101)]
+        #[test]
+        fn accessible_super_named_import_preserves_conflict() {
+            let expected_items = btreemap! {
+                "AccessibleSuperCandidate" => btreeset![],
+                "AccessibleSuperExport" => btreeset![],
+            };
+            assert_exported_items_match("named_import_scope", &expected_items);
+        }
+
+        /// A `pub(in ...)` import can still conflict within its declared visibility scope.
+        // Earlier rustdoc omits non-public imports, losing the competing name.
+        #[rustversion::since(1.101)]
+        #[test]
+        fn accessible_restricted_named_import_preserves_conflict() {
+            let expected_items = btreemap! {
+                "AccessibleRestrictedCandidate" => btreeset![],
+                "AccessibleRestrictedExport" => btreeset![],
+            };
+            assert_exported_items_match("named_import_scope", &expected_items);
+        }
+
+        /// Filtering inaccessible candidates must retain private imports for local shadowing.
+        // Earlier rustdoc omits the private import that shadows the glob.
+        #[rustversion::since(1.101)]
+        #[test]
+        fn private_named_import_still_shadows_local_glob() {
+            let expected_items = btreemap! {
+                "ShadowCandidate" => btreeset![],
+                "ShadowExport" => btreeset![],
+            };
+            assert_exported_items_match("named_import_scope", &expected_items);
+        }
+
+        /// Each nested glob checks accessibility from its own declaring module.
+        #[test]
+        fn nested_inaccessible_named_import_preserves_export() {
+            let expected_items = btreemap! {
+                "NestedCandidate" => btreeset![],
+                "NestedExport" => btreeset!["named_import_scope::nested_inaccessible::NestedExport"],
+            };
+            assert_exported_items_match("named_import_scope", &expected_items);
+        }
+
+        /// An accessible non-public import does not conflict with a public path to the same item.
+        #[test]
+        fn crate_visible_named_import_preserves_same_item_export() {
+            let expected_items = btreemap! {
+                "Shared" => btreeset!["named_import_scope::same_item::Shared"],
+            };
+            assert_exported_items_match("named_import_scope", &expected_items);
+        }
+
+        /// A `pub(crate)` import remains a collision candidate when reached through a private glob.
+        // Earlier rustdoc omits non-public imports, losing the competing name.
+        #[rustversion::since(1.101)]
+        #[test]
+        fn crate_visible_named_import_preserves_conflict_through_private_glob() {
+            let expected_items = btreemap! {
+                "CrateCandidate" => btreeset![],
+                "CrateExport" => btreeset![],
+            };
+            assert_exported_items_match("named_import_scope", &expected_items);
+        }
+
+        /// A module visited from an inaccessible scope must be revisited from an accessible one.
+        // Earlier rustdoc omits the private import that conflicts on the second visit.
+        #[rustversion::since(1.101)]
+        #[test]
+        fn repeated_glob_target_preserves_importing_scope() {
+            let expected_items = btreemap! {
+                "RepeatedCandidate" => btreeset![],
+                "RepeatedExport" => btreeset![],
+            };
+            assert_exported_items_match("named_import_scope", &expected_items);
+        }
+
+        /// A private definition in another module must not erase an independent public path.
+        #[test]
+        fn private_definition_preserves_independent_public_route() {
+            let expected_items = btreemap! {
+                "IndependentExport" => btreeset![
+                    "named_import_scope::independent_public_route::Collision",
+                    "named_import_scope::independent_public_route::IndependentExport",
+                ],
+            };
+            assert_exported_items_match("named_import_scope", &expected_items);
+        }
+
         #[test]
         fn glob_reexport() {
             let test_crate = "glob_reexport";
