@@ -350,6 +350,14 @@ struct Definition {
     /// This Id must not point to an import item.
     final_underlying_id: u32,
 
+    /// The module whose descendants can access this named import, including the module itself.
+    ///
+    /// `None` means there is no named-import restriction: this is either a direct definition
+    /// or an import visible throughout the crate. Glob expansion checks this scope against
+    /// the module declaring the glob, while local shadowing retains the binding regardless.
+    /// This restriction is separate from whether the import can supply a public reexport.
+    named_import_scope: Option<u32>,
+
     /// Modifiers carried by this definition when it is resolved through a glob.
     ///
     /// Glob re-exports make their resolved names look local to the importing module.
@@ -365,6 +373,7 @@ impl Definition {
     fn new(final_underlying_id: u32) -> Self {
         Self {
             final_underlying_id,
+            named_import_scope: None,
             glob_modifiers: EdgeModifiers::default(),
         }
     }
@@ -374,6 +383,10 @@ impl Definition {
 /// and whether they are defined directly, or imported directly or via a glob.
 #[derive(Debug, Default)]
 struct NameResolution<'a> {
+    /// Each module's enclosing module, used to check restricted named-import visibility.
+    /// Reexports do not change this lexical parent relationship. The crate root has no parent.
+    module_parents: HashMap<u32, u32>,
+
     /// Module Id -> { name -> (definition, eligible_for_glob_resolution) }.
     /// Private names are retained because they can shadow public glob exports.
     /// Resolution eligibility is separate from whether a definition has a public route.
@@ -394,11 +407,13 @@ struct NameResolution<'a> {
 /// Working state for resolving the glob imports in one module.
 #[derive(Debug, Default)]
 struct GlobResolution<'a> {
-    /// Module/modifier combinations already expanded while following glob-of-glob chains.
+    /// Target module, importing module, and modifier combinations already expanded
+    /// while following glob-of-glob chains.
     ///
     /// Accumulated modifiers are part of the key because different glob chains can
     /// reach the same module with different visibility or metadata.
-    visited: HashSet<(u32, EdgeModifiers)>,
+    /// The importing module determines which named imports in the target are accessible.
+    visited: HashSet<(u32, u32, EdgeModifiers)>,
 
     /// Glob-imported names that are usable in the module being resolved.
     ///
@@ -547,6 +562,10 @@ fn resolve_crate_names<'a>(
                 continue;
             };
 
+            if matches!(inner_item.inner, ItemEnum::Module(..)) {
+                result.module_parents.insert(inner_item.id.0, item.id.0);
+            }
+
             if let ItemEnum::Use(imp) = &inner_item.inner {
                 if imp.is_glob {
                     // `#[prelude_import]` selects the compiler's fallback prelude without adding
@@ -618,13 +637,18 @@ fn resolve_crate_names<'a>(
                         }
                         let definition = Definition {
                             final_underlying_id: final_underlying_id.0,
+                            named_import_scope: match &inner_item.visibility {
+                                Visibility::Public | Visibility::Crate => None,
+                                Visibility::Default => Some(item.id.0),
+                                Visibility::Restricted { parent, .. } => Some(parent.0),
+                            },
                             glob_modifiers,
                         };
 
-                        // Retain private imports as resolution candidates even though they
-                        // cannot supply a public route. Their eligibility still approximates
-                        // accessibility using the target's visibility.
-                        // TODO: Determine eligibility from the importing scope instead.
+                        // Retain private imports for local shadowing. Glob expansion also
+                        // checks whether their scope permits access from the importing module.
+                        // TODO: Account for accessible nonpublic targets instead of
+                        // approximating eligibility from the target's visibility.
                         result
                             .names_defined_in_module
                             .entry(item.id.0)
@@ -694,7 +718,9 @@ fn resolve_glob_imported_names<'a>(
         let mut glob_resolution = GlobResolution::default();
 
         let glob_route = EdgeModifiers::default();
-        glob_resolution.visited.insert((module_id, glob_route));
+        glob_resolution
+            .visited
+            .insert((module_id, module_id, glob_route));
         for &glob_id in globs {
             // Resolve private globs too: their names can conflict with public glob exports.
             recursively_compute_visited_names_for_glob(
@@ -794,8 +820,11 @@ fn recursively_compute_visited_names_for_glob<'a>(
     }
 
     let module_id = target_id.0;
-    if !glob_resolution.visited.insert((module_id, glob_route)) {
-        // Already checked this module with this visibility and accumulated glob metadata.
+    if !glob_resolution
+        .visited
+        .insert((module_id, glob_parent_module_id, glob_route))
+    {
+        // Already expanded this target from this importing module with these modifiers.
         return;
     }
 
@@ -803,7 +832,14 @@ fn recursively_compute_visited_names_for_glob<'a>(
     if let Some(names_in_module) = traversal_state.names_defined_in_module.get(&module_id) {
         for (local_name, data) in names_in_module {
             let (item_defn, eligible_for_glob_resolution) = data;
-            if *eligible_for_glob_resolution {
+            if *eligible_for_glob_resolution
+                && item_defn.named_import_scope.is_none_or(|scope| {
+                    std::iter::successors(Some(glob_parent_module_id), |id| {
+                        traversal_state.module_parents.get(id).copied()
+                    })
+                    .any(|ancestor| ancestor == scope)
+                })
+            {
                 let mut item_defn = item_defn.clone();
                 item_defn.glob_modifiers = item_defn.glob_modifiers.union(glob_route);
                 register_name(
