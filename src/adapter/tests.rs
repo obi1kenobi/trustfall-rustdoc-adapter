@@ -2202,6 +2202,19 @@ fn rustdoc_associated_consts() {
 
 #[test]
 fn function_abi() {
+    // Check both spellings independently of whether the fixture's rustdoc version
+    // includes quotes. Unquoting must preserve the `-unwind` suffix.
+    assert_eq!("efiapi", super::unquote_other_abi(r#""efiapi""#));
+    assert_eq!("efiapi", super::unquote_other_abi("efiapi"));
+    assert_eq!(
+        "vectorcall-unwind",
+        super::unquote_other_abi(r#""vectorcall-unwind""#)
+    );
+    assert_eq!(
+        "vectorcall-unwind",
+        super::unquote_other_abi("vectorcall-unwind")
+    );
+
     get_test_data!(data, function_abi);
     let adapter = RustdocAdapter::new(&data, None);
     let adapter = Arc::new(&adapter);
@@ -2212,57 +2225,90 @@ fn function_abi() {
         item {
             ... on Function {
                 name @output
+                signature @output
 
                 abi_: abi {
                     name @output
                     raw_name @output
                     unwind @output
                 }
+
+                parameter @fold {
+                    normalized_type_signature {
+                        signature @output(name: "parameter_signatures")
+                    }
+                }
             }
         }
     }
 }
 "#;
-
     let variables: BTreeMap<&str, &str> = BTreeMap::default();
-
     let schema =
         Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
 
     #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
     struct Output {
         name: String,
+        signature: String,
         abi_name: String,
         abi_raw_name: String,
         abi_unwind: Option<bool>,
+        parameter_signatures: Vec<String>,
     }
 
-    let mut results: Vec<_> =
-        trustfall::execute_query(&schema, adapter.clone(), query, variables.clone())
-            .expect("failed to run query")
-            .map(|row| row.try_into_struct().expect("shape mismatch"))
-            .collect();
+    let mut results: Vec<_> = trustfall::execute_query(&schema, adapter, query, variables)
+        .expect("failed to run query")
+        .map(|row| row.try_into_struct().expect("shape mismatch"))
+        .collect();
     results.sort_unstable();
 
     similar_asserts::assert_eq!(
         vec![
+            // rustdoc stores `efiapi` as `Other`. Using it for the function and its callback
+            // exercises ABI properties and both function-pointer signature renderers.
+            #[cfg(any(
+                target_arch = "aarch64",
+                target_arch = "arm",
+                target_arch = "loongarch32",
+                target_arch = "loongarch64",
+                target_arch = "riscv32",
+                target_arch = "riscv64",
+                target_arch = "x86",
+                target_arch = "x86_64",
+            ))]
+            Output {
+                name: "efiapi".into(),
+                signature: r#"extern "efiapi" fn efiapi(_callback: extern "efiapi" fn())"#.into(),
+                abi_name: "efiapi".into(),
+                abi_raw_name: "efiapi".into(),
+                abi_unwind: Some(false),
+                parameter_signatures: vec![r#"extern "efiapi" fn()"#.into()],
+            },
+            // Structured ABI variants retain their names and unwind flags.
             Output {
                 name: "example_not_unwind".into(),
+                signature: r#"extern "C" fn example_not_unwind()"#.into(),
                 abi_name: "C".into(),
                 abi_raw_name: "C".into(),
                 abi_unwind: Some(false),
+                parameter_signatures: vec![],
             },
             Output {
                 name: "example_unwind".into(),
+                signature: r#"extern "C-unwind" fn example_unwind()"#.into(),
                 abi_name: "C".into(),
                 abi_raw_name: "C-unwind".into(),
                 abi_unwind: Some(true),
+                parameter_signatures: vec![],
             },
             Output {
                 name: "rust_abi".into(),
+                signature: "fn rust_abi()".into(),
                 abi_name: "Rust".into(),
                 abi_raw_name: "Rust".into(),
                 abi_unwind: Some(true),
+                parameter_signatures: vec![],
             },
         ],
         results

@@ -1639,17 +1639,16 @@ It defines the calling convention for those functions, including whether unwindi
 the call boundary is supported. More info: https://rust-lang.github.io/rfcs/2945-c-unwind-abi.html
 
 The list of supported ABIs is here:
-https://github.com/rust-lang/rust/blob/557359f92512ca88b62a602ebda291f17a953002/compiler/rustc_target/src/spec/abi.rs#L74-L110
+https://github.com/rust-lang/rust/blob/3ef0c22cdb86ac42dc6b8f0f1ec36857daa6f2a1/compiler/rustc_abi/src/extern_abi.rs#L181-L220
 
 Backed by:
 https://docs.rs/rustdoc-types/latest/rustdoc_types/enum.Abi.html
 """
 type FunctionAbi {
   """
-  The name of the ABI, with any `"-unwind"` modifier stripped.
+  The name of the ABI, without surrounding quotes or any `-unwind` modifier.
 
-  To get the ABI name directly as it would appear in a Rust source file,
-  use the `raw_name` property instead.
+  To preserve the `-unwind` modifier, use the `raw_name` property instead.
 
   For example, a function defined as `extern "C-unwind" fn example()` would
   have `name = "C"` and `raw_name = "C-unwind"`.
@@ -1659,9 +1658,10 @@ type FunctionAbi {
   name: String!
 
   """
-  The raw name of the ABI, as it would appear in a Rust source file.
+  The ABI name as written between the quotes in Rust source,
+  preserving any `-unwind` modifier. The quotes themselves are not included.
 
-  For example: "C-unwind" or "thiscall-unwind"
+  For example: `C-unwind` or `thiscall-unwind`.
 
   Functions with no specified ABI by default have an ABI named `"Rust"`.
   """
@@ -1670,10 +1670,11 @@ type FunctionAbi {
   """
   Whether unwinding across this call is supported.
 
-  If encountering an unknown ABI, this value will be `null` due to unknown unwind semantics.
+  An ABI name ending in `-unwind` permits unwinding even if the name is new to the adapter.
+  For other unrecognized names, this value is `null`.
 
   Unwind ability is specified in rustc here:
-  https://github.com/rust-lang/rust/blob/557359f92512ca88b62a602ebda291f17a953002/compiler/rustc_middle/src/ty/layout.rs#L1422-L1488
+  https://github.com/rust-lang/rust/blob/3ef0c22cdb86ac42dc6b8f0f1ec36857daa6f2a1/compiler/rustc_middle/src/ty/layout.rs#L1354-L1383
 
   More info: https://rust-lang.github.io/rfcs/2945-c-unwind-abi.html
   """

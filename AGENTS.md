@@ -4,6 +4,11 @@ This project allows querying Rust programming language package APIs, ABIs, and m
 for purposes like semantic version checking via `cargo-semver-checks`. It's designed as an adapter
 into the Trustfall query language, which is syntactically similar to GraphQL.
 
+`cargo-semver-checks` uses multiple adapter versions with multiple Rust and rustdoc versions.
+Adapter normalization must expose a consistent semantic representation to its queries across
+those combinations. Differences in rustdoc's representation of equivalent APIs must not cause
+queries to report semantic differences.
+
 The schema is located in `src/rustdoc_schema.graphql`. The implementation of that schema is found
 in `src/adapter/`. Surrounding files in `src` perform various static analyses whose data is exposed
 in the schema, such as tracking item visibility and name resolution in `src/visibility_tracker.rs`,
