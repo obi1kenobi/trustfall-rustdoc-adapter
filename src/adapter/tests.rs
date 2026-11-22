@@ -11457,6 +11457,14 @@ fn method_self_receiver() {
         },
         Output {
             struct_name: "Example".into(),
+            method_name: "by_explicit_ref".into(),
+            by_value: false,
+            by_reference: true,
+            by_mut_reference: false,
+            kind: "Self".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
             method_name: "by_mut_ref".into(),
             by_value: false,
             by_reference: false,
@@ -11713,7 +11721,23 @@ fn method_self_receiver() {
         },
         Output {
             struct_name: "Example".into(),
+            method_name: "by_renamed_rc_box".into(),
+            by_value: false,
+            by_reference: true,
+            by_mut_reference: false,
+            kind: "Rc<Box<Self>>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
             method_name: "by_custom_receiver_value".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "CustomReceiver<Self>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_other_receiver_value".into(),
             by_value: true,
             by_reference: false,
             by_mut_reference: false,
@@ -11745,6 +11769,22 @@ fn method_self_receiver() {
         },
         Output {
             struct_name: "Example".into(),
+            method_name: "by_dyn_read_send_pointer_tag".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Tagged<Self, *const (dyn Read + Send)>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_dyn_read_lifetime_ref_tag".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Tagged<Self, &(dyn Read + 'a)>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
             method_name: "by_pinned_box".into(),
             by_value: true,
             by_reference: false,
@@ -11760,12 +11800,28 @@ fn method_self_receiver() {
             kind: "Pin<&Arc<Self>>".into(),
         },
         Output {
+            struct_name: "Example".into(),
+            method_name: "by_renamed_pinned_arc".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Pin<&Arc<Self>>".into(),
+        },
+        Output {
+            struct_name: "Example".into(),
+            method_name: "by_runtime_handle".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "<Threaded as Runtime>::Handle".into(),
+        },
+        Output {
             struct_name: "GenericExample".into(),
             method_name: "by_generic_ref".into(),
             by_value: false,
             by_reference: true,
             by_mut_reference: false,
-            kind: "GenericExample<'a, T>".into(),
+            kind: "Self".into(),
         },
         Output {
             struct_name: "GenericExample".into(),
@@ -11773,11 +11829,329 @@ fn method_self_receiver() {
             by_value: true,
             by_reference: false,
             by_mut_reference: false,
-            kind: "GenericExample<'a, T>".into(),
+            kind: "Self".into(),
+        },
+        Output {
+            struct_name: "Reader".into(),
+            method_name: "by_boxed_reexport".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Reader".into(),
+            method_name: "by_concrete_ref".into(),
+            by_value: false,
+            by_reference: true,
+            by_mut_reference: false,
+            kind: "Self".into(),
+        },
+        Output {
+            struct_name: "Reader".into(),
+            method_name: "by_other_instantiation".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "CustomReceiver<Reader<u16>>".into(),
+        },
+        Output {
+            struct_name: "Reader".into(),
+            method_name: "by_rows".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Reader".into(),
+            method_name: "by_callback".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Reader".into(),
+            method_name: "by_boxed_dyn_read".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Reader".into(),
+            method_name: "by_dyn_write_tag".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Tagged<Self, Reader<Box<dyn Write + 'static>>>".into(),
+        },
+        Output {
+            struct_name: "Reader".into(),
+            method_name: "by_projected_handle".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Reader".into(),
+            method_name: "by_local_tag".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Tagged<Self, Reader<<Local as Runtime>::Handle>>".into(),
+        },
+        Output {
+            struct_name: "Reader".into(),
+            method_name: "by_fixed_capacity_tag".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Tagged<Self, Reader<u8, 8>>".into(),
+        },
+        Output {
+            struct_name: "Reader".into(),
+            method_name: "by_explicit_defaults".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Reader".into(),
+            method_name: "by_omitted_const".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Tagged".into(),
+            method_name: "by_boxed_self".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Tagged".into(),
+            method_name: "by_omitted_tag".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Tagged".into(),
+            method_name: "by_explicit_tag".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Tagged".into(),
+            method_name: "by_other_tag".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Tagged<Self, Tagged<Vec<T>, T>>".into(),
+        },
+        Output {
+            struct_name: "Chain".into(),
+            method_name: "by_chained_defaults".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Batch".into(),
+            method_name: "by_explicit_row".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Batch".into(),
+            method_name: "by_explicit_rows".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "Batch".into(),
+            method_name: "by_other_element".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Tagged<Self, Batch<Option<A>, Vec<A>>>".into(),
+        },
+        Output {
+            struct_name: "Batch".into(),
+            method_name: "by_other_container".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Tagged<Self, Batch<Option<A>, Option<Option<A>>>>".into(),
+        },
+        Output {
+            struct_name: "Stream".into(),
+            method_name: "by_capacity".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Tagged<Self, Stream<Reader<Vec<u8>, 8>>>".into(),
+        },
+        Output {
+            struct_name: "BorrowedPair".into(),
+            method_name: "by_default_object_lifetimes".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Tagged<Self, BorrowedPair<'a, *mut dyn Read, *mut dyn Read>>".into(),
+        },
+        Output {
+            struct_name: "BorrowedPair".into(),
+            method_name: "by_named_object_lifetimes".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Box<Self>".into(),
+        },
+        Output {
+            struct_name: "View".into(),
+            method_name: "by_named_lifetime".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Tagged<Self, Self>".into(),
+        },
+        Output {
+            struct_name: "View".into(),
+            method_name: "by_inferred_lifetime".into(),
+            by_value: true,
+            by_reference: false,
+            by_mut_reference: false,
+            kind: "Tagged<Self, View<'_>>".into(),
         },
     ];
     expected_results.sort_unstable();
     similar_asserts::assert_eq!(expected_results, results);
+}
+
+/// Rustdoc can print the two different frame sizes in `by_checksummed_tag` identically.
+/// Filter for `Tagged<Self, Self>` so that wrongly equating them would select that method
+/// along with `by_same_size`, which repeats the impl's const parameter.
+#[test]
+fn method_self_receiver_with_const_expression_tag() {
+    get_test_data!(data, method_self_receivers);
+    let adapter = RustdocAdapter::new(&data, None);
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Enum {
+                inherent_impl {
+                    method {
+                        name @output
+                        receiver {
+                            kind @filter(op: "=", value: ["$kind"])
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables = btreemap! { "kind" => "Tagged<Self, Self>" };
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    let results: Vec<_> = trustfall::execute_query(&schema, Arc::new(&adapter), query, variables)
+        .expect("failed to run query")
+        .collect();
+    assert_eq!(
+        results,
+        vec![btreemap! { Arc::from("name") => FieldValue::from("by_same_size") }],
+    );
+}
+
+/// Looking up the inherited or blanket method through `Example` must preserve the
+/// `Example` tag from its declaration. Check only the suffix on the impl method
+/// because rustdoc can spell the blanket receiver's first argument as `Self` or `T`.
+#[test]
+fn method_self_receiver_on_default_and_blanket_trait_methods() {
+    get_test_data!(data, method_self_receivers);
+    let adapter = RustdocAdapter::new(&data, None);
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Struct {
+                name @filter(op: "=", value: ["$owner"])
+
+                impl {
+                    implemented_trait {
+                        trait_name: bare_name @filter(op: "one_of", value: ["$traits"]) @output
+                        trait {
+                            method {
+                                receiver {
+                                    declared_kind: kind @output
+                                }
+                            }
+                        }
+                    }
+                    method {
+                        receiver {
+                            kind @filter(op: "has_suffix", value: ["$tag"])
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    let variables = btreemap! {
+        "owner" => FieldValue::from("Example"),
+        "traits" => FieldValue::from(vec!["BlanketRead", "TaggedRead"]),
+        "tag" => FieldValue::from(", Example>"),
+    };
+    let schema =
+        Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
+
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        trait_name: String,
+        declared_kind: String,
+    }
+
+    let mut results: Vec<Output> =
+        trustfall::execute_query(&schema, Arc::new(&adapter), query, variables)
+            .expect("failed to run query")
+            .map(|row| row.try_into_struct().expect("shape mismatch"))
+            .collect();
+    results.sort_unstable();
+
+    similar_asserts::assert_eq!(
+        vec![
+            Output {
+                trait_name: "BlanketRead".into(),
+                declared_kind: "Tagged<Self, Example>".into(),
+            },
+            Output {
+                trait_name: "TaggedRead".into(),
+                declared_kind: "Tagged<Self, Example>".into(),
+            },
+        ],
+        results
+    );
 }
 
 #[test]

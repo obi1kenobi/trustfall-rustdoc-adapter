@@ -341,6 +341,7 @@ pub(super) fn resolve_function_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
 }
 
 pub(super) fn resolve_receiver_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
+    adapter: &'a RustdocAdapter<'a>,
     contexts: ContextIterator<'a, V>,
     property_name: &str,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
@@ -357,9 +358,10 @@ pub(super) fn resolve_receiver_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
             let receiver = vertex.as_receiver().expect("not a Receiver");
             receiver.by_mut_reference().into()
         }),
-        "kind" => resolve_property_with(contexts, |vertex| {
+        "kind" => resolve_property_with(contexts, move |vertex| {
             let receiver = vertex.as_receiver().expect("not a Receiver");
-            receiver.kind().as_ref().into()
+            let crate_ = adapter.crate_at_origin(vertex.origin).own_crate.inner;
+            receiver.kind(crate_).as_ref().into()
         }),
         _ => unreachable!("Receiver property {property_name}"),
     }
