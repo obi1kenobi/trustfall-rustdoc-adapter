@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter, Result};
 
-use super::vertex::ImplementedTrait;
+use super::{unquote_other_abi, vertex::ImplementedTrait};
 
 /// Serializes the `rustdoc_types::Type` type as a `String` containing the name
 /// of the type together with all generic parameters,
@@ -538,7 +538,10 @@ fn fmt_function_header(this: &FunctionHeader, f: &mut Formatter<'_>) -> Result {
         rustdoc_types::Abi::Win64 { unwind } => abi_name!(f, "win64", unwind),
         rustdoc_types::Abi::SysV64 { unwind } => abi_name!(f, "sysv64", unwind),
         rustdoc_types::Abi::System { unwind } => abi_name!(f, "system", unwind),
-        rustdoc_types::Abi::Other(other) => write!(f, r#"extern "{other}" "#)?,
+        rustdoc_types::Abi::Other(other) => {
+            let name = unquote_other_abi(other);
+            write!(f, r#"extern "{name}" "#)?;
+        }
     }
 
     Ok(())

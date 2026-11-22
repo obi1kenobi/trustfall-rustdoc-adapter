@@ -9,7 +9,7 @@ use trustfall::{
 
 use crate::attributes::{Attribute, structured_attr_to_arc_str};
 
-use super::{RustdocAdapter, rust_type_name, vertex::Vertex};
+use super::{RustdocAdapter, rust_type_name, unquote_other_abi, vertex::Vertex};
 
 pub(super) fn resolve_crate_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
@@ -435,58 +435,19 @@ pub(super) fn resolve_function_abi_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
-    // Known implemented Rust ABIs:
-    // https://github.com/rust-lang/rust/blob/557359f92512ca88b62a602ebda291f17a953002/compiler/rustc_target/src/spec/abi.rs#L74-L110
     match property_name {
         "name" => resolve_property_with(contexts, |vertex| {
             let abi = vertex.as_function_abi().expect("not a FunctionAbi");
-            match abi {
-                rustdoc_types::Abi::Rust => "Rust",
-                rustdoc_types::Abi::C { .. } => "C",
-                rustdoc_types::Abi::Cdecl { .. } => "cdecl",
-                rustdoc_types::Abi::Stdcall { .. } => "stdcall",
-                rustdoc_types::Abi::Fastcall { .. } => "fastcall",
-                rustdoc_types::Abi::Aapcs { .. } => "aapcs",
-                rustdoc_types::Abi::Win64 { .. } => "win64",
-                rustdoc_types::Abi::SysV64 { .. } => "sysv64",
-                rustdoc_types::Abi::System { .. } => "system",
-                rustdoc_types::Abi::Other(o) => {
-                    if let Some(name) = o.strip_suffix("-unwind") {
-                        name
-                    } else {
-                        o.as_str()
-                    }
-                }
-            }
-            .into()
+            let name = raw_abi_name(abi);
+            name.strip_suffix("-unwind").unwrap_or(name).into()
         }),
         "raw_name" => resolve_property_with(contexts, |vertex| {
             let abi = vertex.as_function_abi().expect("not a FunctionAbi");
-            match abi {
-                rustdoc_types::Abi::Rust => "Rust",
-                rustdoc_types::Abi::C { unwind: false } => "C",
-                rustdoc_types::Abi::C { unwind: true } => "C-unwind",
-                rustdoc_types::Abi::Cdecl { unwind: false } => "cdecl",
-                rustdoc_types::Abi::Cdecl { unwind: true } => "cdecl-unwind",
-                rustdoc_types::Abi::Stdcall { unwind: false } => "stdcall",
-                rustdoc_types::Abi::Stdcall { unwind: true } => "stdcall-unwind",
-                rustdoc_types::Abi::Fastcall { unwind: false } => "fastcall",
-                rustdoc_types::Abi::Fastcall { unwind: true } => "fastcall-unwind",
-                rustdoc_types::Abi::Aapcs { unwind: false } => "aapcs",
-                rustdoc_types::Abi::Aapcs { unwind: true } => "aapcs-unwind",
-                rustdoc_types::Abi::Win64 { unwind: false } => "win64",
-                rustdoc_types::Abi::Win64 { unwind: true } => "win64-unwind",
-                rustdoc_types::Abi::SysV64 { unwind: false } => "sysv64",
-                rustdoc_types::Abi::SysV64 { unwind: true } => "sysv64-unwind",
-                rustdoc_types::Abi::System { unwind: false } => "system",
-                rustdoc_types::Abi::System { unwind: true } => "system-unwind",
-                rustdoc_types::Abi::Other(o) => o.as_str(),
-            }
-            .into()
+            raw_abi_name(abi).into()
         }),
         "unwind" => resolve_property_with(contexts, |vertex| {
             // Per rustc's own implementation that checks for unwind ability:
-            // https://github.com/rust-lang/rust/blob/557359f92512ca88b62a602ebda291f17a953002/compiler/rustc_middle/src/ty/layout.rs#L1422-L1488
+            // https://github.com/rust-lang/rust/blob/3ef0c22cdb86ac42dc6b8f0f1ec36857daa6f2a1/compiler/rustc_middle/src/ty/layout.rs#L1354-L1383
             let abi = vertex.as_function_abi().expect("not a FunctionAbi");
             match abi {
                 rustdoc_types::Abi::Rust => true.into(),
@@ -498,24 +459,66 @@ pub(super) fn resolve_function_abi_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
                 | rustdoc_types::Abi::Win64 { unwind }
                 | rustdoc_types::Abi::SysV64 { unwind }
                 | rustdoc_types::Abi::System { unwind } => (*unwind).into(),
-                rustdoc_types::Abi::Other(other) => match other.as_str() {
-                    abi if abi.ends_with("-unwind") || abi.starts_with("rust-") => true.into(),
-                    "ptx-kernel"
-                    | "msp430-interrupt"
-                    | "x86-interrupt"
-                    | "amdgpu-kernel"
-                    | "efiapi"
-                    | "avr-interrupt"
-                    | "avr-non-blocking-interrupt"
-                    | "C-cmse-nonsecure-call"
-                    | "wasm"
-                    | "platform-intrinsic"
-                    | "unadjusted" => false.into(),
-                    _ => FieldValue::NULL,
-                },
+                rustdoc_types::Abi::Other(other) => other_abi_unwind(other).into(),
             }
         }),
         _ => unreachable!("FunctionAbi property {property_name}"),
+    }
+}
+
+fn raw_abi_name(abi: &rustdoc_types::Abi) -> &str {
+    // Known implemented Rust ABIs:
+    // https://github.com/rust-lang/rust/blob/3ef0c22cdb86ac42dc6b8f0f1ec36857daa6f2a1/compiler/rustc_abi/src/extern_abi.rs#L181-L220
+    match abi {
+        rustdoc_types::Abi::Rust => "Rust",
+        rustdoc_types::Abi::C { unwind: false } => "C",
+        rustdoc_types::Abi::C { unwind: true } => "C-unwind",
+        rustdoc_types::Abi::Cdecl { unwind: false } => "cdecl",
+        rustdoc_types::Abi::Cdecl { unwind: true } => "cdecl-unwind",
+        rustdoc_types::Abi::Stdcall { unwind: false } => "stdcall",
+        rustdoc_types::Abi::Stdcall { unwind: true } => "stdcall-unwind",
+        rustdoc_types::Abi::Fastcall { unwind: false } => "fastcall",
+        rustdoc_types::Abi::Fastcall { unwind: true } => "fastcall-unwind",
+        rustdoc_types::Abi::Aapcs { unwind: false } => "aapcs",
+        rustdoc_types::Abi::Aapcs { unwind: true } => "aapcs-unwind",
+        rustdoc_types::Abi::Win64 { unwind: false } => "win64",
+        rustdoc_types::Abi::Win64 { unwind: true } => "win64-unwind",
+        rustdoc_types::Abi::SysV64 { unwind: false } => "sysv64",
+        rustdoc_types::Abi::SysV64 { unwind: true } => "sysv64-unwind",
+        rustdoc_types::Abi::System { unwind: false } => "system",
+        rustdoc_types::Abi::System { unwind: true } => "system-unwind",
+        rustdoc_types::Abi::Other(o) => unquote_other_abi(o),
+    }
+}
+
+pub(super) fn other_abi_unwind(abi: &str) -> Option<bool> {
+    match unquote_other_abi(abi) {
+        name if name.ends_with("-unwind") => Some(true),
+        "rust-call" | "rust-cold" | "rust-intrinsic" | "rust-preserve-none" | "tail" => Some(true),
+        "C-cmse-nonsecure-call"
+        | "C-cmse-nonsecure-entry"
+        | "Swift"
+        | "amdgpu-kernel"
+        | "avr-interrupt"
+        | "avr-non-blocking-interrupt"
+        | "cmse-nonsecure-call"
+        | "cmse-nonsecure-entry"
+        | "custom"
+        | "efiapi"
+        | "gpu-kernel"
+        | "llvm-intrinsic"
+        | "msp430-interrupt"
+        | "platform-intrinsic"
+        | "ptx-kernel"
+        | "riscv-interrupt-m"
+        | "riscv-interrupt-s"
+        | "rust-invalid"
+        | "thiscall"
+        | "unadjusted"
+        | "vectorcall"
+        | "wasm"
+        | "x86-interrupt" => Some(false),
+        _ => None,
     }
 }
 
