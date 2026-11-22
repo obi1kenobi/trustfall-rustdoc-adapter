@@ -448,6 +448,14 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
     }
 }
 
+fn unquote_other_abi(abi: &str) -> &str {
+    // Rustdoc's `Abi::Other` representation does not explicitly document whether its names
+    // include literal quotes or not. Accept either representation for consistency.
+    abi.strip_prefix('"')
+        .and_then(|name| name.strip_suffix('"'))
+        .unwrap_or(abi)
+}
+
 pub(crate) fn supported_item_kind(item: &Item) -> bool {
     matches!(
         item.inner,
