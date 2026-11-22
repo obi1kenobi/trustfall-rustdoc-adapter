@@ -5,6 +5,8 @@ use rustdoc_types::{
     GenericParamDefKind, Term, TraitBoundModifier, Type,
 };
 
+use crate::adapter::rust_type_name::needs_parens_before_bounds;
+
 use super::{
     context::FnNormalizationContext, function_pointer,
     parameter_impl_trait::ParameterImplTraitCursor, paths, sort_key,
@@ -831,15 +833,5 @@ fn format_term<'a>(
             // normalized signature text to produce for such a term.
             unreachable!("found associated const equality constraint term: {constant:?}");
         }
-    }
-}
-
-fn needs_parens_before_bounds(type_: &Type) -> bool {
-    match type_ {
-        Type::DynTrait(dyn_trait) => {
-            dyn_trait.traits.len() + usize::from(dyn_trait.lifetime.is_some()) > 1
-        }
-        Type::ImplTrait(bounds) => bounds.len() > 1,
-        _ => false,
     }
 }
