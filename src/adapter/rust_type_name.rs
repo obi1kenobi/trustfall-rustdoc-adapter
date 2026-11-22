@@ -197,6 +197,18 @@ fn fmt_poly_trait(this: &PolyTrait, f: &mut Formatter<'_>) -> Result {
 
 display_wrapper!(PolyTrait, fmt_poly_trait, bool);
 
+/// When writing a reference or raw pointer to `dyn Trait` or `impl Trait`,
+/// enclose the pointee in parentheses if it has more than one bound.
+pub(super) fn needs_parens_before_bounds(type_: &rustdoc_types::Type) -> bool {
+    match type_ {
+        rustdoc_types::Type::DynTrait(dyn_trait) => {
+            dyn_trait.traits.len() + usize::from(dyn_trait.lifetime.is_some()) > 1
+        }
+        rustdoc_types::Type::ImplTrait(bounds) => bounds.len() > 1,
+        _ => false,
+    }
+}
+
 fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
     match this.0 {
         rustdoc_types::Type::ResolvedPath(path) => {
@@ -279,18 +291,9 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
         }
         rustdoc_types::Type::Infer => write!(f, "_"),
         rustdoc_types::Type::RawPointer { is_mutable, type_ } => {
-            // When there are multiple bounds on a `dyn` or `impl` trait raw pointer,
-            // it needs to be wrapped in parentheses.
-            let force_wrap_parens = match &**type_ {
-                rustdoc_types::Type::DynTrait(dyn_trait) => {
-                    dyn_trait.traits.len() + dyn_trait.lifetime.iter().count() > 1
-                }
-                rustdoc_types::Type::ImplTrait(bounds) => bounds.len() > 1,
-                _ => false,
-            };
-
             let kind = if *is_mutable { "mut" } else { "const" };
-            write!(f, "*{kind} {}", Type(type_, force_wrap_parens || this.1))
+            let pointee = Type(type_, this.1 || needs_parens_before_bounds(type_));
+            write!(f, "*{kind} {pointee}")
         }
         rustdoc_types::Type::BorrowedRef {
             lifetime,
@@ -306,17 +309,8 @@ fn fmt_type(this: &Type, f: &mut Formatter<'_>) -> Result {
                 write!(f, "mut ")?;
             }
 
-            // References to `dyn/impl Trait`s must be wrapped in parentheses if there
-            // more than 1 bound.
-            let force_wrap_parens = match &**type_ {
-                rustdoc_types::Type::DynTrait(dyn_trait) => {
-                    dyn_trait.traits.len() + dyn_trait.lifetime.iter().count() > 1
-                }
-                rustdoc_types::Type::ImplTrait(bounds) => bounds.len() > 1,
-                _ => false,
-            };
-
-            write!(f, "{}", Type(type_, force_wrap_parens || this.1))
+            let pointee = Type(type_, this.1 || needs_parens_before_bounds(type_));
+            write!(f, "{pointee}")
         }
         rustdoc_types::Type::QualifiedPath {
             name,

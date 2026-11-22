@@ -328,16 +328,18 @@ pub(super) fn resolve_receiver_edge<'a, V: AsVertex<Vertex<'a>> + 'a>(
     match edge_name {
         "receiver" => resolve_neighbors_with(contexts, move |vertex| {
             let origin = vertex.origin;
-            let method = vertex.as_function().expect("vertex was not a Function");
-
-            // Check if the first parameter is a self receiver
-            let receiver = method.sig.inputs.first().and_then(|(name, ty)| {
-                if name == "self" {
-                    Some(Receiver::new(ty))
-                } else {
-                    None
-                }
-            });
+            let VertexKind::Method(method) = &vertex.kind else {
+                unreachable!("vertex was not a Method");
+            };
+            let function = vertex
+                .as_function()
+                .expect("Method did not contain a function");
+            let receiver = function
+                .sig
+                .inputs
+                .first()
+                .filter(|(name, _)| name == "self")
+                .map(|(_, ty)| Receiver::new(ty, &method.parent.inner));
 
             Box::new(
                 receiver

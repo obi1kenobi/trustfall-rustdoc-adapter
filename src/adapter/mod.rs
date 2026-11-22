@@ -247,7 +247,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                 "GenericConstParameter" => {
                     properties::resolve_generic_const_parameter_property(contexts, property_name)
                 }
-                "Receiver" => properties::resolve_receiver_property(contexts, property_name),
+                "Receiver" => properties::resolve_receiver_property(self, contexts, property_name),
                 "RequiredTargetFeature" => {
                     properties::resolve_required_target_feature_property(contexts, property_name)
                 }
