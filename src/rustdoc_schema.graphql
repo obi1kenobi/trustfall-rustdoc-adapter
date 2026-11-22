@@ -2151,6 +2151,20 @@ type Receiver {
   The receiver type with its outermost reference (`&` or `&mut`) removed, if present.
   Only one reference layer is removed; inner references remain part of the kind.
 
+  In an impl for a named type, `kind` renders matching occurrences of that type
+  as `Self` through references, raw pointers, and named types such as `Box`.
+  For example, in `impl Reader<u8>`, both `Box<Reader<u8>>` and `Box<Self>`
+  have kind `"Box<Self>"`. Matching uses the declaration and its generic arguments.
+  Inferred lifetimes, unevaluated const expressions, and trait bounds such as
+  `Iterator<Item = u8>` or `Fn()` can leave the explicit type in the result.
+  Within a tuple or function pointer used as an extra argument of a custom receiver,
+  type names retain their rustdoc spelling.
+
+  A renamed import uses the type's declared name. After `use std::sync::Arc as Shared`,
+  `Shared<Self>` has kind `"Arc<Self>"`. When rustdoc records a path to a type alias,
+  `kind` uses the alias's declared name. For example, with `type Handle = Arc<Example>`,
+  a receiver spelled `Handle` in `impl Example` has kind `"Handle"`.
+
   For example:
   - `"Self"` for `self`, `&self`, and `&mut self` receivers.
     `mut self` is identical to `self` for our purposes since its mutability is information
