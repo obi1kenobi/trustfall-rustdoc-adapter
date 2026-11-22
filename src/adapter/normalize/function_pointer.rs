@@ -2,6 +2,8 @@
 
 use rustdoc_types::{Abi, FunctionHeader};
 
+use crate::adapter::unquote_other_abi;
+
 pub(super) fn format_fn_pointer_header(header: &FunctionHeader, output: &mut String) {
     if header.is_const {
         // As of Rust 1.96, function pointer types cannot use hypothetical
@@ -31,7 +33,7 @@ pub(super) fn format_fn_pointer_header(header: &FunctionHeader, output: &mut Str
         Abi::System { unwind } => push_abi(output, "system", *unwind),
         Abi::Other(other) => {
             output.push_str("extern \"");
-            output.push_str(other);
+            output.push_str(unquote_other_abi(other));
             output.push_str("\" ");
         }
     }
