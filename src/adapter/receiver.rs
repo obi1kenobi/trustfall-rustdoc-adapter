@@ -5,6 +5,7 @@ use rustdoc_types::{
     Type,
 };
 
+use super::positional_generic_arguments;
 use super::rust_type_name::{needs_parens_before_bounds, rust_type_name};
 
 /// A method's `self` parameter and the context for rendering its receiver kind.
@@ -382,23 +383,6 @@ fn type_matches_default(
             shared_object_lifetime_default: false,
         },
     )
-}
-
-/// Returns the generic arguments of `path` when a positional list fully describes them.
-/// A path with no argument list or an empty `<>` yields `Some(&[])`. For example,
-/// `Reader` can still match `Reader<u8>` if `u8` is the declared default.
-///
-/// Returns `None` for associated item constraints, parenthesized arguments, or
-/// return type notation. [`same_instantiation`] then declines the match. Treating
-/// these forms as empty would incorrectly equate `Iterator<Item = u8>` with `Iterator<Item = u16>`.
-fn positional_generic_arguments(path: &Path) -> Option<&[GenericArg]> {
-    match path.args.as_deref() {
-        None => Some(&[]),
-        Some(GenericArgs::AngleBracketed { args, constraints }) if constraints.is_empty() => {
-            Some(args)
-        }
-        _ => None,
-    }
 }
 
 fn is_impl_const(name: &str, impl_generics: Option<&Generics>) -> bool {

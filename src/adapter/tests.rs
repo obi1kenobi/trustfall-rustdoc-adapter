@@ -7347,6 +7347,311 @@ fn parenthesized_type_bounds_on_type_and_impl() {
     similar_asserts::assert_eq!(expected_results, results);
 }
 
+/// Check coverage per inherent impl, using method names to distinguish impls on the same owner.
+#[test]
+fn inherent_impl_applies_to_all_owner_instantiations() {
+    get_test_data!(data, impl_owner_instantiations);
+    let adapter = RustdocAdapter::new(&data, None);
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                inherent_impl {
+                    applies_to_all_owner_instantiations @output
+                    method {
+                        method: name @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    #[derive(Debug, PartialOrd, Ord, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        method: String,
+        applies_to_all_owner_instantiations: Option<bool>,
+    }
+
+    let variables = BTreeMap::<&str, &str>::new();
+    let mut results: Vec<Output> = trustfall::execute_query(
+        RustdocAdapter::schema(),
+        Arc::new(&adapter),
+        query,
+        variables,
+    )
+    .expect("failed to run query")
+    .map(|row| row.try_into_struct().expect("shape mismatch"))
+    .collect();
+    results.sort_unstable();
+
+    let mut expected = vec![
+        Output {
+            method: "plain_where_copy".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "byte_reader".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "vector_reader".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "unit_reader".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "reference_reader".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "copy_reader".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "locally_sized_reader".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "blanket_byte_reader".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "conditional_blanket_reader".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "default_marker_reader".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "owner_already_requires_copy".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "external_blanket_reader".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "only_byte".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "only_byte_inline".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "any_associated_value".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "requires_byte_value".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "swapped_parameters".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "repeated_parameter".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "fixed_second_parameter".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "default_second_parameter".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "wrapped_first_parameter".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "copy_second_parameter".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "matching_relation".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "additional_reverse_relation".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "also_requires_relation_to_self".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "independent_widths".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "aliased_const_parameter_type".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "equal_widths".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "independent_lifetimes".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "equal_lifetimes".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "static_lifetime".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "reflexive_unmapped_lifetime_bound".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "static_outlives_unmapped_lifetime".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "requires_outlives_through_middle".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "every_reborrow".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "matching_outlives_and_trait_arguments".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "also_requires_reverse_lifetime".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "mixed_parameters".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "fixed_buffer_argument".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "two_elements".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "matching_buffer_arguments".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "tag_matches_first".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "tag_matches_last".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "default_buffer_length".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "also_for_str".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "sized_only".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "sized_blanket".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "unsized_blanket".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "explicitly_sized".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "requires_sized".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "narrowed_meta_sized".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "narrowed_pointee_sized".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "relaxed_pointee_sized".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "different_const_bounds".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+    ];
+    expected.sort_unstable();
+    similar_asserts::assert_eq!(expected, results);
+}
+
+#[test]
+fn trait_impl_owner_instantiations_are_unproven() {
+    get_test_data!(data, impl_owner_instantiations);
+    let adapter = RustdocAdapter::new(&data, None);
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                impl {
+                    implemented_trait {
+                        bare_name @filter(op: "=", value: ["$trait"])
+                    }
+                    applies_to_all_owner_instantiations @output
+                }
+            }
+        }
+    }
+}
+"#;
+    #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+    struct Output {
+        applies_to_all_owner_instantiations: Option<bool>,
+    }
+
+    let variables = btreemap! { "trait" => "Decode" };
+    let results: Vec<Output> = trustfall::execute_query(
+        RustdocAdapter::schema(),
+        Arc::new(&adapter),
+        query,
+        variables,
+    )
+    .expect("failed to run query")
+    .map(|row| row.try_into_struct().expect("shape mismatch"))
+    .collect();
+
+    similar_asserts::assert_eq!(
+        vec![Output {
+            applies_to_all_owner_instantiations: None,
+        }],
+        results
+    );
+}
+
 #[test]
 fn features_directly_enables() {
     get_test_data!(data, features);
