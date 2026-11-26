@@ -1,6 +1,6 @@
 use std::sync::{Arc, LazyLock};
 
-use rustdoc_types::Item;
+use rustdoc_types::{GenericArg, GenericArgs, Item, Path};
 use trustfall::{
     FieldValue, Schema,
     provider::{
@@ -18,6 +18,7 @@ use self::{
 
 mod edges;
 mod enum_variant;
+mod impl_coverage;
 mod normalize;
 mod optimizations;
 mod origin;
@@ -200,7 +201,7 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
                     )
                 }
                 "FunctionAbi" => properties::resolve_function_abi_property(contexts, property_name),
-                "Impl" => properties::resolve_impl_property(contexts, property_name),
+                "Impl" => properties::resolve_impl_property(contexts, property_name, self),
                 "Attribute" => properties::resolve_attribute_property(contexts, property_name),
                 "AttributeMetaItem" => {
                     properties::resolve_attribute_meta_item_property(contexts, property_name)
@@ -445,6 +446,23 @@ impl<'a> Adapter<'a> for &'a RustdocAdapter<'a> {
             }),
             _ => unreachable!("resolve_coercion {type_name} {coerce_to_type}"),
         }
+    }
+}
+
+/// Returns the generic arguments recorded for `path` when a positional list fully describes them.
+/// A missing argument list and an empty `<>` both yield `Some(&[])`. This lets a caller
+/// match `Reader` to `Reader<u8>` if it can establish that `u8` is the declared default.
+///
+/// Returns `None` for associated item constraints, parenthesized arguments, or
+/// return type notation. Treating these forms as empty would incorrectly equate
+/// `Iterator<Item = u8>` with `Iterator<Item = u16>`.
+fn positional_generic_arguments(path: &Path) -> Option<&[GenericArg]> {
+    match path.args.as_deref() {
+        None => Some(&[]),
+        Some(GenericArgs::AngleBracketed { args, constraints }) if constraints.is_empty() => {
+            Some(args)
+        }
+        _ => None,
     }
 }
 
