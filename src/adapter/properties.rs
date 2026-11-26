@@ -9,7 +9,12 @@ use trustfall::{
 
 use crate::attributes::{Attribute, structured_attr_to_arc_str};
 
-use super::{RustdocAdapter, rust_type_name, unquote_other_abi, vertex::Vertex};
+use super::{
+    RustdocAdapter,
+    impl_coverage::{ImplCoverage, impl_coverage},
+    rust_type_name, unquote_other_abi,
+    vertex::Vertex,
+};
 
 pub(super) fn resolve_crate_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
@@ -527,11 +532,21 @@ pub(super) fn other_abi_unwind(abi: &str) -> Option<bool> {
 pub(super) fn resolve_impl_property<'a, V: AsVertex<Vertex<'a>> + 'a>(
     contexts: ContextIterator<'a, V>,
     property_name: &str,
+    adapter: &'a RustdocAdapter<'a>,
 ) -> ContextOutcomeIterator<'a, V, FieldValue> {
     match property_name {
         "unsafe" => resolve_property_with(contexts, field_property!(as_impl, is_unsafe)),
         "negative" => resolve_property_with(contexts, field_property!(as_impl, is_negative)),
         "synthetic" => resolve_property_with(contexts, field_property!(as_impl, is_synthetic)),
+        "applies_to_all_owner_instantiations" => resolve_property_with(contexts, move |vertex| {
+            let impl_ = vertex.as_impl().expect("expected an Impl vertex");
+            let crate_ = &adapter.crate_at_origin(vertex.origin).own_crate;
+            match impl_coverage(impl_, crate_) {
+                ImplCoverage::All => true.into(),
+                ImplCoverage::NotAll => false.into(),
+                ImplCoverage::Unknown => FieldValue::Null,
+            }
+        }),
         _ => unreachable!("Impl property {property_name}"),
     }
 }

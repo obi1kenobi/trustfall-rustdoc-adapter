@@ -1154,6 +1154,30 @@ type Impl implements Item & GenericItem {
   negative: Boolean!
   synthetic: Boolean!
 
+  """
+  Whether this impl applies to every combination of generic arguments permitted by
+  the owner's declaration. Returns `false` if at least one such combination is known
+  to be excluded by the impl, and `null` if the answer is unknown.
+
+  The owner is the underlying type declaration for the impl's self type.
+
+  For example, given `struct Reader<T>(T)`, this is `true` for `impl<T> Reader<T>`
+  and `false` for `impl Reader<u8>`.
+
+  Assumptions and limitations:
+  - The analysis currently checks inherent impls on structs, enums, and unions
+    whose declarations are available in rustdoc. Trait impls return `null`.
+  - Each impl the analysis checks is assumed to apply to at least one legal
+    instantiation of its owner.
+  - Unstable features, such as const bounds, negative bounds, generic const expressions,
+    and `default impl`, are outside the scope of the analysis. Their info may not even
+    be present or complete in rustdoc JSON.
+  - The analysis is best-effort, with no stability guarantees across versions.
+    Future versions may begin resolving more cases or may revise earlier conclusions
+    if new edge cases are found.
+  """
+  applies_to_all_owner_instantiations: Boolean
+
   # edges from Item
   span: Span
   attribute: [Attribute!]
