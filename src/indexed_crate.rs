@@ -748,6 +748,26 @@ impl<'a> IndexedCrate<'a> {
         self.stability_policy.effective_assoc_const_default(item)
     }
 
+    /// Checks whether a trait referenced by this crate has no generic parameters.
+    /// Returns `false` for generic traits and for traits whose parameters are unknown.
+    pub(crate) fn is_known_nongeneric_trait(&self, id: &Id) -> bool {
+        if let Some(item) = self.inner.index.get(id) {
+            let rustdoc_types::ItemEnum::Trait(trait_) = &item.inner else {
+                unreachable!("the implemented trait must resolve to a trait declaration");
+            };
+            return trait_.generics.params.is_empty();
+        }
+
+        // Manually inlined trait items have empty parameter lists even for `PartialEq`,
+        // which declares `Rhs`. Use the `has_generic_parameters` field from the manual
+        // trait metadata for these traits.
+        self.inner
+            .paths
+            .get(id)
+            .and_then(ManualTraitItem::from_summary)
+            .is_some_and(|trait_| !trait_.has_generic_parameters)
+    }
+
     /// Return `true` if our analysis indicates the trait is sealed, and `false` otherwise.
     ///
     /// Our analysis is conservative: it has false-negatives but no false-positives.
@@ -1071,11 +1091,24 @@ impl<'a: 'b, 'b> Borrow<(&'b Id, &'b str)> for ImplEntry<'a> {
 struct ManualTraitItem {
     name: &'static str,
     path: &'static [&'static str],
+    has_generic_parameters: bool,
     is_auto: bool,
     is_unsafe: bool,
     stability_feature: &'static str,
     stability_since: &'static str,
     const_stability_feature: Option<&'static str>,
+}
+
+impl ManualTraitItem {
+    fn from_summary(summary: &rustdoc_types::ItemSummary) -> Option<&'static Self> {
+        if summary.kind != rustdoc_types::ItemKind::Trait {
+            return None;
+        }
+
+        // This is a linear scan, but across a tiny array.
+        // It isn't worth doing anything fancier here.
+        MANUAL_TRAIT_ITEMS.iter().find(|t| t.path == summary.path)
+    }
 }
 
 /// Traits that the adapter knows how to manually inline when they appear in rustdoc's `paths`.
@@ -1092,6 +1125,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "Debug",
         path: &["core", "fmt", "Debug"],
+        has_generic_parameters: false,
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1101,6 +1135,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "Clone",
         path: &["core", "clone", "Clone"],
+        has_generic_parameters: false,
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1110,6 +1145,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "Copy",
         path: &["core", "marker", "Copy"],
+        has_generic_parameters: false,
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1119,6 +1155,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "Drop",
         path: &["core", "ops", "drop", "Drop"],
+        has_generic_parameters: false,
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1128,6 +1165,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "PartialOrd",
         path: &["core", "cmp", "PartialOrd"],
+        has_generic_parameters: true,
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1137,6 +1175,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "Ord",
         path: &["core", "cmp", "Ord"],
+        has_generic_parameters: false,
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1146,6 +1185,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "PartialEq",
         path: &["core", "cmp", "PartialEq"],
+        has_generic_parameters: true,
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1155,6 +1195,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "Eq",
         path: &["core", "cmp", "Eq"],
+        has_generic_parameters: false,
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1164,6 +1205,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "Hash",
         path: &["core", "hash", "Hash"],
+        has_generic_parameters: false,
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1173,6 +1215,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "Send",
         path: &["core", "marker", "Send"],
+        has_generic_parameters: false,
         is_auto: true,
         is_unsafe: true,
         stability_feature: "rust1",
@@ -1182,6 +1225,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "Sync",
         path: &["core", "marker", "Sync"],
+        has_generic_parameters: false,
         is_auto: true,
         is_unsafe: true,
         stability_feature: "rust1",
@@ -1191,6 +1235,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "Unpin",
         path: &["core", "marker", "Unpin"],
+        has_generic_parameters: false,
         is_auto: true,
         is_unsafe: false,
         stability_feature: "pin",
@@ -1200,6 +1245,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "RefUnwindSafe",
         path: &["core", "panic", "unwind_safe", "RefUnwindSafe"],
+        has_generic_parameters: false,
         is_auto: true,
         is_unsafe: false,
         stability_feature: "catch_unwind",
@@ -1209,6 +1255,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "UnwindSafe",
         path: &["core", "panic", "unwind_safe", "UnwindSafe"],
+        has_generic_parameters: false,
         is_auto: true,
         is_unsafe: false,
         stability_feature: "catch_unwind",
@@ -1218,6 +1265,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "Sized",
         path: &["core", "marker", "Sized"],
+        has_generic_parameters: false,
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1288,15 +1336,7 @@ fn create_manually_inlined_builtin_traits(crate_: &Crate) -> (HashMap<Id, Item>,
 
     let manually_inlined_builtin_traits: HashMap<Id, Item> = iter
         .filter_map(|(id, entry)| {
-            if entry.kind != rustdoc_types::ItemKind::Trait {
-                return None;
-            }
-
-            // This is a linear scan, but across a tiny array.
-            // It isn't worth doing anything fancier here.
-            MANUAL_TRAIT_ITEMS
-                .iter()
-                .find(|t| t.path == entry.path)
+            ManualTraitItem::from_summary(entry)
                 .map(|manual| (*id, new_trait(manual, *id, entry.crate_id)))
         })
         .collect();
