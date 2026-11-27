@@ -1,11 +1,20 @@
-#![feature(sized_hierarchy)]
+#![feature(auto_traits, negative_impls, sized_hierarchy)]
 
 use core::marker::{MetaSized, PhantomData, PointeeSized};
 
-#[derive(Clone, Copy)]
+pub trait Decode {}
+
+// `CopyReader` declares a positive `Transferable` impl, `Reader` declares a negative impl,
+// and the compiler infers the impl for `Plain`.
+pub auto trait Transferable {}
+
+#[derive(Clone, Copy, PartialEq)]
 pub enum Plain {
     Unit,
 }
+
+impl Decode for Plain {}
+impl DecodeWithDefault for Plain {}
 
 impl Plain
 where
@@ -14,11 +23,33 @@ where
     pub fn plain_where_copy() {}
 }
 
-pub trait Decode {}
+pub trait CopyMarker: Copy {}
 
-impl Decode for Plain {}
+// The unused lifetime places no bound on `T`. This blanket impl still proves
+// `CopyMarker` for every `T: Copy`.
+impl<'unused, T: Copy> CopyMarker for T {}
+
+pub struct CopyReader<T: Copy>(pub T);
+impl<T: Copy> Transferable for CopyReader<T> {}
+
+impl<T: Copy + CopyMarker> CopyReader<T> {
+    pub fn owner_already_requires_copy() {}
+}
 
 pub struct Reader<T>(pub T);
+
+impl<T> Decode for Reader<T> {}
+impl<T> !Transferable for Reader<T> {}
+
+impl<T: CopyMarker> Reader<T> {
+    pub fn conditional_blanket_reader() {}
+}
+
+pub trait DecodeWithDefault<A = &'static Self> {}
+
+// The default supplies `&'static Reader<T>`, so this impl requires `T: 'static`.
+// A `Reader` holding a short-lived reference is legal but cannot use this impl.
+impl<T> DecodeWithDefault for Reader<T> {}
 
 impl Reader<u8> {
     pub fn byte_reader() {}
@@ -34,6 +65,13 @@ impl Reader<()> {
 
 impl<U> Reader<&U> {
     pub fn reference_reader() {}
+}
+
+impl<T> Reader<T>
+where
+    T: Sized,
+{
+    pub fn explicitly_sized() {}
 }
 
 impl<U: Copy> Reader<U> {
@@ -61,16 +99,6 @@ impl<T: Byte> Reader<T> {
     pub fn blanket_byte_reader() {}
 }
 
-pub trait CopyMarker: Copy {}
-
-// The unused lifetime places no bound on `T`. This blanket impl still proves
-// `CopyMarker` for every `T: Copy`.
-impl<'unused, T: Copy> CopyMarker for T {}
-
-impl<T: CopyMarker> Reader<T> {
-    pub fn conditional_blanket_reader() {}
-}
-
 pub trait MarkerFor<V = u8> {}
 impl<T> MarkerFor<u16> for T {}
 impl MarkerFor<u8> for u8 {}
@@ -78,12 +106,6 @@ impl MarkerFor<u8> for u8 {}
 // The blanket impl supplies `MarkerFor<u16>`, while this bound selects the default `u8`.
 impl<T: MarkerFor> Reader<T> {
     pub fn default_marker_reader() {}
-}
-
-pub struct CopyReader<T: Copy>(pub T);
-
-impl<T: Copy + CopyMarker> CopyReader<T> {
-    pub fn owner_already_requires_copy() {}
 }
 
 pub struct StaticReader<T: 'static>(pub T);
@@ -125,6 +147,8 @@ impl<T: Byte<Value = u8>> Mapped<T> {
 }
 
 pub struct Pair<A, B = u8>(pub A, pub B);
+
+impl<A, B> Decode for &Pair<A, B> {}
 
 impl<X, Y> Pair<Y, X> {
     pub fn swapped_parameters() {}
@@ -181,6 +205,8 @@ pub union Widths<const N: usize, const M: usize> {
     pub second: [u8; M],
 }
 
+impl<const N: usize> Decode for Widths<N, N> {}
+
 impl<const A: usize, const B: usize> Widths<B, A> {
     pub fn independent_widths() {}
 }
@@ -195,7 +221,14 @@ impl<const N: usize> Widths<N, N> {
     pub fn equal_widths() {}
 }
 
+#[derive(Clone, PartialEq)]
 pub struct View<'a, 'b>(pub &'a u8, pub &'b u8);
+
+impl Default for View<'_, '_> {
+    fn default() -> Self {
+        Self(&0, &0)
+    }
+}
 
 impl View<'_, '_> {
     pub fn independent_lifetimes() {}
@@ -303,6 +336,8 @@ impl<'a, T: HasValue<U>, Tag, U> MatchingBuffer<'a, T, Tag, U> {
 
 pub struct MaybeSized<T: ?Sized>(pub T);
 
+impl<T: Copy> Decode for MaybeSized<T> {}
+
 impl<U> MaybeSized<U>
 where
     U: ?Sized,
@@ -314,6 +349,12 @@ impl<U> MaybeSized<U> {
     pub fn sized_only() {}
 }
 
+pub fn check_sized_and_unsized_instantiations() {
+    MaybeSized::<u8>::also_for_str();
+    MaybeSized::<u8>::sized_only();
+    MaybeSized::<str>::also_for_str();
+}
+
 impl<U: ?Sized + Byte> MaybeSized<U> {
     pub fn sized_blanket() {}
 }
@@ -323,19 +364,6 @@ impl<T: ?Sized> UnrestrictedMarker for T {}
 
 impl<U: ?Sized + UnrestrictedMarker> MaybeSized<U> {
     pub fn unsized_blanket() {}
-}
-
-impl<T> Reader<T>
-where
-    T: Sized,
-{
-    pub fn explicitly_sized() {}
-}
-
-pub fn check_sized_and_unsized_instantiations() {
-    MaybeSized::<u8>::also_for_str();
-    MaybeSized::<u8>::sized_only();
-    MaybeSized::<str>::also_for_str();
 }
 
 // The explicit `Sized` bound restores the requirement relaxed by `?Sized`,
@@ -381,3 +409,7 @@ pub struct ConstBound<T: Bound<{ 0 + ONE }>>(pub T);
 impl<T: Bound<{ 0 + TWO }>> ConstBound<T> {
     pub fn different_const_bounds() {}
 }
+
+pub type ByteAlias = u8;
+pub trait ReadByte {}
+impl ReadByte for ByteAlias {}

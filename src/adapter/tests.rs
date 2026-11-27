@@ -7384,6 +7384,14 @@ fn inherent_impl_applies_to_all_owner_instantiations() {
             applies_to_all_owner_instantiations: Some(true),
         },
         Output {
+            method: "owner_already_requires_copy".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "conditional_blanket_reader".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
             method: "byte_reader".into(),
             applies_to_all_owner_instantiations: Some(false),
         },
@@ -7400,6 +7408,10 @@ fn inherent_impl_applies_to_all_owner_instantiations() {
             applies_to_all_owner_instantiations: Some(false),
         },
         Output {
+            method: "explicitly_sized".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
             method: "copy_reader".into(),
             applies_to_all_owner_instantiations: None,
         },
@@ -7412,16 +7424,8 @@ fn inherent_impl_applies_to_all_owner_instantiations() {
             applies_to_all_owner_instantiations: Some(true),
         },
         Output {
-            method: "conditional_blanket_reader".into(),
-            applies_to_all_owner_instantiations: None,
-        },
-        Output {
             method: "default_marker_reader".into(),
             applies_to_all_owner_instantiations: None,
-        },
-        Output {
-            method: "owner_already_requires_copy".into(),
-            applies_to_all_owner_instantiations: Some(true),
         },
         Output {
             method: "external_blanket_reader".into(),
@@ -7572,10 +7576,6 @@ fn inherent_impl_applies_to_all_owner_instantiations() {
             applies_to_all_owner_instantiations: Some(true),
         },
         Output {
-            method: "explicitly_sized".into(),
-            applies_to_all_owner_instantiations: Some(true),
-        },
-        Output {
             method: "requires_sized".into(),
             applies_to_all_owner_instantiations: Some(true),
         },
@@ -7600,8 +7600,9 @@ fn inherent_impl_applies_to_all_owner_instantiations() {
     similar_asserts::assert_eq!(expected, results);
 }
 
+/// Checks owner coverage for declared positive trait impls, including derived impls.
 #[test]
-fn trait_impl_owner_instantiations_are_unproven() {
+fn owner_coverage_for_positive_trait_impls() {
     get_test_data!(data, impl_owner_instantiations);
     let adapter = RustdocAdapter::new(&data, None);
     let query = r#"
@@ -7609,24 +7610,33 @@ fn trait_impl_owner_instantiations_are_unproven() {
     Crate {
         item {
             ... on ImplOwner {
+                owner: name @output
                 impl {
-                    implemented_trait {
-                        bare_name @filter(op: "=", value: ["$trait"])
-                    }
+                    negative @filter(op: "=", value: ["$false"])
+                    synthetic @filter(op: "=", value: ["$false"])
                     applies_to_all_owner_instantiations @output
+
+                    implemented_trait {
+                        trait_name: bare_name @filter(op: "one_of", value: ["$traits"]) @output
+                    }
                 }
             }
         }
     }
 }
 "#;
-    #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]
     struct Output {
+        owner: String,
+        trait_name: String,
         applies_to_all_owner_instantiations: Option<bool>,
     }
 
-    let variables = btreemap! { "trait" => "Decode" };
-    let results: Vec<Output> = trustfall::execute_query(
+    let variables: BTreeMap<&str, FieldValue> = btreemap! {
+        "false" => false.into(),
+        "traits" => vec!["Clone", "Decode", "DecodeWithDefault", "Default", "PartialEq", "Transferable"].into(),
+    };
+    let mut results: Vec<Output> = trustfall::execute_query(
         RustdocAdapter::schema(),
         Arc::new(&adapter),
         query,
@@ -7636,12 +7646,211 @@ fn trait_impl_owner_instantiations_are_unproven() {
     .map(|row| row.try_into_struct().expect("shape mismatch"))
     .collect();
 
-    similar_asserts::assert_eq!(
-        vec![Output {
+    results.sort_unstable();
+
+    let mut expected = vec![
+        Output {
+            owner: "Plain".into(),
+            trait_name: "Clone".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            owner: "Plain".into(),
+            trait_name: "PartialEq".into(),
+            // Rustdoc omits the trait declaration, but `Plain` has only one instantiation.
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            owner: "Plain".into(),
+            trait_name: "Decode".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            owner: "Plain".into(),
+            trait_name: "DecodeWithDefault".into(),
+            // The trait has a defaulted parameter, but `Plain` has only one instantiation.
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            owner: "CopyReader".into(),
+            trait_name: "Transferable".into(),
+            // `CopyReader` and its impl require the same `Copy` bound, so coverage is `true`.
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            owner: "Reader".into(),
+            trait_name: "Decode".into(),
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            owner: "Reader".into(),
+            trait_name: "DecodeWithDefault".into(),
+            // The default `&'static Reader<T>` excludes readers that borrow local data.
+            // The analysis leaves coverage unknown because it does not evaluate generic trait arguments.
             applies_to_all_owner_instantiations: None,
-        }],
-        results
-    );
+        },
+        Output {
+            owner: "Pair".into(),
+            trait_name: "Decode".into(),
+            // The `impl` edge reaches this `Decode` impl from `Pair`.
+            // Using `Pair` as the owner would count the impl for `&Pair<A, B>`
+            // as an impl for `Pair<A, B>` itself. The reference self type
+            // has no declaration of its own to check, so coverage is `None`.
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            owner: "Widths".into(),
+            trait_name: "Decode".into(),
+            // `Widths<N, N>` excludes unequal widths, so coverage is `false`.
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            owner: "View".into(),
+            trait_name: "Clone".into(),
+            // Rustdoc omits the `Clone` declaration. The built-in trait metadata establishes
+            // that it has no generic parameters. The derived impl adds no bounds on either
+            // of `View`'s lifetimes.
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            owner: "View".into(),
+            trait_name: "PartialEq".into(),
+            // The trait path contains no arguments, but `PartialEq` has a defaulted `Rhs`.
+            // The analysis does not evaluate that argument to establish coverage for `View`.
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            owner: "View".into(),
+            trait_name: "Default".into(),
+            // Rustdoc omits the `Default` declaration, and the built-in trait
+            // catalog has no entry for it. Coverage therefore remains unknown.
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            owner: "MaybeSized".into(),
+            trait_name: "Decode".into(),
+            // This impl forwards the owner's type parameter, so the analysis only tries
+            // to prove that every legal argument is `Copy`. That proof fails for
+            // `&'static mut u8`, a legal argument, so coverage remains unknown.
+            applies_to_all_owner_instantiations: None,
+        },
+    ];
+    expected.sort_unstable();
+    similar_asserts::assert_eq!(expected, results);
+}
+
+/// Checks that negative impls, inferred auto-trait impls, and applications of
+/// blanket impls have unknown owner coverage.
+#[test]
+fn owner_coverage_for_negative_synthetic_and_blanket_impls() {
+    get_test_data!(data, impl_owner_instantiations);
+    let adapter = RustdocAdapter::new(&data, None);
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on ImplOwner {
+                owner: name @filter(op: "one_of", value: ["$owners"]) @output
+                impl {
+                    negative @output
+                    synthetic @output
+                    applies_to_all_owner_instantiations @filter(op: "is_null")
+                    implemented_trait {
+                        trait_name: bare_name @filter(op: "one_of", value: ["$traits"]) @output
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]
+    struct Output {
+        owner: String,
+        trait_name: String,
+        negative: bool,
+        synthetic: bool,
+    }
+
+    let variables: BTreeMap<&str, FieldValue> = btreemap! {
+        "owners" => vec!["Plain", "Reader"].into(),
+        "traits" => vec!["Byte", "Transferable"].into(),
+    };
+    let mut results: Vec<Output> = trustfall::execute_query(
+        RustdocAdapter::schema(),
+        Arc::new(&adapter),
+        query,
+        variables,
+    )
+    .expect("failed to run query")
+    .map(|row| row.try_into_struct().expect("shape mismatch"))
+    .collect();
+    results.sort_unstable();
+
+    let mut expected = vec![
+        Output {
+            owner: "Plain".into(),
+            trait_name: "Transferable".into(),
+            negative: false,
+            synthetic: true,
+        },
+        Output {
+            owner: "Reader".into(),
+            trait_name: "Transferable".into(),
+            negative: true,
+            synthetic: false,
+        },
+        // Rustdoc lists `impl<T> Byte for T` as applied to both `Plain` and `Reader`.
+        // The blanket declaration's self type `T` has no named owner whose coverage we can check.
+        Output {
+            owner: "Plain".into(),
+            trait_name: "Byte".into(),
+            negative: false,
+            synthetic: false,
+        },
+        Output {
+            owner: "Reader".into(),
+            trait_name: "Byte".into(),
+            negative: false,
+            synthetic: false,
+        },
+    ];
+    expected.sort_unstable();
+    similar_asserts::assert_eq!(expected, results);
+}
+
+/// Checks for `null` owner coverage on `impl ReadByte for ByteAlias`. The query
+/// reaches the impl through `Crate.item` because neither `ByteAlias` nor `u8`
+/// exposes an `ImplOwner.impl` edge.
+#[test]
+fn trait_impl_on_primitive_type_alias_has_unknown_owner_coverage() {
+    get_test_data!(data, impl_owner_instantiations);
+    let adapter = RustdocAdapter::new(&data, None);
+    let query = r#"
+{
+    Crate {
+        item {
+            ... on Impl {
+                applies_to_all_owner_instantiations @output
+                implemented_trait {
+                    bare_name @filter(op: "=", value: ["$trait"])
+                }
+            }
+        }
+    }
+}
+"#;
+    let results: Vec<_> = trustfall::execute_query(
+        RustdocAdapter::schema(),
+        Arc::new(&adapter),
+        query,
+        btreemap! { "trait" => "ReadByte" },
+    )
+    .expect("failed to run query")
+    .map(|row| row["applies_to_all_owner_instantiations"].clone())
+    .collect();
+
+    similar_asserts::assert_eq!(vec![FieldValue::Null], results);
 }
 
 #[test]
