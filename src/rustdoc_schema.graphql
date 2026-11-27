@@ -1165,8 +1165,12 @@ type Impl implements Item & GenericItem {
   and `false` for `impl Reader<u8>`.
 
   Assumptions and limitations:
-  - The analysis currently checks inherent impls on structs, enums, and unions
-    whose declarations are available in rustdoc. Trait impls return `null`.
+  - The analysis checks inherent impls and declared positive trait impls whose self types
+    name structs, enums, or unions with definitions in rustdoc. Negative impls, inferred
+    auto-trait impls, and applications of blanket impls return `null`.
+  - For a trait impl on a generic owner, this property returns `null` unless the trait
+    is known to have no generic parameters. When rustdoc omits the declaration, the
+    analysis can still determine this for certain standard-library traits.
   - Each impl the analysis checks is assumed to apply to at least one legal
     instantiation of its owner.
   - Unstable features, such as const bounds, negative bounds, generic const expressions,

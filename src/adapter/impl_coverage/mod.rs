@@ -14,7 +14,11 @@ pub(super) enum ImplCoverage {
     Unknown,
 }
 
-/// Checks whether an inherent impl covers every instantiation permitted by its owner.
+/// Checks whether an impl covers every instantiation permitted by its owner.
+/// The analysis handles inherent impls and declared positive trait impls whose
+/// self type names a struct, enum, or union. For a trait impl on a generic owner,
+/// it returns [`ImplCoverage::Unknown`] unless the trait is known to have no
+/// generic parameters.
 ///
 /// The owner is the underlying type declaration for the impl's self type. For example,
 /// `impl Foo` and `impl Trait for Foo` both have owner `Foo`.
@@ -22,18 +26,23 @@ pub(super) enum ImplCoverage {
 /// For a struct `Foo`, `Struct.impls` can also contain the ID of an `Impl` record for
 /// `impl<T> MyTrait for T` as applied to `Foo`. That record has `Foo` in `Impl.for_`
 /// and `T` in `Impl.blanket_impl`. The blanket declaration's self type is `T`,
-/// so the declaration has no named owner. The analysis currently returns
-/// [`ImplCoverage::Unknown`] for all trait impls, including these records.
+/// so the declaration has no named owner. The analysis returns
+/// [`ImplCoverage::Unknown`] for such records.
 pub(super) fn impl_coverage(impl_: &Impl, crate_: &IndexedCrate<'_>) -> ImplCoverage {
-    if impl_.trait_.is_some() {
-        // TODO: When checking direct positive trait impls, account for bounds implied
-        // by the trait arguments. For example, using `impl<T> Decode<&'static T> for Reader<T>`
-        // requires `T: 'static` even when the impl has no explicit lifetime bound.
+    if impl_.is_negative || impl_.is_synthetic || impl_.blanket_impl.is_some() {
+        // Coverage here describes declared positive impls. A negative impl rules out trait
+        // membership, and an inferred auto-trait impl has no declaration to analyze.
+        // For an application of a blanket impl, `for_` can name the type rustdoc applied
+        // it to instead of the self type in the declaration.
         return ImplCoverage::Unknown;
     }
     let Type::ResolvedPath(path) = &impl_.for_ else {
-        // To check coverage we need a path to the owner's declaration. Inherent impls
-        // on built-in types such as `u8`, `[T]`, and `*const T` have no such path.
+        // To check coverage we need a path to the owner's declaration.
+        //
+        // Built-in self types such as `u8`, `[T]`, and `*const T` have no owner declaration.
+        // Rustdoc also lists the `IntoIterator` impl for shared references to a `Vec`
+        // among the impls for `Vec`. Using the referent as the owner would incorrectly attribute
+        // an impl that iterates by reference to owned vectors.
         return ImplCoverage::Unknown;
     };
     let Some(owner) = crate_.inner.index.get(&path.id) else {
@@ -44,16 +53,46 @@ pub(super) fn impl_coverage(impl_: &Impl, crate_: &IndexedCrate<'_>) -> ImplCove
         ItemEnum::Struct(s) => &s.generics,
         ItemEnum::Enum(e) => &e.generics,
         ItemEnum::Union(u) => &u.generics,
+        ItemEnum::TypeAlias(_) | ItemEnum::ExternType if impl_.trait_.is_some() => {
+            // An alias can fix generic arguments of its underlying type. For example,
+            // with `type Bytes = Vec<u8>;`, an impl for `Bytes` leaves `Vec<u16>` uncovered.
+            // Without expanding the alias in the impl's self type, we cannot determine
+            // whether the impl covers every legal instantiation of its owner.
+            //
+            // An extern type has no struct, enum, or union definition to analyze.
+            //
+            // The analysis leaves coverage unknown in both cases.
+            return ImplCoverage::Unknown;
+        }
         _ => unreachable!(
-            "inherent impl self type `{}` must resolve to a struct, enum, or union",
+            "impl self type `{}` resolved to an unexpected item kind: {impl_:?}",
             path.path
         ),
     };
     if owner_generics.params.is_empty() {
         // The analysis assumes every impl it checks applies to at least one legal owner
         // instantiation (see `rustdoc_schema.graphql`). A nongeneric owner has only one
-        // instantiation, so the impl must apply to it even if the impl has a `where` clause.
+        // instantiation, so the impl must cover it regardless of its `where` clause
+        // or the trait's declaration.
         return ImplCoverage::All;
+    }
+    if let Some(trait_path) = &impl_.trait_
+        && !crate_.is_known_nongeneric_trait(&trait_path.id)
+    {
+        // A trait argument can impose a bound absent from the impl's explicit bounds.
+        // Rustdoc can omit defaulted arguments from the trait path, so we need the declaration
+        // or built-in trait metadata to know whether the trait has any parameters.
+        //
+        //     struct Label<'a>(&'a str);
+        //     trait Mark<A = &'static Self> {}
+        //     impl<'a> Mark for Label<'a> {}
+        //
+        // The self type and explicit impl bounds would give `All`, but the default
+        // `&'static Label<'a>` limits this impl to `Label<'static>`, excluding labels
+        // that borrow a local string.
+        //
+        // TODO: Account for bounds implied by trait arguments, including defaults.
+        return ImplCoverage::Unknown;
     }
     let args = positional_generic_arguments(path)
         .expect("a struct, enum, or union self type can have only positional generic arguments");
