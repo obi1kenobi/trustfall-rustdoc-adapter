@@ -1162,7 +1162,8 @@ type Impl implements Item & GenericItem {
   The owner is the underlying type declaration for the impl's self type.
 
   For example, given `struct Reader<T>(T)`, this is `true` for `impl<T> Reader<T>`
-  and `false` for `impl Reader<u8>`.
+  and `false` for `impl Reader<u8>`. The bound in `impl<T: Copy> Reader<T>` also gives
+  `false` because `Reader<&'static mut u8>` is legal and mutable references do not implement `Copy`.
 
   Assumptions and limitations:
   - The analysis checks inherent impls and declared positive trait impls whose self types
