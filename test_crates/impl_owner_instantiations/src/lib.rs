@@ -252,6 +252,16 @@ impl<X, Y: PartialOrd<X>> Pair<X, Y> {
     pub fn order_second_with_first() {}
 }
 
+pub struct PairWithCopy<A: Copy, B>(pub A, pub B);
+
+impl<A: Copy + PartialEq<B>, B> PairWithCopy<A, B> {
+    pub fn compare_copy_first_with_second() {}
+}
+
+impl<A: Copy, B: PartialOrd<A>> PairWithCopy<A, B> {
+    pub fn order_second_with_copy_first() {}
+}
+
 pub trait RelatedTo<T> {}
 impl RelatedTo<u16> for u8 {}
 impl RelatedTo<u8> for u8 {}
