@@ -59,7 +59,7 @@ enum Predicate {
 /// parameter or `'_`. `impl_positions` records the owner position of each
 /// named parameter passed to the self type.
 ///
-/// Returns [`ImplCoverage::NotAll`] if it can show that changing one type argument
+/// Returns [`ImplCoverage::NotAll`] if it can show that changing one or two type arguments
 /// of a covered instantiation keeps the owner type legal but violates an impl bound.
 /// Returns [`ImplCoverage::Unknown`] if it can establish neither full coverage nor an exclusion.
 pub(super) fn coverage_from_bounds(
@@ -106,8 +106,8 @@ pub(super) fn coverage_from_bounds(
     };
     // By assumption, the impl covers at least one legal owner instantiation.
     // At an independently variable position, the owner permits any `Sized + 'static` type
-    // with the other arguments fixed. If one such type fails an impl bound, substituting
-    // it there gives a legal owner instantiation that the impl excludes.
+    // with the other arguments fixed. Each replacement preserves the owner's bounds,
+    // so we can replace two independently variable arguments in succession.
     for bound in missing {
         let Predicate::Trait {
             subject_position,
@@ -126,22 +126,23 @@ pub(super) fn coverage_from_bounds(
         }
         let summary = &crate_.inner.paths[trait_id];
 
-        // We consider two cases. Either the trait bound has no explicit arguments,
-        // or it has the form `T: PartialEq<T>` or `T: PartialOrd<T>`.
-        // Both comparison traits default `Rhs` to `Self`, so in these two forms
-        // writing `T` explicitly means the same thing as omitting `Rhs`.
-        let uses_default_arguments = arguments.is_empty()
-            || (arguments.as_slice() == [Argument::Parameter(*subject_position)]
-                && (summary.path == PARTIAL_EQ_PATH || summary.path == PARTIAL_ORD_PATH));
+        // We consider bounds with no explicit arguments and comparisons of the form
+        // `T: PartialEq<U>` or `T: PartialOrd<U>` where `U` is independently variable.
+        // The right-hand argument may also be `T` itself.
+        let can_use_known_excluded_type = match arguments.as_slice() {
+            [] => true,
+            [Argument::Parameter(rhs_position)] => {
+                (summary.path == PARTIAL_EQ_PATH || summary.path == PARTIAL_ORD_PATH)
+                    && independent[*rhs_position]
+            }
+            _ => false,
+        };
 
         // If `standard_trait_has_known_excluded_type` returns `true`,
         // some `Sized + 'static` type fails the bound with its trait arguments omitted.
-        // In either case above, substituting that type for `T` therefore violates the impl bound.
-        //
-        // We skip `T: PartialEq<U>` and `T: PartialOrd<U>` when `U` is a separate parameter.
-        // Replacing `T` leaves `U` fixed, so the replacement may still compare with `U`
-        // even if it cannot compare with itself.
-        if uses_default_arguments && standard_trait_has_known_excluded_type(summary) {
+        // For `PartialEq` and `PartialOrd`, omitting `Rhs` means comparing with `Self`.
+        // Substituting that same type for both `T` and `U` therefore violates the explicit bound.
+        if can_use_known_excluded_type && standard_trait_has_known_excluded_type(summary) {
             return ImplCoverage::NotAll;
         }
     }
