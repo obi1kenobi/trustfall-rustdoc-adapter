@@ -7,9 +7,10 @@ use crate::{
     IndexedCrate,
     adapter::positional_generic_arguments,
     hashtables::{HashMap, HashSet},
+    indexed_crate::{PARTIAL_EQ_PATH, PARTIAL_ORD_PATH, standard_trait_has_known_excluded_type},
 };
 
-use super::referenced_parameter;
+use super::{ImplCoverage, referenced_parameter};
 
 /// A generic argument to a trait bound or one side of an outlives bound.
 ///
@@ -48,7 +49,8 @@ enum Predicate {
     Outlives(Argument, Argument),
 }
 
-/// Checks whether the impl's bounds hold for every legal instantiation of its owner.
+/// Checks whether the impl's bounds hold for every legal instantiation of its owner
+/// when evaluating `Impl.applies_to_all_owner_instantiations`.
 /// For example, if the owner is `struct Reader<T: Clone>(T)` then
 /// `impl<U: Clone> Reader<U>` applies to every legal `Reader<T>` as both bounds
 /// require `Clone` for the same argument.
@@ -57,16 +59,23 @@ enum Predicate {
 /// parameter or `'_`. `impl_positions` records the owner position of each
 /// named parameter passed to the self type.
 ///
-/// A `false` result means this check could not establish that the impl's bounds
-/// hold for every legal instantiation.
-pub(super) fn can_prove_impl_bounds(
+/// Returns [`ImplCoverage::NotAll`] if it can show that changing one type argument
+/// of a covered instantiation keeps the owner type legal but violates an impl bound.
+/// Returns [`ImplCoverage::Unknown`] if it can establish neither full coverage nor an exclusion.
+pub(super) fn coverage_from_bounds(
     owner: &Generics,
     impl_generics: &Generics,
     impl_positions: &HashMap<&str, usize>,
     crate_: &IndexedCrate<'_>,
-) -> bool {
+) -> ImplCoverage {
     let Some(required) = predicates(impl_generics, impl_positions, crate_) else {
-        return false;
+        // For `struct Pair<T, U>(T, U)`, an impl with `T: Copy` excludes every pair
+        // with `&mut u8` as its first argument. If the impl also requires
+        // `U: Iterator<Item = u8>`, `predicates` returns `None` for the whole set
+        // because it cannot represent the item constraint. Even `T: Copy` is then unavailable.
+        //
+        // TODO: Consider tightening this in the future.
+        return ImplCoverage::Unknown;
     };
     // With only lifetime and const parameters, an empty predicate set leaves
     // no impl bounds to prove. A type parameter declared `T: ?Sized` can leave
@@ -77,14 +86,69 @@ pub(super) fn can_prove_impl_bounds(
             .iter()
             .any(|param| matches!(param.kind, GenericParamDefKind::Type { .. }))
     {
-        return true;
+        return ImplCoverage::All;
     }
     let Some(available) = owner_predicates(owner, crate_) else {
-        return false;
+        return ImplCoverage::Unknown;
     };
-    required
-        .difference(&available)
-        .all(|missing| blanket_impl_proves_bound(missing, &available, crate_))
+    let missing = required.difference(&available);
+    if missing
+        .clone()
+        .all(|bound| blanket_impl_proves_bound(bound, &available, crate_))
+    {
+        return ImplCoverage::All;
+    }
+
+    let Some(independent) =
+        independently_variable_parameters_from_bounds(owner, &available, crate_.sized_trait)
+    else {
+        return ImplCoverage::Unknown;
+    };
+    // By assumption, the impl covers at least one legal owner instantiation.
+    // At an independently variable position, the owner permits any `Sized + 'static` type
+    // with the other arguments fixed. If one such type fails an impl bound, substituting
+    // it there gives a legal owner instantiation that the impl excludes.
+    for bound in missing {
+        let Predicate::Trait {
+            subject_position,
+            trait_id,
+            arguments,
+        } = bound
+        else {
+            // We leave lifetime arguments fixed and replace type arguments with `'static` types,
+            // so the substitution preserves outlives bounds such as `'a: 'b` and `T: 'a`.
+            continue;
+        };
+        if !independent[*subject_position] {
+            // This parameter is not independently variable without risking violating
+            // an owner bound, making the resulting instantiation illegal. Move on from it.
+            continue;
+        }
+        let summary = &crate_.inner.paths[trait_id];
+
+        // We consider two cases. Either the trait bound has no explicit arguments,
+        // or it has the form `T: PartialEq<T>` or `T: PartialOrd<T>`.
+        // Both comparison traits default `Rhs` to `Self`, so in these two forms
+        // writing `T` explicitly means the same thing as omitting `Rhs`.
+        let uses_default_arguments = arguments.is_empty()
+            || (arguments.as_slice() == [Argument::Parameter(*subject_position)]
+                && (summary.path == PARTIAL_EQ_PATH || summary.path == PARTIAL_ORD_PATH));
+
+        // If `standard_trait_has_known_excluded_type` returns `true`,
+        // some `Sized + 'static` type fails the bound with its trait arguments omitted.
+        // In either case above, substituting that type for `T` therefore violates the impl bound.
+        //
+        // We skip `T: PartialEq<U>` and `T: PartialOrd<U>` when `U` is a separate parameter.
+        // Replacing `T` leaves `U` fixed, so the replacement may still compare with `U`
+        // even if it cannot compare with itself.
+        if uses_default_arguments && standard_trait_has_known_excluded_type(summary) {
+            return ImplCoverage::NotAll;
+        }
+    }
+
+    // A bound we can't prove may still hold for every instantiation. For example,
+    // we don't infer an impl's explicit `T: Clone` bound from the owner's `T: Copy`.
+    ImplCoverage::Unknown
 }
 
 /// Checks whether a declared positive blanket impl of a nongeneric trait proves
@@ -169,6 +233,21 @@ pub(super) fn independently_variable_parameters(
     owner: &Generics,
     crate_: &IndexedCrate<'_>,
 ) -> Option<Vec<bool>> {
+    let predicates = owner_predicates(owner, crate_)?;
+    independently_variable_parameters_from_bounds(owner, &predicates, crate_.sized_trait)
+}
+
+/// Requires the complete set of bounds returned by [`owner_predicates`] for this owner.
+/// Omitting an owner bound could make an illegal replacement appear legal.
+///
+/// The self-type check gathers the owner's bounds through [`independently_variable_parameters`].
+/// [`coverage_from_bounds`] reuses the bounds it already gathered
+/// to check which impl bounds the owner implies.
+fn independently_variable_parameters_from_bounds(
+    owner: &Generics,
+    predicates: &HashSet<Predicate>,
+    sized_trait: Id,
+) -> Option<Vec<bool>> {
     // Integer, `bool`, and `char` const parameters have at least two possible values.
     // Require these types for every const parameter so that varying one argument
     // cannot change the type of another const parameter.
@@ -186,7 +265,6 @@ pub(super) fn independently_variable_parameters(
     if !const_types_are_supported {
         return None;
     }
-    let predicates = owner_predicates(owner, crate_)?;
     let mut independent: Vec<_> = owner
         .params
         .iter()
@@ -198,12 +276,12 @@ pub(super) fn independently_variable_parameters(
             trait_id,
             arguments,
         } = predicate
-            && trait_id != crate_.sized_trait
+            && *trait_id != sized_trait
         {
-            independent[subject_position] = false;
+            independent[*subject_position] = false;
             for arg in arguments {
                 if let Argument::Parameter(position) = arg {
-                    independent[position] = false;
+                    independent[*position] = false;
                 }
             }
         }
