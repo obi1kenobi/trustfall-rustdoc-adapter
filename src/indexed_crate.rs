@@ -758,14 +758,42 @@ impl<'a> IndexedCrate<'a> {
             return trait_.generics.params.is_empty();
         }
 
+        let Some(summary) = self.inner.paths.get(id) else {
+            return false;
+        };
+
         // Manually inlined trait items have empty parameter lists even for `PartialEq`,
         // which declares `Rhs`. Use the `has_generic_parameters` field from the manual
         // trait metadata for these traits.
-        self.inner
-            .paths
-            .get(id)
-            .and_then(ManualTraitItem::from_summary)
-            .is_some_and(|trait_| !trait_.has_generic_parameters)
+        if let Some(trait_) = ManualTraitItem::from_summary(summary) {
+            return !trait_.has_generic_parameters;
+        }
+
+        // These traits supply generic parameter information for impl coverage when rustdoc
+        // records only their paths. The adapter synthesizes trait items only for the traits
+        // in `MANUAL_TRAIT_ITEMS`.
+        const NONGENERIC_TRAIT_PATHS: &[&[&str]] = &[
+            &["core", "fmt", "Display"],
+            &["core", "str", "traits", "FromStr"],
+            &["core", "error", "Error"],
+            &["core", "iter", "traits", "iterator", "Iterator"],
+            &["core", "iter", "traits", "collect", "IntoIterator"],
+            &[
+                "core",
+                "iter",
+                "traits",
+                "double_ended",
+                "DoubleEndedIterator",
+            ],
+            &["core", "iter", "traits", "exact_size", "ExactSizeIterator"],
+            &["core", "iter", "traits", "marker", "FusedIterator"],
+            &["core", "ops", "deref", "Deref"],
+            &["core", "ops", "deref", "DerefMut"],
+            &["core", "future", "future", "Future"],
+        ];
+        NONGENERIC_TRAIT_PATHS
+            .iter()
+            .any(|&path| path == summary.path)
     }
 
     /// Return `true` if our analysis indicates the trait is sealed, and `false` otherwise.
@@ -1118,7 +1146,7 @@ impl ManualTraitItem {
 ///
 /// This allowlist is limited to traits used by the lints. There are other foreign traits, but
 /// it is not obvious how the manually inlined traits should look for them.
-const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
+const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
     ManualTraitItem {
         name: "Debug",
         path: &["core", "fmt", "Debug"],
@@ -1129,6 +1157,13 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 15] = [
     ManualTraitItem {
         name: "Clone",
         path: &["core", "clone", "Clone"],
+        has_generic_parameters: false,
+        is_auto: false,
+        is_unsafe: false,
+    },
+    ManualTraitItem {
+        name: "Default",
+        path: &["core", "default", "Default"],
         has_generic_parameters: false,
         is_auto: false,
         is_unsafe: false,
@@ -1511,6 +1546,41 @@ mod tests {
             assert!(unstable_glob_path.public_api()); // stability info is not present in this rustdoc version
             assert!(!unstable_glob_path.modifiers.unstable); // stability info is not present in this rustdoc version
         }
+    }
+
+    /// We chose `Deref` as an example of a trait the adapter does not manually inline.
+    /// A wrapper `struct Slot<T>(T)` can implement it for every `T` by setting
+    /// `Target = T` and returning `&self.0`, with no additional bounds on `T`.
+    ///
+    /// If we manually inlined `Deref` solely to mark it as nongeneric,
+    /// `Impl.applies_to_all_owner_instantiations` would remain `true` for this impl.
+    /// `ImplementedTrait.trait` would then incorrectly expose a `Deref` declaration
+    /// without the `deref` method. This is why the test also checks that the adapter
+    /// does not synthesize a trait item for `Deref`.
+    ///
+    /// If rustdoc starts supplying the declaration or we deliberately inline `Deref`,
+    /// choose another trait whose declaration rustdoc omits and whose path the adapter
+    /// recognizes as nongeneric without synthesizing a trait item.
+    #[test]
+    fn recognizing_deref_for_impl_coverage_does_not_synthesize_a_trait_item() {
+        let rustdoc = load_pregenerated_rustdoc("impl_owner_instantiations");
+        let indexed_crate = IndexedCrate::new(&rustdoc);
+        let (id, _) = rustdoc
+            .paths
+            .iter()
+            .find(|(_, item)| item.path == ["core", "ops", "deref", "Deref"])
+            .expect("the fixture implements Deref for Slot<T>");
+
+        assert!(
+            !rustdoc.index.contains_key(id),
+            "expected rustdoc to omit the declaration of core::ops::Deref",
+        );
+        assert!(indexed_crate.is_known_nongeneric_trait(id));
+        assert!(
+            !indexed_crate
+                .manually_inlined_builtin_traits
+                .contains_key(id)
+        );
     }
 
     /// Ensure that methods, consts, and fields within structs are not importable.
