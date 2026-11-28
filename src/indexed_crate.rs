@@ -1167,9 +1167,6 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
         has_generic_parameters: false,
         is_auto: false,
         is_unsafe: false,
-        stability_feature: "rust1",
-        stability_since: "1.0.0",
-        const_stability_feature: Some("const_default"),
     },
     ManualTraitItem {
         name: "Copy",
