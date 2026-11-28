@@ -36,6 +36,12 @@ impl<T: Copy + CopyMarker> CopyReader<T> {
     pub fn owner_already_requires_copy() {}
 }
 
+pub struct MarkedReader<T: CopyMarker>(pub T);
+
+impl<T: CopyMarker + Copy> MarkedReader<T> {
+    pub fn copy_implied_by_marker() {}
+}
+
 pub struct Reader<T>(pub T);
 
 impl<T> Decode for Reader<T> {}
@@ -78,13 +84,69 @@ impl<U: Copy> Reader<U> {
     pub fn copy_reader() {}
 }
 
+#[expect(
+    drop_bounds,
+    reason = "exercise an explicit Drop bound in rustdoc JSON"
+)]
+impl<T: Drop> Reader<T> {
+    pub fn drop_reader() {}
+}
+
+// Give each bound its own impl so recognizing one cannot mask a missing exclusion for another.
+macro_rules! reader_impls {
+    ($($method:ident: $bound:path),+ $(,)?) => {
+        $(
+            impl<T: $bound> Reader<T> {
+                pub fn $method() {}
+            }
+        )+
+    };
+}
+
+reader_impls! {
+    clone_reader: Clone,
+    unwind_safe_reader: core::panic::UnwindSafe,
+    debug_reader: core::fmt::Debug,
+    hash_reader: core::hash::Hash,
+    eq_reader: Eq,
+    ord_reader: Ord,
+    partial_eq_reader: PartialEq,
+    partial_ord_reader: PartialOrd,
+    send_reader: Send,
+    sync_reader: Sync,
+    unpin_reader: Unpin,
+    ref_unwind_safe_reader: core::panic::RefUnwindSafe,
+    display_reader: core::fmt::Display,
+    from_str_reader: core::str::FromStr,
+    error_reader: core::error::Error,
+    iterator_reader: Iterator,
+    into_iterator_reader: IntoIterator,
+    double_ended_iterator_reader: DoubleEndedIterator,
+    exact_size_iterator_reader: ExactSizeIterator,
+    fused_iterator_reader: core::iter::FusedIterator,
+    deref_reader: core::ops::Deref,
+    deref_mut_reader: core::ops::DerefMut,
+    future_reader: core::future::Future,
+}
+
 pub mod local {
     pub trait Sized {}
     impl Sized for u8 {}
+
+    pub trait Copy {}
+    impl Copy for &'static mut u8 {}
 }
 
 impl<U: local::Sized> Reader<U> {
     pub fn locally_sized_reader() {}
+}
+
+impl<T: local::Copy> Reader<T> {
+    pub fn locally_copy_reader() {}
+}
+
+impl<T: local::Sized + Copy> Reader<T> {
+    pub fn local_sized_and_standard_copy_reader() {}
 }
 
 pub trait Byte {
@@ -174,6 +236,22 @@ impl<X, Y: Copy> Pair<X, Y> {
     pub fn copy_second_parameter() {}
 }
 
+impl<X: PartialEq<X>, Y> Pair<Y, X> {
+    pub fn compare_second_with_itself() {}
+}
+
+impl<X: PartialOrd<X>, Y> Pair<Y, X> {
+    pub fn order_second_with_itself() {}
+}
+
+impl<X, Y: PartialEq<X>> Pair<X, Y> {
+    pub fn compare_second_with_first() {}
+}
+
+impl<X, Y: PartialOrd<X>> Pair<X, Y> {
+    pub fn order_second_with_first() {}
+}
+
 pub trait RelatedTo<T> {}
 impl RelatedTo<u16> for u8 {}
 impl RelatedTo<u8> for u8 {}
@@ -186,6 +264,10 @@ where
 
 impl<X, Y: RelatedTo<X>> Related<Y, X> {
     pub fn matching_relation() {}
+}
+
+impl<X: Copy, Y: RelatedTo<X>> Related<Y, X> {
+    pub fn copy_related_argument() {}
 }
 
 impl<X, Y: RelatedTo<X>> Related<Y, X>

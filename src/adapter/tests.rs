@@ -7396,6 +7396,12 @@ fn inherent_impl_applies_to_all_owner_instantiations() {
             applies_to_all_owner_instantiations: Some(true),
         },
         Output {
+            method: "copy_implied_by_marker".into(),
+            // The owner requires `CopyMarker`, which has `Copy` as a supertrait.
+            // The analysis leaves coverage unknown because it does not infer supertraits.
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
             method: "conditional_blanket_reader".into(),
             applies_to_all_owner_instantiations: None,
         },
@@ -7421,11 +7427,21 @@ fn inherent_impl_applies_to_all_owner_instantiations() {
         },
         Output {
             method: "copy_reader".into(),
-            applies_to_all_owner_instantiations: None,
+            applies_to_all_owner_instantiations: Some(false),
         },
         Output {
             method: "locally_sized_reader".into(),
             applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "locally_copy_reader".into(),
+            // `&'static mut u8` implements `local::Copy` despite lacking the standard `Copy` trait.
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "local_sized_and_standard_copy_reader".into(),
+            // The `Copy` bound excludes an argument even without a proof about `local::Sized`.
+            applies_to_all_owner_instantiations: Some(false),
         },
         Output {
             method: "blanket_byte_reader".into(),
@@ -7477,11 +7493,39 @@ fn inherent_impl_applies_to_all_owner_instantiations() {
         },
         Output {
             method: "copy_second_parameter".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "compare_second_with_itself".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "order_second_with_itself".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        // TODO: Expect `Some(false)` for both once the analysis handles comparisons
+        // between separately declared parameters. For a `struct NoComparison;`
+        // with neither comparison trait impl, `Pair<NoComparison, NoComparison>`
+        // is legal and has neither method.
+        Output {
+            method: "compare_second_with_first".into(),
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "order_second_with_first".into(),
             applies_to_all_owner_instantiations: None,
         },
         Output {
             method: "matching_relation".into(),
             applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            method: "copy_related_argument".into(),
+            // `Related<u8, &'static mut u8>` violates the owner's `A: RelatedTo<B>`
+            // bound, so this substitution cannot prove that the impl excludes a legal
+            // instantiation. The owner bound does not imply `B: Copy` either, so the
+            // analysis leaves the result unknown.
+            applies_to_all_owner_instantiations: None,
         },
         Output {
             method: "additional_reverse_relation".into(),
@@ -7604,6 +7648,38 @@ fn inherent_impl_applies_to_all_owner_instantiations() {
             applies_to_all_owner_instantiations: None,
         },
     ];
+    expected.extend(
+        [
+            "clone_reader",
+            "drop_reader",
+            "unwind_safe_reader",
+            "debug_reader",
+            "hash_reader",
+            "eq_reader",
+            "ord_reader",
+            "partial_eq_reader",
+            "partial_ord_reader",
+            "send_reader",
+            "sync_reader",
+            "unpin_reader",
+            "ref_unwind_safe_reader",
+            "display_reader",
+            "from_str_reader",
+            "error_reader",
+            "iterator_reader",
+            "into_iterator_reader",
+            "double_ended_iterator_reader",
+            "exact_size_iterator_reader",
+            "fused_iterator_reader",
+            "deref_reader",
+            "deref_mut_reader",
+            "future_reader",
+        ]
+        .map(|method| Output {
+            method: method.into(),
+            applies_to_all_owner_instantiations: Some(false),
+        }),
+    );
     expected.sort_unstable();
     similar_asserts::assert_eq!(expected, results);
 }
@@ -7777,9 +7853,7 @@ fn owner_coverage_for_positive_trait_impls() {
             owner: "Slot".into(),
             trait_name: "Default".into(),
             // `Slot<&u8>` is legal, but the derived impl's `T: Default` bound excludes it.
-            // The impl uses `Slot<T>` as its self type, so the analysis returns `None`
-            // when it cannot prove that bound for every legal `T`.
-            applies_to_all_owner_instantiations: None,
+            applies_to_all_owner_instantiations: Some(false),
         },
         Output {
             owner: "Slot".into(),
@@ -7789,10 +7863,9 @@ fn owner_coverage_for_positive_trait_impls() {
         Output {
             owner: "MaybeSized".into(),
             trait_name: "Decode".into(),
-            // This impl forwards the owner's type parameter, so the analysis only tries
-            // to prove that every legal argument is `Copy`. That proof fails for
-            // `&'static mut u8`, a legal argument, so coverage remains unknown.
-            applies_to_all_owner_instantiations: None,
+            // `MaybeSized<&'static mut u8>` is legal, but its argument fails the
+            // `Decode` impl's `T: Copy` bound.
+            applies_to_all_owner_instantiations: Some(false),
         },
     ];
     expected.sort_unstable();
