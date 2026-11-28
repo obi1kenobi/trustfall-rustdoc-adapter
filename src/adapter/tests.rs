@@ -7626,6 +7626,7 @@ fn owner_coverage_for_positive_trait_impls() {
 
                     implemented_trait {
                         trait_name: bare_name @filter(op: "one_of", value: ["$traits"]) @output
+                        trait_id @output
                     }
                 }
             }
@@ -7640,11 +7641,18 @@ fn owner_coverage_for_positive_trait_impls() {
         applies_to_all_owner_instantiations: Option<bool>,
     }
 
+    #[derive(serde::Deserialize)]
+    struct QueryRow {
+        #[serde(flatten)]
+        coverage: Output,
+        trait_id: String,
+    }
+
     let variables: BTreeMap<&str, FieldValue> = btreemap! {
         "false" => false.into(),
-        "traits" => vec!["Clone", "Decode", "DecodeWithDefault", "Default", "PartialEq", "Transferable"].into(),
+        "traits" => vec!["Clone", "Decode", "DecodeWithDefault", "Default", "Deref", "LowerExp", "PartialEq", "Transferable"].into(),
     };
-    let mut results: Vec<Output> = trustfall::execute_query(
+    let rows: Vec<QueryRow> = trustfall::execute_query(
         RustdocAdapter::schema(),
         Arc::new(&adapter),
         query,
@@ -7654,6 +7662,32 @@ fn owner_coverage_for_positive_trait_impls() {
     .map(|row| row.try_into_struct().expect("shape mismatch"))
     .collect();
 
+    // Use the impl's trait ID to verify that rustdoc records the path to `core::fmt::LowerExp`
+    // but omits its declaration. If rustdoc starts including the declaration, `Some(true)`
+    // is correct because this impl applies to every `View`. To keep testing the `None` case,
+    // choose another trait with an omitted declaration and no built-in adapter metadata.
+    let lower_exp = rows
+        .iter()
+        .find(|row| row.coverage.owner == "View" && row.coverage.trait_name == "LowerExp")
+        .expect("expected View to implement LowerExp");
+    let id = rustdoc_types::Id(
+        lower_exp
+            .trait_id
+            .parse()
+            .expect("expected a numeric rustdoc ID"),
+    );
+    let rustdoc = data.own_crate.inner;
+    let summary = rustdoc
+        .paths
+        .get(&id)
+        .expect("expected a path for View's LowerExp impl");
+    assert_eq!(summary.path, ["core", "fmt", "LowerExp"]);
+    assert!(
+        !rustdoc.index.contains_key(&id),
+        "expected rustdoc to omit the declaration of core::fmt::LowerExp",
+    );
+
+    let mut results: Vec<Output> = rows.into_iter().map(|row| row.coverage).collect();
     results.sort_unstable();
 
     let mut expected = vec![
@@ -7730,9 +7764,27 @@ fn owner_coverage_for_positive_trait_impls() {
         Output {
             owner: "View".into(),
             trait_name: "Default".into(),
-            // Rustdoc omits the `Default` declaration, and the built-in trait
-            // catalog has no entry for it. Coverage therefore remains unknown.
+            applies_to_all_owner_instantiations: Some(true),
+        },
+        Output {
+            owner: "View".into(),
+            trait_name: "LowerExp".into(),
+            // Rustdoc records the path to `core::fmt::LowerExp` but omits its declaration.
+            // The adapter has no built-in metadata for this trait, so coverage remains unknown.
             applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            owner: "Slot".into(),
+            trait_name: "Default".into(),
+            // `Slot<&u8>` is legal, but the derived impl's `T: Default` bound excludes it.
+            // The impl uses `Slot<T>` as its self type, so the analysis returns `None`
+            // when it cannot prove that bound for every legal `T`.
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            owner: "Slot".into(),
+            trait_name: "Deref".into(),
+            applies_to_all_owner_instantiations: Some(true),
         },
         Output {
             owner: "MaybeSized".into(),
@@ -11133,7 +11185,7 @@ fn automatically_derived() {
     "#;
 
     let variables: BTreeMap<&str, Vec<&str>> = btreemap! {
-        "traits" => vec!["Debug", "Clone", "PartialOrd", "Ord", "PartialEq", "Eq", "Hash"],
+        "traits" => vec!["Debug", "Clone", "Default", "PartialOrd", "Ord", "PartialEq", "Eq", "Hash"],
     };
     let schema =
         Schema::parse(include_str!("../rustdoc_schema.graphql")).expect("schema failed to parse");
@@ -11162,6 +11214,11 @@ fn automatically_derived() {
             instantiated_name: "Debug".into(),
             attrs: vec!["#[automatically_derived]".into()],
             canonical_path: vec!["core".into(), "fmt".into(), "Debug".into()],
+        },
+        Output {
+            instantiated_name: "Default".into(),
+            attrs: vec!["#[automatically_derived]".into()],
+            canonical_path: vec!["core".into(), "default".into(), "Default".into()],
         },
         Output {
             instantiated_name: "Eq".into(),
