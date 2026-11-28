@@ -768,32 +768,7 @@ impl<'a> IndexedCrate<'a> {
         if let Some(trait_) = ManualTraitItem::from_summary(summary) {
             return !trait_.has_generic_parameters;
         }
-
-        // These traits supply generic parameter information for impl coverage when rustdoc
-        // records only their paths. The adapter synthesizes trait items only for the traits
-        // in `MANUAL_TRAIT_ITEMS`.
-        const NONGENERIC_TRAIT_PATHS: &[&[&str]] = &[
-            &["core", "fmt", "Display"],
-            &["core", "str", "traits", "FromStr"],
-            &["core", "error", "Error"],
-            &["core", "iter", "traits", "iterator", "Iterator"],
-            &["core", "iter", "traits", "collect", "IntoIterator"],
-            &[
-                "core",
-                "iter",
-                "traits",
-                "double_ended",
-                "DoubleEndedIterator",
-            ],
-            &["core", "iter", "traits", "exact_size", "ExactSizeIterator"],
-            &["core", "iter", "traits", "marker", "FusedIterator"],
-            &["core", "ops", "deref", "Deref"],
-            &["core", "ops", "deref", "DerefMut"],
-            &["core", "future", "future", "Future"],
-        ];
-        NONGENERIC_TRAIT_PATHS
-            .iter()
-            .any(|&path| path == summary.path)
+        additional_nongeneric_trait(summary).is_some()
     }
 
     /// Return `true` if our analysis indicates the trait is sealed, and `false` otherwise.
@@ -1115,11 +1090,108 @@ impl<'a: 'b, 'b> Borrow<(&'b Id, &'b str)> for ImplEntry<'a> {
     }
 }
 
+pub(crate) const PARTIAL_EQ_PATH: &[&str] = &["core", "cmp", "PartialEq"];
+pub(crate) const PARTIAL_ORD_PATH: &[&str] = &["core", "cmp", "PartialOrd"];
+
+/// Whether some known `Sized + 'static` type fails this bound with generic
+/// arguments omitted. A `false` result means we have no counterexample recorded.
+///
+/// If substituting that type for the parameter subject to the bound produces
+/// a legal owner instantiation, the impl excludes the resulting instantiation
+/// and `Impl.applies_to_all_owner_instantiations` can return `false`.
+pub(crate) fn standard_trait_has_known_excluded_type(summary: &rustdoc_types::ItemSummary) -> bool {
+    if let Some(trait_) = ManualTraitItem::from_summary(summary) {
+        return trait_.has_known_excluded_type;
+    }
+    additional_nongeneric_trait(summary).is_some_and(|trait_| trait_.has_known_excluded_type)
+}
+
+/// Metadata for a nongeneric standard-library trait whose declaration rustdoc may omit.
+/// The adapter uses it to evaluate `Impl.applies_to_all_owner_instantiations`.
+struct NongenericTrait {
+    path: &'static [&'static str],
+    /// Whether a known `Sized + 'static` type fails this trait bound.
+    /// A `false` value means no counterexample is recorded.
+    has_known_excluded_type: bool,
+}
+
+fn additional_nongeneric_trait(
+    summary: &rustdoc_types::ItemSummary,
+) -> Option<&'static NongenericTrait> {
+    ADDITIONAL_NONGENERIC_TRAITS
+        .iter()
+        .find(|t| t.path == summary.path)
+}
+
+// These entries let `Impl.applies_to_all_owner_instantiations` recognize
+// traits with no generic parameters when rustdoc records only their paths.
+// The adapter synthesizes trait items only for the traits in `MANUAL_TRAIT_ITEMS`.
+const ADDITIONAL_NONGENERIC_TRAITS: &[NongenericTrait] = &[
+    NongenericTrait {
+        path: &["core", "fmt", "Display"],
+        has_known_excluded_type: true, // `()`
+    },
+    NongenericTrait {
+        path: &["core", "str", "traits", "FromStr"],
+        has_known_excluded_type: true, // `()`
+    },
+    NongenericTrait {
+        path: &["core", "error", "Error"],
+        has_known_excluded_type: true, // `()`
+    },
+    NongenericTrait {
+        path: &["core", "iter", "traits", "iterator", "Iterator"],
+        has_known_excluded_type: true, // `()`
+    },
+    NongenericTrait {
+        path: &["core", "iter", "traits", "collect", "IntoIterator"],
+        has_known_excluded_type: true, // `()`
+    },
+    NongenericTrait {
+        path: &[
+            "core",
+            "iter",
+            "traits",
+            "double_ended",
+            "DoubleEndedIterator",
+        ],
+        has_known_excluded_type: true, // `()`
+    },
+    NongenericTrait {
+        path: &["core", "iter", "traits", "exact_size", "ExactSizeIterator"],
+        has_known_excluded_type: true, // `()`
+    },
+    NongenericTrait {
+        path: &["core", "iter", "traits", "marker", "FusedIterator"],
+        has_known_excluded_type: true, // `()`
+    },
+    NongenericTrait {
+        path: &["core", "ops", "deref", "Deref"],
+        has_known_excluded_type: true, // `()`
+    },
+    NongenericTrait {
+        path: &["core", "ops", "deref", "DerefMut"],
+        has_known_excluded_type: true, // `()`
+    },
+    NongenericTrait {
+        path: &["core", "future", "future", "Future"],
+        has_known_excluded_type: true, // `()`
+    },
+];
+
+/// Metadata for synthesizing a standard-library trait from rustdoc's `paths`
+/// and evaluating `Impl.applies_to_all_owner_instantiations`.
 #[derive(Debug)]
 struct ManualTraitItem {
     name: &'static str,
     path: &'static [&'static str],
     has_generic_parameters: bool,
+    /// Whether a known `Sized + 'static` type fails this trait bound
+    /// with generic arguments omitted.
+    /// For example, since `Rhs` defaults to `Self`,
+    /// `T: PartialEq` requires `T: PartialEq<T>`.
+    /// A `false` value means no counterexample is recorded.
+    has_known_excluded_type: bool,
     is_auto: bool,
     is_unsafe: bool,
     stability_feature: &'static str,
@@ -1154,6 +1226,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
         name: "Debug",
         path: &["core", "fmt", "Debug"],
         has_generic_parameters: false,
+        has_known_excluded_type: true, // `struct Plain;` with no derives or impls
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1164,6 +1237,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
         name: "Clone",
         path: &["core", "clone", "Clone"],
         has_generic_parameters: false,
+        has_known_excluded_type: true, // `&'static mut u8`
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1174,6 +1248,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
         name: "Default",
         path: &["core", "default", "Default"],
         has_generic_parameters: false,
+        has_known_excluded_type: true, // `&'static u8`
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1184,6 +1259,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
         name: "Copy",
         path: &["core", "marker", "Copy"],
         has_generic_parameters: false,
+        has_known_excluded_type: true, // `&'static mut u8`
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1194,6 +1270,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
         name: "Drop",
         path: &["core", "ops", "drop", "Drop"],
         has_generic_parameters: false,
+        has_known_excluded_type: true, // `()`
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1202,8 +1279,9 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
     },
     ManualTraitItem {
         name: "PartialOrd",
-        path: &["core", "cmp", "PartialOrd"],
+        path: PARTIAL_ORD_PATH,
         has_generic_parameters: true,
+        has_known_excluded_type: true, // `struct Plain;` with no derives or impls
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1214,6 +1292,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
         name: "Ord",
         path: &["core", "cmp", "Ord"],
         has_generic_parameters: false,
+        has_known_excluded_type: true, // `f32`
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1222,8 +1301,9 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
     },
     ManualTraitItem {
         name: "PartialEq",
-        path: &["core", "cmp", "PartialEq"],
+        path: PARTIAL_EQ_PATH,
         has_generic_parameters: true,
+        has_known_excluded_type: true, // `struct Plain;` with no derives or impls
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1234,6 +1314,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
         name: "Eq",
         path: &["core", "cmp", "Eq"],
         has_generic_parameters: false,
+        has_known_excluded_type: true, // `f32`
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1244,6 +1325,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
         name: "Hash",
         path: &["core", "hash", "Hash"],
         has_generic_parameters: false,
+        has_known_excluded_type: true, // `f32`
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
@@ -1254,6 +1336,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
         name: "Send",
         path: &["core", "marker", "Send"],
         has_generic_parameters: false,
+        has_known_excluded_type: true, // `*const ()`
         is_auto: true,
         is_unsafe: true,
         stability_feature: "rust1",
@@ -1264,6 +1347,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
         name: "Sync",
         path: &["core", "marker", "Sync"],
         has_generic_parameters: false,
+        has_known_excluded_type: true, // `core::cell::Cell<()>`
         is_auto: true,
         is_unsafe: true,
         stability_feature: "rust1",
@@ -1274,6 +1358,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
         name: "Unpin",
         path: &["core", "marker", "Unpin"],
         has_generic_parameters: false,
+        has_known_excluded_type: true, // `core::marker::PhantomPinned`
         is_auto: true,
         is_unsafe: false,
         stability_feature: "pin",
@@ -1284,6 +1369,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
         name: "RefUnwindSafe",
         path: &["core", "panic", "unwind_safe", "RefUnwindSafe"],
         has_generic_parameters: false,
+        has_known_excluded_type: true, // `core::cell::Cell<()>`
         is_auto: true,
         is_unsafe: false,
         stability_feature: "catch_unwind",
@@ -1294,6 +1380,7 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
         name: "UnwindSafe",
         path: &["core", "panic", "unwind_safe", "UnwindSafe"],
         has_generic_parameters: false,
+        has_known_excluded_type: true, // `&'static mut u8`
         is_auto: true,
         is_unsafe: false,
         stability_feature: "catch_unwind",
@@ -1304,6 +1391,8 @@ const MANUAL_TRAIT_ITEMS: [ManualTraitItem; 16] = [
         name: "Sized",
         path: &["core", "marker", "Sized"],
         has_generic_parameters: false,
+        // Every candidate counterexample must itself be `Sized`.
+        has_known_excluded_type: false,
         is_auto: false,
         is_unsafe: false,
         stability_feature: "rust1",
