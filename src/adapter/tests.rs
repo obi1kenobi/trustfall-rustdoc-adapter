@@ -7503,16 +7503,24 @@ fn inherent_impl_applies_to_all_owner_instantiations() {
             method: "order_second_with_itself".into(),
             applies_to_all_owner_instantiations: Some(false),
         },
-        // TODO: Expect `Some(false)` for both once the analysis handles comparisons
-        // between separately declared parameters. For a `struct NoComparison;`
-        // with neither comparison trait impl, `Pair<NoComparison, NoComparison>`
-        // is legal and has neither method.
+        // For a `struct NoComparison;` with neither comparison trait impl,
+        // `Pair<NoComparison, NoComparison>` is legal and has neither method.
         Output {
             method: "compare_second_with_first".into(),
-            applies_to_all_owner_instantiations: None,
+            applies_to_all_owner_instantiations: Some(false),
         },
         Output {
             method: "order_second_with_first".into(),
+            applies_to_all_owner_instantiations: Some(false),
+        },
+        Output {
+            method: "compare_copy_first_with_second".into(),
+            // The owner's `Copy` bound prevents substituting an arbitrary type on the left.
+            applies_to_all_owner_instantiations: None,
+        },
+        Output {
+            method: "order_second_with_copy_first".into(),
+            // Here the owner's `Copy` bound restricts the right-hand side instead.
             applies_to_all_owner_instantiations: None,
         },
         Output {
