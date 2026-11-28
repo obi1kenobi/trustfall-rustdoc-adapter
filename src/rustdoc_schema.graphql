@@ -2654,7 +2654,7 @@ type ImplementedTrait {
   However, a limited number of common built-in Rust traits have their definitions hard-coded
   into our adapter and their information will be available for inspection.
   The set of such traits will include, at minimum:
-  `Debug, Clone, Copy, Drop, PartialOrd, Ord, PartialEq, Eq, Hash, Sized, Send, Sync, Unpin,
+  `Debug, Clone, Copy, Default, Drop, PartialOrd, Ord, PartialEq, Eq, Hash, Sized, Send, Sync, Unpin,
   UnwindSafe, RefUnwindSafe`.
 
   These manually inlined definitions expose trait identity and basic metadata, but do not

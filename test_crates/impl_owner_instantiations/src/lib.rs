@@ -221,12 +221,29 @@ impl<const N: usize> Widths<N, N> {
     pub fn equal_widths() {}
 }
 
+#[derive(Default)]
+pub struct Slot<T>(pub T);
+
+impl<T> core::ops::Deref for Slot<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
 #[derive(Clone, PartialEq)]
 pub struct View<'a, 'b>(pub &'a u8, pub &'b u8);
 
 impl Default for View<'_, '_> {
     fn default() -> Self {
         Self(&0, &0)
+    }
+}
+
+impl core::fmt::LowerExp for View<'_, '_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "({:e}, {:e})", self.0, self.1)
     }
 }
 
