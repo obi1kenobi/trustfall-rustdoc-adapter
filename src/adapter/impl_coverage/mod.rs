@@ -101,13 +101,7 @@ pub(super) fn impl_coverage(impl_: &Impl, crate_: &IndexedCrate<'_>) -> ImplCove
         return coverage_from_self_type(args, owner_generics, &impl_.generics, crate_);
     };
 
-    if bounds::can_prove_impl_bounds(owner_generics, &impl_.generics, &impl_positions, crate_) {
-        ImplCoverage::All
-    } else {
-        // A bound we can't prove may still hold for every instantiation. For example,
-        // we don't infer an impl's explicit `T: Clone` bound from the owner's `T: Copy`.
-        ImplCoverage::Unknown
-    }
+    bounds::coverage_from_bounds(owner_generics, &impl_.generics, &impl_positions, crate_)
 }
 
 /// Checks whether the impl's self type rules out any legal instantiation of its owner.
